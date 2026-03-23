@@ -32,3 +32,8 @@
 {"ts": "2026-03-23T19:06:26.139180", "cycle": 4, "action": "phase_critique", "issue": "叙事模板较少"}
 {"ts": "2026-03-23T19:06:28.261323", "cycle": 4, "action": "critique_result", "risk": "medium", "concerns": ["扩展叙事模板可能会影响现有叙事的渲染逻辑", "如果新添加的fallback叙事与现有系统不兼容，可能导致叙事功能异常", "模板扩展可能需要更新相关的测试用例"], "needs_approval": true}
 {"ts": "2026-03-23T19:06:28.261898", "cycle": 4, "action": "skipped_needs_approval", "issue": "叙事模板较少"}
+{"ts": "2026-03-23T19:11:53.299017", "cycle": 4, "action": "snapshot", "snapshot_id": "cycle6_1774264313", "status": "created"}
+{"ts": "2026-03-23T19:11:53.299278", "cycle": 4, "action": "apply_fix_attempt", "file": "universe/narrative.py", "desc": "叙事模板较少"}
+{"ts": "2026-03-23T19:11:53.299657", "cycle": 4, "action": "fix_applied", "file": "universe/narrative.py", "type": "inject", "anchor": "def _fallback_narrative"}
+{"ts": "2026-03-23T19:11:54.304415", "cycle": 4, "action": "phase_test"}
+{"ts": "2026-03-23T19:11:54.344126", "cycle": 4, "action": "git_commit", "message": "[AUTO] 增强fallback叙事: universe/narrative.py"}
