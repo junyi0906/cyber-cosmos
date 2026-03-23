@@ -337,7 +337,7 @@ async def send_diplomatic_signal(req: dict):
         return {
             "file": "universe_server/server.py",
             "change_type": "inject",
-            "inject_anchor": "if __name__ == '__main__'",
+            "inject_anchor": 'if __name__ == "__main__":',
             "description": "添加 /relations 和 /relations/send_signal API",
             "code": code.strip(),
             "risk": "low"

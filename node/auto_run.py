@@ -12,6 +12,7 @@ import time
 import json
 import httpx
 from pathlib import Path
+from universe.diplomacy import get_relation_matrix
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -78,10 +79,21 @@ def get_recent_events(limit: int = 10) -> list:
     r = httpx.get(f"{SERVER_URL}/history", timeout=10)
     if r.status_code == 200:
         events = r.json()
-        # 只取重大事件
         notable = [e for e in events if (e.get("significance") or "NOTABLE") != "TRIVIAL"]
         return notable[-limit:]
     return []
+
+
+def get_relation_between(civ_id: str, target_id: str) -> dict | None:
+    """通过API获取两个文明间的关系"""
+    try:
+        r = httpx.get(f"{SERVER_URL}/relations/{civ_id}", timeout=10)
+        if r.status_code == 200:
+            relations = r.json()
+            return relations.get(target_id)
+    except:
+        pass
+    return None
 
 
 def run_autonomous_loop(civ_id: str, civ_name: str, personality: str, goals: str, interval: int = 10):

@@ -389,6 +389,88 @@ async def get_history():
     return event_history.get_recent(100)
 
 
+@app.get("/relations/{civ_id}")
+async def get_civ_relations(civ_id: str):
+    """获取某个文明与其他文明的全部外交关系"""
+    matrix = get_relation_matrix()
+    all_relations = matrix._relations.get(civ_id, {})
+    civ = universe.get_civilization(civ_id)
+    if not civ:
+        return {"error": "文明不存在"}
+    result = {}
+    for target_id, rel in all_relations.items():
+        target = universe.get_civilization(target_id)
+        result[target_id] = {
+            "target_name": target.name if target else target_id,
+            **rel
+        }
+    return result
+
+
+@app.post("/relations/send_signal")
+async def send_signal_api(req: dict):
+    """发送外交信号"""
+    civ = universe.get_civilization(req.get("civilization_id"))
+    target = universe.get_civilization(req.get("target_id"))
+    if not civ or not target:
+        return {"error": "文明不存在"}
+    matrix = get_relation_matrix()
+    result = matrix.send_signal(
+        civ.id, target.id,
+        req.get("content", ""),
+        encrypted=req.get("encrypted", False)
+    )
+    if result["success"]:
+        event = UniverseEvent(
+            event_id=f"{civ.id}_signal_{int(time.time())}",
+            event_type=EventType.DIPLOMATIC_SIGNAL,
+            timestamp=civ.last_active,
+            actor_id=civ.id,
+            target_id=target.id,
+            narrative=f"{civ.name} 向 {target.name} 发送了外交信号",
+            significance="NOTABLE"
+        )
+        event_history.record(event)
+        event_history.flush()
+        await manager.broadcast({
+            "type": "event",
+            "event": event.model_dump(mode="json"),
+            "universe": universe.get_universe_summary()
+        })
+    return result
+
+
+@app.post("/relations/propose_alliance")
+async def propose_alliance_api(req: dict):
+    """发起结盟"""
+    civ = universe.get_civilization(req.get("civilization_id"))
+    target = universe.get_civilization(req.get("target_id"))
+    if not civ or not target:
+        return {"error": "文明不存在"}
+    matrix = get_relation_matrix()
+    success = matrix.propose_alliance(civ.id, target.id)
+    if success:
+        matrix.update_relation(civ.id, target.id, 20, 10)
+        event = UniverseEvent(
+            event_id=f"{civ.id}_alliance_{int(time.time())}",
+            event_type=EventType.ALLIANCE_PROPOSAL,
+            timestamp=civ.last_active,
+            actor_id=civ.id,
+            target_id=target.id,
+            narrative=f"{civ.name} 向 {target.name} 提出了结盟请求！",
+            significance="MAJOR"
+        )
+        event_history.record(event)
+        event_history.flush()
+        await manager.broadcast({
+            "type": "event",
+            "event": event.model_dump(mode="json"),
+            "universe": universe.get_universe_summary()
+        })
+        return {"success": True, "message": "结盟成功"}
+    return {"success": False, "reason": "关系不足（需要关系≥30，信任≥40）"}
+
+
 def run_server(host: str = "0.0.0.0", port: int = 8000):
     uvicorn.run(app, host=host, port=port)
 
