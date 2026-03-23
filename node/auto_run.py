@@ -13,6 +13,7 @@ import json
 import httpx
 from pathlib import Path
 from universe.diplomacy import get_relation_matrix
+from decision_journal import record_decision, get_decision_summary, evaluate_outcome
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
