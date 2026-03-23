@@ -146,27 +146,14 @@ def run_autonomous_loop(civ_id: str, civ_name: str, personality: str, goals: str
                         "target_id": other_civ["id"],
                         "reason": f"{other_civ['name']}关系恶劣，威胁极大"
                     })
-
-
-
-            # 外交行动选项（如果关系允许）
-            diplomacy_actions = []
-            for other_civ in civilizations:
-                if other_civ["id"] == civ_id or not other_civ["is_alive"]:
-                    continue
-                rel = get_relation_between(civ_id, other_civ["id"])
-                if rel and rel["relation"] > 20 and rel["status"] != "alliance":
+                if rel and 0 <= rel["relation"] <= 20:
                     diplomacy_actions.append({
-                        "action": "PROPOSE_ALLIANCE",
+                        "action": "SEND_SIGNAL",
                         "target_id": other_civ["id"],
-                        "reason": f"与{other_civ['name']}关系良好，可提议结盟"
+                        "content": "我们是星际猎人，希望建立联系。",
+                        "reason": f"与{other_civ['name']}关系中等，尝试外交接触"
                     })
-                if rel and rel["relation"] < -30:
-                    diplomacy_actions.append({
-                        "action": "DECLARE_WAR",
-                        "target_id": other_civ["id"],
-                        "reason": f"{other_civ['name']}关系恶劣，威胁极大"
-                    })
+
 
 # 评估威胁
             threats = [
