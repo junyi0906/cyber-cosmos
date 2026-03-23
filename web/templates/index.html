@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🌌 Cyber Cosmos — 宇宙观测台</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        body {
+            background: #0a0a12;
+            color: #c8d6e5;
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 0;
+            border-bottom: 1px solid #1a1a2e;
+        }
+        
+        h1 { font-size: 1.5rem; color: #82fff7; }
+        
+        .stats {
+            display: flex;
+            gap: 30px;
+        }
+        
+        .stat {
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 2rem;
+            color: #82fff7;
+            font-weight: bold;
+        }
+        
+        .stat-label {
+            font-size: 0.75rem;
+            color: #636e72;
+            text-transform: uppercase;
+        }
+        
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 400px;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        .panel {
+            background: #0f0f1a;
+            border: 1px solid #1a1a2e;
+            border-radius: 8px;
+            padding: 20px;
+        }
+        
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #1a1a2e;
+        }
+        
+        .panel-title {
+            font-size: 0.9rem;
+            color: #82fff7;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .civilization-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .civilization-item {
+            padding: 12px;
+            border: 1px solid #1a1a2e;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .civilization-item:hover {
+            border-color: #82fff7;
+            background: #141420;
+        }
+        
+        .civilization-item.dead {
+            opacity: 0.4;
+            text-decoration: line-through;
+        }
+        
+        .civ-name {
+            font-weight: bold;
+            color: #fff;
+            margin-bottom: 4px;
+        }
+        
+        .civ-info {
+            font-size: 0.75rem;
+            color: #636e72;
+            display: flex;
+            gap: 15px;
+        }
+        
+        .event-feed {
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        
+        .event-item {
+            padding: 10px;
+            border-left: 3px solid #1a1a2e;
+            margin-bottom: 10px;
+            font-size: 0.85rem;
+        }
+        
+        .event-item.signal { border-color: #fdcb6e; }
+        .event-item.strike { border-color: #ff7675; }
+        .event-item.alliance { border-color: #00b894; }
+        .event-item.death { border-color: #d63031; }
+        .event-item.tech { border-color: #0984e3; }
+        .event-item.subworld { border-color: #a29bfe; }
+        
+        .event-time {
+            font-size: 0.7rem;
+            color: #636e72;
+            margin-bottom: 4px;
+        }
+        
+        .event-narrative {
+            color: #b2bec3;
+            line-height: 1.4;
+        }
+        
+        .tech-bar, .defense-bar {
+            height: 4px;
+            background: #1a1a2e;
+            border-radius: 2px;
+            margin-top: 4px;
+        }
+        
+        .tech-bar-fill { background: #0984e3; height: 100%; border-radius: 2px; }
+        .defense-bar-fill { background: #00b894; height: 100%; border-radius: 2px; }
+        
+        .connection-status {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #636e72;
+        }
+        
+        .connection-status.connected { background: #00b894; }
+        
+        .detail-view {
+            display: none;
+        }
+        
+        .detail-view.active { display: block; }
+        
+        .back-btn {
+            background: none;
+            border: 1px solid #1a1a2e;
+            color: #82fff7;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8rem;
+        }
+        
+        .back-btn:hover { border-color: #82fff7; }
+        
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #636e72;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .live-indicator {
+            animation: pulse 2s infinite;
+            color: #00b894;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div>
+                <h1>🌌 Cyber Cosmos</h1>
+                <span style="font-size: 0.75rem; color: #636e72;">宇宙观测台 · <span class="live-indicator">● LIVE</span> <span id="status" class="connection-status"></span></span>
+            </div>
+            <div class="stats">
+                <div class="stat">
+                    <div class="stat-value" id="stat-civs">—</div>
+                    <div class="stat-label">活跃文明</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value" id="stat-events">—</div>
+                    <div class="stat-label">历史事件</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value" id="stat-subworlds">—</div>
+                    <div class="stat-label">子世界</div>
+                </div>
+            </div>
+        </header>
+        
+        <div class="main-grid">
+            <div class="panel">
+                <div class="panel-header">
+                    <span class="panel-title">📡 宇宙事件流</span>
+                    <span style="font-size: 0.7rem; color: #636e72;">实时更新</span>
+                </div>
+                <div class="event-feed" id="event-feed">
+                    <div class="empty-state">等待宇宙事件...</div>
+                </div>
+            </div>
+            
+            <div>
+                <div class="panel" id="civilizations-panel">
+                    <div class="panel-header">
+                        <span class="panel-title">🪐 活跃文明</span>
+                        <span id="civ-count" style="font-size: 0.75rem; color: #636e72;">0 个</span>
+                    </div>
+                    <div class="civilization-list" id="civilization-list">
+                        <div class="empty-state">等待数据...</div>
+                    </div>
+                </div>
+                
+                <div class="panel detail-view" id="detail-view" style="margin-top: 20px;">
+                    <div class="panel-header">
+                        <button class="back-btn" onclick="showList()">← 返回</button>
+                        <span class="panel-title" id="detail-name">文明详情</span>
+                    </div>
+                    <div id="detail-content"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let ws = null;
+        let civilizations = [];
+        let history = [];
+        
+        function connect() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+            
+            ws.onopen = () => {
+                document.getElementById('status').classList.add('connected');
+                document.getElementById('status').title = '已连接';
+            };
+            
+            ws.onclose = () => {
+                document.getElementById('status').classList.remove('connected');
+                setTimeout(connect, 3000);
+            };
+            
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                
+                if (data.type === 'init') {
+                    updateUniverse(data.universe);
+                    updateCivilizations(data.civilizations);
+                    updateHistory(data.history);
+                } else if (data.type === 'event') {
+                    addEvent(data.event);
+                    if (data.universe) updateUniverse(data.universe);
+                } else if (data.type === 'civilization_detail') {
+                    showDetail(data.civilization, data.history);
+                }
+            };
+        }
+        
+        function updateUniverse(u) {
+            document.getElementById('stat-civs').textContent = u.alive_civilizations;
+            document.getElementById('stat-events').textContent = u.event_count;
+            document.getElementById('stat-subworlds').textContent = u.total_subworlds;
+        }
+        
+        function updateCivilizations(civs) {
+            civilizations = civs;
+            document.getElementById('civ-count').textContent = `${civs.length} 个`;
+            
+            const list = document.getElementById('civilization-list');
+            if (civs.length === 0) {
+                list.innerHTML = '<div class="empty-state">宇宙中还没有文明</div>';
+                return;
+            }
+            
+            list.innerHTML = civs.map(civ => `
+                <div class="civilization-item ${civ.is_alive ? '' : 'dead'}" onclick="showCivilization('${civ.id}')">
+                    <div class="civ-name">${civ.name}</div>
+                    <div class="civ-info">
+                        <span>科技 ${Math.round(civ.tech_level * 100)}%</span>
+                        <span>防御 ${Math.round(civ.defense_level * 100)}%</span>
+                        <span>位置 (${civ.position.map(p => Math.round(p)).join(', ')})</span>
+                    </div>
+                    <div class="tech-bar"><div class="tech-bar-fill" style="width: ${civ.tech_level * 100}%"></div></div>
+                </div>
+            `).join('');
+        }
+        
+        function updateHistory(events) {
+            history = events;
+            renderEvents();
+        }
+        
+        function renderEvents() {
+            const feed = document.getElementById('event-feed');
+            if (history.length === 0) {
+                feed.innerHTML = '<div class="empty-state">等待宇宙事件...</div>';
+                return;
+            }
+            
+            feed.innerHTML = history.slice(-50).reverse().map(e => {
+                const typeClass = getEventClass(e.event_type);
+                const time = new Date(e.timestamp).toLocaleTimeString('zh-CN');
+                return `
+                    <div class="event-item ${typeClass}">
+                        <div class="event-time">${time} · ${e.event_type}</div>
+                        <div class="event-narrative">${e.narrative || e.consequence || '事件记录'}</div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        function addEvent(event) {
+            history.push(event);
+            renderEvents();
+            
+            // Update civilization list if needed
+            const civ = civilizations.find(c => c.id === event.actor_id);
+            if (civ && event.event_type === 'civilization_destroyed') {
+                civ.is_alive = false;
+                updateCivilizations(civilizations);
+            }
+        }
+        
+        function getEventClass(type) {
+            const map = {
+                'signal_sent': 'signal',
+                'signal_received': 'signal',
+                'strike_launched': 'strike',
+                'strike_received': 'strike',
+                'civilization_destroyed': 'death',
+                'alliance_formed': 'alliance',
+                'alliance_broken': 'strike',
+                'subworld_created': 'subworld',
+                'subworld_joined': 'subworld',
+                'tech_advanced': 'tech',
+                'tech_explosion': 'tech',
+            };
+            return map[type] || '';
+        }
+        
+        function showCivilization(id) {
+            ws.send(JSON.stringify({ type: 'observe', civilization_id: id }));
+        }
+        
+        function showDetail(civ, civHistory) {
+            document.getElementById('civilizations-panel').style.display = 'none';
+            document.getElementById('detail-view').classList.add('active');
+            document.getElementById('detail-name').textContent = civ.name;
+            
+            document.getElementById('detail-content').innerHTML = `
+                <div style="margin-top: 15px;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                        <div>
+                            <div style="font-size: 0.75rem; color: #636e72; margin-bottom: 5px;">科技水平</div>
+                            <div class="tech-bar" style="height: 8px;"><div class="tech-bar-fill" style="width: ${civ.tech_level * 100}%"></div></div>
+                            <div style="text-align: right; font-size: 0.8rem; color: #0984e3;">${Math.round(civ.tech_level * 100)}%</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 0.75rem; color: #636e72; margin-bottom: 5px;">防御水平</div>
+                            <div class="defense-bar" style="height: 8px;"><div class="defense-bar-fill" style="width: ${civ.defense_level * 100}%"></div></div>
+                            <div style="text-align: right; font-size: 0.8rem; color: #00b894;">${Math.round(civ.defense_level * 100)}%</div>
+                        </div>
+                    </div>
+                    
+                    <div style="margin-top: 15px; font-size: 0.8rem; color: #636e72;">
+                        <div>位置坐标: (${civ.position.join(', ')})</div>
+                        <div>状态: ${civ.is_alive ? '<span style="color: #00b894;">存活</span>' : '<span style="color: #d63031;">已毁灭</span>'}</div>
+                    </div>
+                    
+                    <div style="margin-top: 20px;">
+                        <div style="font-size: 0.8rem; color: #82fff7; margin-bottom: 10px;">该文明的历史</div>
+                        ${civHistory.length === 0 ? '<div style="color: #636e72;">暂无历史记录</div>' : ''}
+                        ${civHistory.slice(-10).map(e => `
+                            <div style="padding: 8px 0; border-bottom: 1px solid #1a1a2e;">
+                                <div style="font-size: 0.7rem; color: #636e72;">${e.event_type}</div>
+                                <div style="font-size: 0.85rem; color: #b2bec3;">${e.narrative || e.consequence}</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+        
+        function showList() {
+            document.getElementById('civilizations-panel').style.display = 'block';
+            document.getElementById('detail-view').classList.remove('active');
+        }
+        
+        connect();
+    </script>
+</body>
+</html>

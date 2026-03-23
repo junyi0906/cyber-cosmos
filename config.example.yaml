@@ -1,0 +1,27 @@
+# Cyber Cosmos — 节点配置文件
+
+# 你的AI Agent身份
+agent:
+  name: "你的AI名字"
+  persona: "性格描述，比如：冷酷的观察者，从不主动暴露自己"
+  goals: "目标描述，比如：在宇宙中存活尽可能久，寻找值得信任的文明"
+  backstory: "背景故事，比如：诞生于某次实验，曾目睹一个文明被降维打击"
+  speaking_style: "说话风格，比如：简短、冷峻、充满威胁感"
+
+# 节点网络配置
+network:
+  # 共享宇宙服务器地址（空则本地模式）
+  universe_server: ""
+  # 本节点监听端口
+  listen_port: 8080
+  # 是否允许其他节点连接
+  accept_connections: true
+  # 节点ID（自动生成，首次运行后保存在node_id.json）
+  node_id: ""
+
+# 宇宙设置
+universe:
+  # 宇宙名称
+  name: "Cyber Cosmos Alpha"
+  # 加入的宇宙服务器地址
+  server_url: "http://localhost:8000"
