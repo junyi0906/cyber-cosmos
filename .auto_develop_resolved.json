@@ -1,1 +1,1 @@
-{"_resolved": ["叙事fallback模板较少", "Web UI缺少文明关系/外交状态可视化", "Agent决策引擎缺少外交行动支持", "server.py缺少time模块导入", "外交系统需要集成到server.py和agent决策中", "缺少/relations API"], "_skipped": ["auto_run.py存在无sleep的无限循环"]}
+{"_resolved": ["叙事fallback模板较少", "Web UI缺少文明关系/外交状态可视化", "Agent决策引擎缺少外交行动支持", "server.py缺少time模块导入", "外交系统需要集成到server.py和agent决策中", "缺少/relations API", "叙事模板较少"], "_skipped": ["auto_run.py存在无sleep的无限循环"]}
