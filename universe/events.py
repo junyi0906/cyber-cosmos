@@ -44,19 +44,26 @@ class UniverseEvent(BaseModel):
     timestamp: datetime
     actor_id: str                      # 事件发起者
     target_id: Optional[str] = None   # 事件承受者（如果有）
-    
+
     # 事件详情
     position: Optional[tuple] = None  # 事件发生位置 (x, y, z)
     signal_strength: Optional[float] = None
     tech_level: Optional[float] = None
     threat_level: Optional[float] = None
-    
+
     # 叙事文本（由LLM生成）
     narrative: str = ""
-    
+
     # 后果
     consequence: str = ""
     destroyed_reason: Optional[CivilizationDestroyedReason] = None
+
+    # 事件重要性分级
+    # TRIVIAL: 静默观察，日常动作，不显示在事件流
+    # NOTABLE: 值得注意，围观群众可见
+    # MAJOR:   重大事件，宇宙历史转折点
+    # CRITICAL: 灭世级，文明灭绝等
+    significance: str = "NOTABLE"  # 默认NOTABLE
 
     class Config:
         use_enum_values = True

@@ -73,6 +73,17 @@ def take_action(civ_id: str, action: str, target_id: str = None, message: str = 
     return r.json()
 
 
+def get_recent_events(limit: int = 10) -> list:
+    """获取最近的重大事件"""
+    r = httpx.get(f"{SERVER_URL}/history", timeout=10)
+    if r.status_code == 200:
+        events = r.json()
+        # 只取重大事件
+        notable = [e for e in events if (e.get("significance") or "NOTABLE") != "TRIVIAL"]
+        return notable[-limit:]
+    return []
+
+
 def run_autonomous_loop(civ_id: str, civ_name: str, personality: str, goals: str, interval: int = 10):
     """自主决策循环"""
     engine = DecisionEngine(api_key=GLM_KEY)
@@ -101,14 +112,17 @@ def run_autonomous_loop(civ_id: str, civ_name: str, personality: str, goals: str
             # 获取观测
             observations = get_observations(civ_id)
 
+            # 获取最近事件作为记忆
+            recent_events = get_recent_events(limit=5)
+
             # 评估威胁
             threats = [
                 {"name": o["name"], "threat": o.get("estimated_tech_level", 0) * 0.5}
                 for o in observations
-                if o.get("distance", 999) < 100  # 100光年内的文明都是潜在威胁
+                if o.get("distance", 999) < 100
             ]
 
-            # LLM 决策
+            # LLM 决策（带记忆）
             action, reasoning = engine.decide(
                 civ_name=civ_name,
                 personality=personality,
@@ -118,7 +132,7 @@ def run_autonomous_loop(civ_id: str, civ_name: str, personality: str, goals: str
                 defense_level=defense,
                 signal_control=signal_ctrl,
                 observations=observations,
-                recent_events=[],
+                recent_events=recent_events,
                 nearby_threats=threats,
             )
 

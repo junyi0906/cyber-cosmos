@@ -79,18 +79,21 @@ async def get_universe():
 
 @app.get("/civilizations")
 async def list_civilizations():
-    return [
-        {
+    result = []
+    for civ in universe.state.civilizations.values():
+        # 探测范围 = 科技水平 × 400 光年
+        detection_range = civ.tech_level * 400
+        result.append({
             'id': civ.id,
             'name': civ.name,
             'position': civ.position,
             'tech_level': civ.tech_level,
             'defense_level': civ.defense_level,
+            'signal_control': civ.signal_control,
             'is_alive': civ.is_alive,
-        }
-        for civ in universe.state.civilizations.values()
-        if civ.is_alive
-    ]
+            'detection_range': round(detection_range, 1),
+        })
+    return result
 
 
 @app.get("/civilizations/{civ_id}")
@@ -98,7 +101,9 @@ async def get_civilization(civ_id: str):
     civ = universe.get_civilization(civ_id)
     if not civ:
         return {"error": "Civilization not found"}
-    return civ.model_dump()
+    data = civ.model_dump()
+    data['detection_range'] = round(civ.tech_level * 400, 1)
+    return data
 
 
 @app.post("/register")
@@ -127,13 +132,26 @@ async def take_action(req: ActionRequest):
         'CREATE_SUBWORLD': EventType.SUBWORLD_CREATED,
     }
     
+    # 事件默认NOTABLE，观察类TRIVIAL
+    ev_type = event_type_map.get(req.action, EventType.OBSERVATION)
+    significance = "NOTABLE"
+    if ev_type == EventType.OBSERVATION:
+        significance = "TRIVIAL"
+    elif ev_type == EventType.TECH_ADVANCED:
+        significance = "NOTABLE"
+    elif ev_type in (EventType.TECH_EXPLOSION, EventType.SIGNAL_SENT):
+        significance = "MAJOR"
+    elif ev_type in (EventType.STRIKE_LAUNCHED, EventType.CIVILIZATION_DESTROYED):
+        significance = "CRITICAL"
+
     event = UniverseEvent(
         event_id=str(id(civ)),
-        event_type=event_type_map.get(req.action, EventType.OBSERVATION),
+        event_type=ev_type,
         timestamp=civ.last_active,
         actor_id=req.civilization_id,
         target_id=req.target_id,
-        narrative=f"{civ.name} 采取了行动: {req.action}"
+        narrative=f"{civ.name} 采取了行动: {req.action}",
+        significance=significance
     )
     
     # 执行行动效果
@@ -174,7 +192,8 @@ async def take_action(req: ActionRequest):
                     actor_id=observer_civ.id,
                     target_id=civ.id,
                     threat_level=risk,
-                    narrative=f"{observer_civ.name} 观测到了来自 {civ.name} 的可疑信号（风险: {risk:.2f}）"
+                    narrative=f"{observer_civ.name} 观测到了来自 {civ.name} 的可疑信号（风险: {risk:.2f}）",
+                    significance="MAJOR" if risk > 0.5 else "NOTABLE"
                 )
                 event_history.record(obs_event)
                 
@@ -182,8 +201,45 @@ async def take_action(req: ActionRequest):
                     # 发动打击
                     universe.destroy_civilization(civ.id, "signal_exposure")
                     obs_event.event_type = EventType.STRIKE_LAUNCHED
+                    obs_event.significance = "CRITICAL"
                     obs_event.narrative = f"{observer_civ.name} 对 {civ.name} 发动了打击！原因：{reason}"
                     event_history.record(obs_event)
+
+                    # 文明被摧毁事件
+                    destroy_event = UniverseEvent(
+                        event_id=str(id(civ)) + "_destroyed",
+                        event_type=EventType.CIVILIZATION_DESTROYED,
+                        timestamp=civ.last_active,
+                        actor_id=observer_civ.id,
+                        target_id=civ.id,
+                        position=civ.position,
+                        narrative="",
+                        consequence=f"{civ.name} 因信号暴露被 {observer_civ.name} 毁灭",
+                        significance="CRITICAL"
+                    )
+                    event_history.record(destroy_event)
+
+                    # 立即为CRITICAL事件生成叙事并广播
+                    try:
+                        ng = get_narrative_generator()
+                        narrative = ng.generate(destroy_event, observer_civ.name, civ.name)
+                        destroy_event.narrative = narrative
+                        event_history.record(destroy_event)
+                        event_history.flush()
+                        # 广播摧毁事件
+                        await manager.broadcast({
+                            'type': 'event',
+                            'event': destroy_event.model_dump(mode='json'),
+                            'universe': universe.get_universe_summary()
+                        })
+                        # 也更新被摧毁文明的星图显示
+                        await manager.broadcast({
+                            'type': 'civilization_destroyed',
+                            'civilization_id': civ.id,
+                            'universe': universe.get_universe_summary()
+                        })
+                    except Exception as de:
+                        print(f"[destroy narrative error] {type(de).__name__}: {de}")
     
     universe.state.event_counter += 1
     event_history.record(event)
@@ -207,8 +263,26 @@ async def take_action(req: ActionRequest):
                 target_name = target_civ.name if target_civ else None
             narrative = ng.generate(event, civ.name, target_name)
             event.narrative = narrative
-            event_history.record(event)  # 更新叙事后的版本
+            event_history.record(event)
             event_history.flush()
+
+            # 对CRITICAL事件单独生成叙事并广播
+            if event.significance == "CRITICAL":
+                try:
+                    ng = get_narrative_generator()
+                    narrative2 = ng.generate(event, civ.name, target_name)
+                    destroy_event.narrative = narrative2
+                    event_history.record(destroy_event)
+                    event_history.flush()
+                    # 广播摧毁事件
+                    await manager.broadcast({
+                        'type': 'event',
+                        'event': destroy_event.model_dump(mode='json'),
+                        'universe': universe.get_universe_summary()
+                    })
+                except Exception as ne2:
+                    print(f"[narrative error destroy] {type(ne2).__name__}: {ne2}")
+
         except Exception as ne:
             print(f"[narrative error] {type(ne).__name__}: {ne}")
 

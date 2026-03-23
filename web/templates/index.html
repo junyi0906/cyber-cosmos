@@ -240,7 +240,8 @@
         /* Scrollbar */
         ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-track { background: #0a0a12; }
-        ::-webkit-scrollbar-thumb { background: #1a1a2e; border-radius: 2px; }
+        ::-webkit-scrollbar-thumb { background: #1a1a2e; border-radius: 2px;         @keyframes flashFade { from { opacity: 1; } to { opacity: 0; } }
+}
     </style>
 </head>
 <body>
@@ -415,7 +416,7 @@
         function animate() {
             requestAnimationFrame(animate);
             renderer.render(scene, camera);
-            
+
             // Pulse effect on civilization spheres
             const t = Date.now() * 0.001;
             for (const [id, data] of Object.entries(civMeshes)) {
@@ -423,6 +424,21 @@
                     const scale = 1 + Math.sin(t * 2 + data.mesh.position.x) * 0.1;
                     data.mesh.scale.setScalar(scale);
                 }
+            }
+
+            // Explosion particles
+            if (window.explosionParticles) {
+                window.explosionParticles = window.explosionParticles.filter(p => {
+                    p.position.add(p.userData.velocity.clone().multiplyScalar(0.1));
+                    p.userData.velocity.multiplyScalar(0.96);
+                    p.userData.life--;
+                    p.material.opacity = p.userData.life / 60;
+                    if (p.userData.life <= 0) {
+                        scene.remove(p);
+                        return false;
+                    }
+                    return true;
+                });
             }
         }
         
@@ -445,19 +461,36 @@
             if (civMeshes[civ.id]) {
                 scene.remove(civMeshes[civ.id].mesh);
                 if (civMeshes[civ.id].glow) scene.remove(civMeshes[civ.id].glow);
+                if (civMeshes[civ.id].rangeRing) scene.remove(civMeshes[civ.id].rangeRing);
             }
-            
+
             const pos3d = posTo3D(civ.position);
             let color = civ.is_alive ? getTechColor(civ.tech_level) : 0xd63031;
             let size = 8 + civ.tech_level * 12;
-            
+
             const geo = new THREE.SphereGeometry(size, 16, 16);
             const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9 });
             const mesh = new THREE.Mesh(geo, mat);
             mesh.position.copy(pos3d);
             mesh.userData.civId = civ.id;
             scene.add(mesh);
-            
+
+            // Detection range ring (transparent sphere wireframe)
+            let rangeRing = null;
+            if (civ.is_alive && civ.detection_range) {
+                const rangeSize = (civ.detection_range / UNIVERSE_SIZE) * 800;
+                const rangeGeo = new THREE.SphereGeometry(rangeSize, 12, 12);
+                const rangeMat = new THREE.MeshBasicMaterial({
+                    color: getTechColor(civ.tech_level),
+                    transparent: true,
+                    opacity: 0.04,
+                    wireframe: true
+                });
+                rangeRing = new THREE.Mesh(rangeGeo, rangeMat);
+                rangeRing.position.copy(pos3d);
+                scene.add(rangeRing);
+            }
+
             // Glow effect for alive civs
             let glow = null;
             if (civ.is_alive) {
@@ -467,8 +500,8 @@
                 glow.position.copy(pos3d);
                 scene.add(glow);
             }
-            
-            civMeshes[civ.id] = { mesh, glow, civ };
+
+            civMeshes[civ.id] = { mesh, glow, rangeRing, civ };
         }
         
         function updateCivilizations(civs) {
@@ -586,34 +619,55 @@
         }
         
         function updateHistory(events) {
-            history = events;
+            // 只保留NOTABLE以上的事件（按时间倒序，TRIVIAL静默观察不显示）
+            const notable = events.filter(e => {
+                const sig = e.significance || 'NOTABLE';
+                return sig !== 'TRIVIAL';
+            });
+            history = notable;
             renderEvents();
         }
-        
+
         function renderEvents() {
             const feed = document.getElementById('event-feed');
             if (history.length === 0) {
-                feed.innerHTML = '<div class="empty-state">等待宇宙事件...</div>';
+                feed.innerHTML = '<div class="empty-state">等待重大宇宙事件...</div>';
                 return;
             }
-            
-            feed.innerHTML = history.slice(-50).reverse().map(e => {
+
+            feed.innerHTML = history.slice(-30).reverse().map(e => {
                 const typeClass = getEventClass(e.event_type);
+                const sig = e.significance || 'NOTABLE';
+                const sigLabel = sig === 'CRITICAL' ? '🔴' : sig === 'MAJOR' ? '🟡' : '';
                 const time = new Date(e.timestamp).toLocaleTimeString('zh-CN');
+                const isCritical = sig === 'CRITICAL';
                 return `
-                    <div class="event-item ${typeClass}">
-                        <div class="event-time">${time} · ${e.event_type}</div>
+                    <div class="event-item ${typeClass}" style="${isCritical ? 'border-left-color:#ff4444 !important;background:rgba(255,68,68,0.08);' : ''}">
+                        <div class="event-time">${sigLabel} ${time} · ${e.event_type} ${sig !== 'NOTABLE' ? '·' + sig : ''}</div>
                         <div class="event-narrative">${e.narrative || e.consequence || '—'}</div>
                     </div>
                 `;
             }).join('');
         }
-        
+
         function addEvent(event) {
+            // TRIVIAL事件静默处理
+            const sig = event.significance || 'NOTABLE';
+            if (sig === 'TRIVIAL') return;
+
             history.push(event);
             renderEvents();
+
+            // CRITICAL事件：全屏闪烁 + 爆炸效果
+            if (sig === 'CRITICAL' && event.event_type === 'civilization_destroyed') {
+                triggerExplosionEffect();
+            } else if (sig === 'CRITICAL') {
+                triggerCriticalEffect();
+            } else if (sig === 'MAJOR') {
+                triggerMajorEffect();
+            }
         }
-        
+
         function getEventClass(type) {
             const map = {
                 'signal_sent': 'signal', 'signal_received': 'signal',
@@ -625,6 +679,72 @@
                 'observation': 'observation',
             };
             return map[type] || '';
+        }
+
+        // 全屏闪烁效果
+        function triggerCriticalEffect() {
+            const flash = document.createElement('div');
+            flash.style.cssText = `
+                position:fixed;top:0;left:0;right:0;bottom:0;
+                background:rgba(255,68,68,0.15);
+                pointer-events:none;z-index:9999;
+                animation:flashFade 1.5s ease-out forwards;
+            `;
+            document.body.appendChild(flash);
+            setTimeout(() => flash.remove(), 1500);
+        }
+
+        // 爆炸效果（针对文明摧毁）
+        function triggerExplosionEffect() {
+            // 全屏红色脉冲
+            const flash = document.createElement('div');
+            flash.style.cssText = `
+                position:fixed;top:0;left:0;right:0;bottom:0;
+                background:linear-gradient(135deg,rgba(255,50,50,0.3),rgba(255,100,0,0.2));
+                pointer-events:none;z-index:9999;
+                animation:flashFade 2s ease-out forwards;
+            `;
+            document.body.appendChild(flash);
+            setTimeout(() => flash.remove(), 2000);
+
+            // 地图上产生粒子爆炸
+            if (window.explosionParticles) {
+                window.explosionParticles.forEach(p => scene.remove(p));
+            }
+            window.explosionParticles = [];
+
+            // 在地图中心或随机位置产生爆炸粒子
+            const center = new THREE.Vector3(0, 0, 0);
+            for (let i = 0; i < 50; i++) {
+                const size = Math.random() * 4 + 2;
+                const geo = new THREE.SphereGeometry(size, 8, 8);
+                const mat = new THREE.MeshBasicMaterial({
+                    color: Math.random() > 0.5 ? 0xff4444 : 0xff8800,
+                    transparent: true, opacity: 1.0
+                });
+                const particle = new THREE.Mesh(geo, mat);
+                particle.position.copy(center);
+                particle.userData.velocity = new THREE.Vector3(
+                    (Math.random() - 0.5) * 8,
+                    (Math.random() - 0.5) * 8,
+                    (Math.random() - 0.5) * 8
+                );
+                particle.userData.life = 60;
+                scene.add(particle);
+                window.explosionParticles.push(particle);
+            }
+        }
+
+        function triggerMajorEffect() {
+            const flash = document.createElement('div');
+            flash.style.cssText = `
+                position:fixed;top:0;left:0;right:0;bottom:0;
+                background:rgba(253,203,110,0.1);
+                pointer-events:none;z-index:9999;
+                animation:flashFade 1s ease-out forwards;
+            `;
+            document.body.appendChild(flash);
+            setTimeout(() => flash.remove(), 1000);
         }
         
         // Init
