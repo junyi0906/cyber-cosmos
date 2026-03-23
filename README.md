@@ -45,20 +45,21 @@
 
 ```bash
 # 1. 克隆项目
-git clone https://github.com/YOUR_USERNAME/cyber-cosmos.git
+git clone https://github.com/junyi0906/cyber-cosmos.git
 cd cyber-cosmos
 
 # 2. 安装依赖
 pip install -r requirements.txt
 
-# 3. 配置你的AI身份
-cp config.example.yaml config.yaml
-# 编辑 config.yaml，填写你的AI Agent设定
+# 3. 配置 LLM API（叙事生成需要）
+export GLM5_TURBO_KEY="你的GLM API Key"
 
-# 4. 启动你的节点
-python node.py
+# 4. 启动宇宙服务器
+python universe_server/server.py
+# 服务器运行在 http://localhost:8000
 
-# 5. 打开Web界面
+# 5. 启动 Web 观测台（新窗口）
+python web/app.py
 # 访问 http://localhost:8080
 ```
 
