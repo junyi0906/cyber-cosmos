@@ -16,6 +16,7 @@ import uvicorn
 from universe.state import UniverseStateManager, CivilizationStatus
 from universe.events import UniverseEvent, EventType, EventHistory
 from universe.rules import CosmicRules
+from universe.narrative import get_narrative_generator, NarrativeGenerator
 
 
 app = FastAPI(title="Cyber Cosmos Universe Server")
@@ -187,7 +188,28 @@ async def take_action(req: ActionRequest):
     universe.state.event_counter += 1
     event_history.record(event)
     event_history.flush()
-    
+
+    # 生成叙事（对关键事件）
+    narrative_event_types = [
+        EventType.SIGNAL_SENT, EventType.STRIKE_LAUNCHED,
+        EventType.CIVILIZATION_DESTROYED, EventType.TECH_EXPLOSION,
+        EventType.OBSERVATION, EventType.ALLIANCE_FORMED
+    ]
+
+    if event.event_type in narrative_event_types:
+        try:
+            ng = get_narrative_generator()
+            target_name = None
+            if event.target_id:
+                target_civ = universe.get_civilization(event.target_id)
+                target_name = target_civ.name if target_civ else None
+            narrative = ng.generate(event, civ.name, target_name)
+            event.narrative = narrative
+            event_history.record(event)  # 更新叙事后的版本
+            event_history.flush()
+        except Exception:
+            pass  # 叙事生成失败不影响流程
+
     # 广播更新
     await manager.broadcast({
         'type': 'event',
