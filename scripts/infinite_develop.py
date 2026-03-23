@@ -56,6 +56,25 @@ def check_pause() -> bool:
     return False
 
 
+# ─── 已处理问题追踪（防止重复修复）──────────────────────────────
+_RESOLVED_ISSUES_FILE = PROJECT_ROOT / ".auto_develop_resolved.json"
+
+def get_resolved_issues() -> set:
+    try:
+        return set(json.loads(_RESOLVED_ISSUES_FILE.read_text()))
+    except:
+        return set()
+
+def mark_issue_resolved(issue_desc: str):
+    """标记某个问题为已处理"""
+    resolved = get_resolved_issues()
+    resolved.add(issue_desc)
+    _RESOLVED_ISSUES_FILE.write_text(json.dumps(list(resolved), ensure_ascii=False))
+
+def is_issue_resolved(issue_desc: str) -> bool:
+    return issue_desc in get_resolved_issues()
+
+
 def get_universe_status() -> dict:
     """获取宇宙运行状态"""
     try:
@@ -210,19 +229,22 @@ def scan_code_issues() -> list[dict]:
     auto_run = PROJECT_ROOT / "node" / "auto_run.py"
     if auto_run.exists():
         content = auto_run.read_text()
-        # 只在真正缺少时才报告（避免重复注入）
-        has_propose_alliance = content.count("PROPOSE_ALLIANCE") >= 2  # 至少2处才算真正集成
-        has_send_signal = "SEND_SIGNAL" in content
-        if not has_propose_alliance or not has_send_signal:
+        has_all = (content.count("PROPOSE_ALLIANCE") >= 1 and
+                   content.count("DECLARE_WAR") >= 1 and
+                   "SEND_SIGNAL" in content)
+        issue_desc = "Agent决策引擎缺少外交行动支持"
+        if not has_all and not is_issue_resolved(issue_desc):
             issues.append(
                 {
                     "file": "node/auto_run.py",
                     "line": 0,
                     "type": "missing_feature",
-                    "content": "Agent决策引擎缺少外交行动支持（SEND_SIGNAL/PROPOSE_ALLIANCE等）",
+                    "content": issue_desc,
                     "priority": 7,
                 }
             )
+        elif has_all:
+            mark_issue_resolved(issue_desc)
 
     # 6. 检查 Web UI 是否缺少外交/关系可视化
     ui_path = PROJECT_ROOT / "web" / "templates" / "index.html"
@@ -376,7 +398,9 @@ async def send_diplomatic_signal(req: dict):
         }
 
     if issue["type"] == "ui_missing":
-        # Web UI添加关系标签（使用更安全的锚点）
+        issue_desc = "Web UI缺少文明关系/外交状态的可视化展示"
+        if is_issue_resolved(issue_desc):
+            return None
         return {
             "file": "web/templates/index.html",
             "change_type": "inject",
@@ -579,6 +603,7 @@ def develop_cycle(cycle: int) -> dict:
         # 应用改动
         if apply_change(improvement):
             changes_made += 1
+            mark_issue_resolved(issue["content"])  # 成功后标记为已处理
             time.sleep(2)  # 给LLM喘息时间
 
     # 5. 测试
