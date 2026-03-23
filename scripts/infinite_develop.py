@@ -210,8 +210,10 @@ def scan_code_issues() -> list[dict]:
     auto_run = PROJECT_ROOT / "node" / "auto_run.py"
     if auto_run.exists():
         content = auto_run.read_text()
-        # 检查是否缺少外交行动
-        if "PROPOSE_ALLIANCE" not in content or "SEND_SIGNAL" not in content:
+        # 只在真正缺少时才报告（避免重复注入）
+        has_propose_alliance = content.count("PROPOSE_ALLIANCE") >= 2  # 至少2处才算真正集成
+        has_send_signal = "SEND_SIGNAL" in content
+        if not has_propose_alliance or not has_send_signal:
             issues.append(
                 {
                     "file": "node/auto_run.py",
@@ -374,13 +376,14 @@ async def send_diplomatic_signal(req: dict):
         }
 
     if issue["type"] == "ui_missing":
-        # Web UI添加关系标签
+        # Web UI添加关系标签（使用更安全的锚点）
         return {
             "file": "web/templates/index.html",
             "change_type": "inject",
-            "inject_anchor": "popup-status",
+            "inject_anchor": '<div class="popup-row"><span class="popup-label">状态</span><span id="popup-status">—</span></div>',
             "description": "文明详情弹窗显示外交关系状态",
             "code": '''
+                    <div class="popup-row"><span class="popup-label">状态</span><span id="popup-status">—</span></div>
                     <div id="popup-relation" style="margin-top:4px;color:#74b9ff;font-size:0.7rem;"></div>
 ''',
             "risk": "low"
