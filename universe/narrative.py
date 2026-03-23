@@ -123,17 +123,9 @@ class NarrativeGenerator:
                 if content:
                     return content[:100]
             return ""
-            return ""
+        return ""
 
-    
-    "declaration_of_war": "黑暗森林中，{actor}向{target}发出宣战信号，宇宙为之颤抖。",
-    "alliance_proposal": "{actor}向{target}伸出橄榄枝，宇宙格局即将改变。",
-    "diplomatic_signal": "{actor}发送加密外交信号，宇宙博弈进入新阶段。",
-    "espionage": "{actor}的间谍活动悄然进行，暗流涌动。",
-    "relation_changed": "宇宙关系网络发生微妙变化，{actor}与{target}的关系进入新时期。",
-    "truce_proposal": "{actor}提议休战，宇宙迎来短暂的宁静。",
-
-def _fallback_narrative(
+    def _fallback_narrative(
         self,
         event: UniverseEvent,
         civ_name: str,
