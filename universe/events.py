@@ -27,6 +27,12 @@ class EventType(Enum):
     OBSERVATION = "observation"             # 观测到其他文明
     PEACE_PROPOSAL = "peace_proposal"      # 提议和平
     TRADE_REQUEST = "trade_request"         # 贸易请求
+    ALLIANCE_PROPOSAL = "alliance_proposal"  # 结盟提议
+    DECLARATION_OF_WAR = "declaration_of_war"  # 宣战
+    DIPLOMATIC_SIGNAL = "diplomatic_signal"    # 外交信号
+    ESPIONAGE = "espionage"                    # 间谍行动
+    TRUCE_PROPOSAL = "truce_proposal"          # 休战提议
+    RELATION_CHANGED = "relation_changed"      # 关系变化
 
 
 class CivilizationDestroyedReason(Enum):

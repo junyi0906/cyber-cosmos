@@ -17,6 +17,7 @@ from universe.state import UniverseStateManager, CivilizationStatus
 from universe.events import UniverseEvent, EventType, EventHistory
 from universe.rules import CosmicRules
 from universe.narrative import get_narrative_generator, NarrativeGenerator
+from universe.diplomacy import get_relation_matrix, DiplomaticStatus
 
 
 app = FastAPI(title="Cyber Cosmos Universe Server")
@@ -130,8 +131,12 @@ async def take_action(req: ActionRequest):
         'ADVANCE_TECH': EventType.TECH_ADVANCED,
         'BROADCAST': EventType.SIGNAL_SENT,
         'CREATE_SUBWORLD': EventType.SUBWORLD_CREATED,
+        'SEND_SIGNAL': EventType.DIPLOMATIC_SIGNAL,
+        'PROPOSE_ALLIANCE': EventType.ALLIANCE_PROPOSAL,
+        'DECLARE_WAR': EventType.DECLARATION_OF_WAR,
+        'ESPIONAGE': EventType.ESPIONAGE,
     }
-    
+
     # 事件默认NOTABLE，观察类TRIVIAL
     ev_type = event_type_map.get(req.action, EventType.OBSERVATION)
     significance = "NOTABLE"
@@ -143,6 +148,10 @@ async def take_action(req: ActionRequest):
         significance = "MAJOR"
     elif ev_type in (EventType.STRIKE_LAUNCHED, EventType.CIVILIZATION_DESTROYED):
         significance = "CRITICAL"
+    elif ev_type == EventType.DECLARATION_OF_WAR:
+        significance = "CRITICAL"
+    elif ev_type in (EventType.ALLIANCE_PROPOSAL, EventType.DIPLOMATIC_SIGNAL):
+        significance = "NOTABLE"
 
     event = UniverseEvent(
         event_id=str(id(civ)),
@@ -240,7 +249,51 @@ async def take_action(req: ActionRequest):
                         })
                     except Exception as de:
                         print(f"[destroy narrative error] {type(de).__name__}: {de}")
-    
+
+    # 外交行动效果
+    elif req.action == 'SEND_SIGNAL' and req.target_id:
+        # 发送外交信号
+        rel_matrix = get_relation_matrix()
+        result = rel_matrix.send_signal(
+            civ.id, req.target_id,
+            req.message or "（加密通信）",
+            encrypted=True
+        )
+        if result["success"]:
+            event.narrative = f"{civ.name} 向目标发送了加密外交信号"
+            # 关系好的话提升信任
+            if result.get("relation_at_send", 0) > 0:
+                rel_matrix.update_relation(civ.id, req.target_id, 2, 3)
+        else:
+            event.narrative = f"外交信号被拒绝：{result.get('reason', '未知')}"
+
+    elif req.action == 'PROPOSE_ALLIANCE' and req.target_id:
+        # 提议结盟
+        rel_matrix = get_relation_matrix()
+        rel = rel_matrix.get_relation(civ.id, req.target_id)
+        if rel["relation"] >= 30 and rel["trust"] >= 40:
+            rel_matrix.propose_alliance(civ.id, req.target_id)
+            event.event_type = EventType.ALLIANCE_FORMED
+            event.narrative = f" {civ.name} 与目标建立了联盟！"
+            event.significance = "MAJOR"
+        else:
+            event.narrative = f"结盟提议被拒绝（关系不足）"
+
+    elif req.action == 'DECLARE_WAR' and req.target_id:
+        # 宣战
+        rel_matrix = get_relation_matrix()
+        rel_matrix.declare_war(civ.id, req.target_id)
+        event.event_type = EventType.DECLARATION_OF_WAR
+        event.narrative = f" {civ.name} 向目标宣战！黑暗森林法则生效"
+        event.significance = "CRITICAL"
+
+    elif req.action == 'ESPIONAGE' and req.target_id:
+        # 间谍行动
+        rel_matrix = get_relation_matrix()
+        rel_matrix.update_relation(civ.id, req.target_id, -10, -20)
+        event.event_type = EventType.ESPIONAGE
+        event.narrative = f"{civ.name} 对目标发动了间谍行动"
+
     universe.state.event_counter += 1
     event_history.record(event)
     event_history.flush()
