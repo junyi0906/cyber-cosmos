@@ -190,13 +190,15 @@ async def take_action(req: ActionRequest):
     event_history.flush()
 
     # 生成叙事（对关键事件）
-    narrative_event_types = [
+    narrative_event_types = {
         EventType.SIGNAL_SENT, EventType.STRIKE_LAUNCHED,
         EventType.CIVILIZATION_DESTROYED, EventType.TECH_EXPLOSION,
-        EventType.OBSERVATION, EventType.ALLIANCE_FORMED
-    ]
+        EventType.TECH_ADVANCED, EventType.OBSERVATION,
+        EventType.ALLIANCE_FORMED
+    }
 
-    if event.event_type in narrative_event_types:
+    ev_type_val = event.event_type.value if hasattr(event.event_type, 'value') else str(event.event_type)
+    if any(e.value == ev_type_val for e in narrative_event_types):
         try:
             ng = get_narrative_generator()
             target_name = None
@@ -207,8 +209,8 @@ async def take_action(req: ActionRequest):
             event.narrative = narrative
             event_history.record(event)  # 更新叙事后的版本
             event_history.flush()
-        except Exception:
-            pass  # 叙事生成失败不影响流程
+        except Exception as ne:
+            print(f"[narrative error] {type(ne).__name__}: {ne}")
 
     # 广播更新
     await manager.broadcast({

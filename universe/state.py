@@ -110,13 +110,20 @@ class UniverseStateManager:
     
     def save(self) -> None:
         """保存状态"""
+        from datetime import datetime
         data = self.state.model_dump(mode='json')
-        data['created_at'] = data['created_at'].isoformat()
+
+        def safe_iso(val):
+            if isinstance(val, datetime):
+                return val.isoformat()
+            return val  # already string
+
+        data['created_at'] = safe_iso(data['created_at'])
         for cid, civ in data.get('civilizations', {}).items():
-            civ['created_at'] = civ['created_at'].isoformat()
-            civ['last_active'] = civ['last_active'].isoformat()
+            civ['created_at'] = safe_iso(civ['created_at'])
+            civ['last_active'] = safe_iso(civ['last_active'])
         for sid, sw in data.get('subworlds', {}).items():
-            sw['created_at'] = sw['created_at'].isoformat()
+            sw['created_at'] = safe_iso(sw['created_at'])
         
         with open(self.state_file, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
