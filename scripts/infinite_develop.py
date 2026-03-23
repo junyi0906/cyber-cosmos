@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Cyber Cosmos — 无限自动开发系统 v4
+Cyber Cosmos — 无限自动开发系统 v5
 基于论文 "Effective Harnesses for Long-Running Agents" (arXiv:2603.05344)
 
 v3 → v4 关键修复:
@@ -24,6 +24,8 @@ import httpx
 import re
 import fcntl
 import atexit
+import urllib.request
+import ssl
 from datetime import datetime
 from pathlib import Path
 
@@ -56,7 +58,7 @@ def acquire_lock():
         return True
     except BlockingIOError:
         print(f"[{datetime.now().strftime('%H:%M:%S')}] ⛔ 已有实例在运行，退出", flush=True)
-        _lock_fd.close()
+        _lock_fd = None
         sys.exit(0)
 
 
@@ -86,6 +88,9 @@ def run(cmd: str, cwd: str = None) -> tuple[int, str, str]:
 
 
 # ─── 操作日志（Transparency） ─────────────────────────────────
+# oplog 内存缓冲，循环结束时统一写入
+_oplog_buffer = []
+
 def oplog(action: str, data: dict, cycle: int = 0):
     """所有操作记录到 JSONL 日志（cycle由调用方传入，不读文件）"""
     entry = {
@@ -94,11 +99,20 @@ def oplog(action: str, data: dict, cycle: int = 0):
         "action": action,
         **data
     }
+    _oplog_buffer.append(json.dumps(entry, ensure_ascii=False))
+
+def flush_oplog():
+    """循环结束时统一写入oplog"""
+    if not _oplog_buffer:
+        return
     try:
         with open(OPLOG_FILE, "a") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            for line in _oplog_buffer:
+                f.write(line + "\n")
+        _oplog_buffer.clear()
     except Exception as e:
-        print(f"[oplog error] {e}", flush=True)
+        import sys
+        print(f"[oplog flush error] {e}", file=sys.stderr, flush=True)
 
 
 # ─── Session 持久化 ───────────────────────────────────────────
@@ -131,8 +145,10 @@ def git_snapshot(cycle: int) -> tuple[str, list]:
     创建Git stash snapshot，返回 (snapshot_id, 新建文件列表)
     新建文件在apply之前记录，回滚时删除
     """
+    import random as _rand
     timestamp = int(time.time())
-    snapshot_id = f"cycle{cycle}_{timestamp}"
+    rand_id = _rand.randint(1000, 9999)
+    snapshot_id = f"cycle{cycle}_{timestamp}_{rand_id}"
 
     # 记录当前所有未跟踪的新文件
     code, new_files_out, _ = run("git ls-files --others --exclude-standard")
@@ -141,24 +157,23 @@ def git_snapshot(cycle: int) -> tuple[str, list]:
     # git stash 会保存跟踪文件的修改，不包括新文件
     code, out, err = run(f"git stash push -m 'auto_snapshot_{snapshot_id}'")
 
-    if code == 0:
-        oplog("snapshot", {"snapshot_id": snapshot_id, "new_files": new_files, "status": "created"}, cycle)
-        log(f"📸 Git snapshot: {snapshot_id} (保护{len(new_files)}个新文件)", "INFO")
-    else:
-        oplog("snapshot", {"snapshot_id": snapshot_id, "new_files": new_files, "status": "no_changes"}, cycle)
-        log(f"📸 无变更，snapshot: {snapshot_id}", "INFO")
-
+    if code != 0:
+        oplog("snapshot", {"snapshot_id": snapshot_id, "new_files": new_files, "status": "failed", "err": err[:100]}, cycle)
+        log(f"⚠️  Git stash失败: {err[:80]}", "WARN")
+        return None, new_files
+    oplog("snapshot", {"snapshot_id": snapshot_id, "new_files": new_files, "status": "created"}, cycle)
+    log(f"📸 Git snapshot: {snapshot_id} (保护{len(new_files)}个新文件)", "INFO")
     return snapshot_id, new_files
 
 
 def git_restore_snapshot(snapshot_id: str, new_files: list, cycle: int) -> bool:
     """
     从snapshot恢复：
-    1. git stash list 找到对应的 stash
-    2. git stash pop 恢复跟踪文件
+    1. 如果 snapshot_id=None（stash失败），只清理新文件
+    2. 否则 git stash list 找到对应的 stash 并 pop
     3. 删除新文件（这些文件不在stash里）
     """
-    # 先删除新文件（它们不在stash里）
+    # snapshot 失败时只有新文件需要清理
     for f in new_files:
         fp = PROJECT_ROOT / f
         if fp.exists():
@@ -168,6 +183,10 @@ def git_restore_snapshot(snapshot_id: str, new_files: list, cycle: int) -> bool:
                 log(f"🗑️  删除新文件: {f}", "WARN")
             except Exception as e:
                 log(f"⚠️  删除失败: {f} ({e})", "WARN")
+    if snapshot_id is None:
+        oplog("restore_snapshot", {"snapshot_id": None, "status": "no_snapshot"}, cycle)
+        log(f"↩️  无有效snapshot，仅清理新文件", "WARN")
+        return True
 
     # 尝试从 stash 恢复
     # 找到包含 snapshot_id 的 stash
@@ -223,8 +242,6 @@ def get_effective_events(limit: int = None) -> list:
 def llm_call(messages: list, model: str = "glm-4-plus",
              max_tokens: int = 600, temperature: float = 0.3) -> str:
     """LLM 调用，支持重试，SSL修复"""
-    import urllib.request
-    import ssl
 
     payload = {
         "model": model,
@@ -579,7 +596,7 @@ def plan_mode(issues: list, ctx: dict, cycle: int) -> list[dict]:
 
                 if idx < len(issues):
                     issue = issues[idx]
-                    fix = generate_fix_for_type(issue, fix_type, ctx, cycle)
+                    fix = generate_fix_for_type(issue, fix_type)
                     if fix:
                         fixes.append(fix)
                         log(f"  ✅ {issue['desc'][:40]} → {fix_type}", "PLAN")
@@ -595,14 +612,14 @@ def plan_mode(issues: list, ctx: dict, cycle: int) -> list[dict]:
         log("📋 Fallback直接生成fix", "WARN")
         oplog("plan_fallback", {}, cycle)
         for iss in issues[:MAX_AUTO_CHANGES]:
-            fix = generate_fix_for_type(iss, iss["type"], ctx, cycle)
+            fix = generate_fix_for_type(iss, iss["type"])
             if fix:
                 fixes.append(fix)
 
     return fixes[:MAX_AUTO_CHANGES]
 
 
-def generate_fix_for_type(issue: dict, fix_type: str, ctx: dict, cycle: int) -> dict | None:
+def generate_fix_for_type(issue: dict, fix_type: str) -> dict | None:
     """根据issue类型和fix_type生成修复方案"""
     fmap = issue["file"]
 
@@ -743,7 +760,7 @@ def apply_fix(fix: dict, cycle: int) -> bool:
     oplog("apply_fix_attempt", {"file": fix["file"], "desc": fix.get("desc", "")}, cycle)
 
     if not fp.exists():
-        if fix["change_type"] == "add":
+        if fix["change_type"] in ("add", "modify"):
             fp.parent.mkdir(parents=True, exist_ok=True)
             fp.write_text(fix.get("code", ""))
             log(f"✅ 新建: {fix['file']}", "OK")
@@ -803,7 +820,6 @@ def run_tests(cycle: int) -> bool:
     oplog("phase_test", {}, cycle)
     log("🧪 运行测试...", "INFO")
 
-    import ast
     test_files = [
         "universe/diplomacy.py",
         "universe_server/server.py",
@@ -877,7 +893,7 @@ def git_commit_push(title: str, changes: list, cycle: int) -> bool:
         time.sleep(wait)
 
     log(f"⛔ push连续失败3次，暂停push", "ERROR")
-    update_session(push_failures=get_session().get("push_failures", 0) + 1)
+    update_session(push_failures=min(get_session().get("push_failures", 0) + 1, 10))
     oplog("git_push_failed", {"attempts": 3}, cycle)
     return False
 
@@ -1011,7 +1027,7 @@ def develop_cycle(cycle: int) -> dict:
 def main():
     acquire_lock()
 
-    log("🚀 Cyber Cosmos 无限自动开发系统 v4 启动", "INFO")
+    log("🚀 Cyber Cosmos 无限自动开发系统 v5 启动", "INFO")
     log(f"📁 项目: {PROJECT_ROOT}", "INFO")
     log(f"⏱️  间隔: {DEVELOP_INTERVAL}秒 ({DEVELOP_INTERVAL//60}分钟)", "INFO")
     log(f"🛑 暂停: touch {PROJECT_ROOT}/AUTO_DEVELOP_PAUSE", "INFO")
@@ -1027,12 +1043,10 @@ def main():
         cycle += 1
         try:
             result = develop_cycle(cycle)
-            update_session(cycle=cycle)
 
-            # 连续push失败3次 → 发通知给主人
-            if get_session().get("push_failures", 0) >= 3:
-                log("⛔ 连续push失败3次，需要人工介入!", "ERROR")
-                # 可以在这里加通知逻辑
+            pf = get_session().get("push_failures", 0)
+            if pf >= 3:
+                log(f"⛔ push连续失败{pf}次，需要人工介入!", "ERROR")
 
             time.sleep(DEVELOP_INTERVAL)
         except KeyboardInterrupt:
@@ -1040,9 +1054,12 @@ def main():
             break
         except Exception as e:
             log(f"❌ 循环异常: {type(e).__name__}: {e}", "ERROR")
-            import traceback
-            traceback.print_exc()
+            import traceback; traceback.print_exc()
             time.sleep(60)
+        finally:
+            update_session(cycle=cycle)
+            flush_oplog()
+
 
 
 if __name__ == "__main__":
