@@ -206,6 +206,67 @@ def scan_code_issues() -> list[dict]:
             }
         )
 
+    # 5. 检查 node/auto_run.py 的决策循环是否有更智能的外交选项
+    auto_run = PROJECT_ROOT / "node" / "auto_run.py"
+    if auto_run.exists():
+        content = auto_run.read_text()
+        # 检查是否缺少外交行动
+        if "PROPOSE_ALLIANCE" not in content or "SEND_SIGNAL" not in content:
+            issues.append(
+                {
+                    "file": "node/auto_run.py",
+                    "line": 0,
+                    "type": "missing_feature",
+                    "content": "Agent决策引擎缺少外交行动支持（SEND_SIGNAL/PROPOSE_ALLIANCE等）",
+                    "priority": 7,
+                }
+            )
+
+    # 6. 检查 Web UI 是否缺少外交/关系可视化
+    ui_path = PROJECT_ROOT / "web" / "templates" / "index.html"
+    if ui_path.exists():
+        content = ui_path.read_text()
+        if "relation" not in content.lower() and "diplomacy" not in content.lower():
+            issues.append(
+                {
+                    "file": "web/templates/index.html",
+                    "line": 0,
+                    "type": "ui_missing",
+                    "content": "Web UI缺少文明关系/外交状态的可视化展示",
+                    "priority": 5,
+                }
+            )
+
+    # 7. 检查 server.py 是否缺少 /relations API端点
+    server_path = PROJECT_ROOT / "universe_server" / "server.py"
+    if server_path.exists():
+        content = server_path.read_text()
+        if "/relations" not in content:
+            issues.append(
+                {
+                    "file": "universe_server/server.py",
+                    "line": 0,
+                    "type": "missing_api",
+                    "content": "缺少 /relations API（查看文明间关系）",
+                    "priority": 6,
+                }
+            )
+
+    # 8. 检查 narative.py 的fallback叙事是否够丰富
+    narrative_path = PROJECT_ROOT / "universe" / "narrative.py"
+    if narrative_path.exists():
+        content = narrative_path.read_text()
+        if content.count("f\"") < 10:
+            issues.append(
+                {
+                    "file": "universe/narrative.py",
+                    "line": 0,
+                    "type": "narrative_quality",
+                    "content": "叙事fallback模板较少，可以扩展更多事件类型的叙事",
+                    "priority": 4,
+                }
+            )
+
     return issues
 
 
@@ -215,41 +276,147 @@ def generate_improvement(
     civs: list,
     recent_events: list,
 ) -> dict | None:
-    """用LLM为某个问题生成具体的改进方案"""
-    prompt = f"""你是Cyber Cosmos的开发者。当前需要改进以下问题：
+    """为某个问题生成具体的改进方案"""
+
+    # ─── 模式1：直接生成简单改进（不需要LLM）──────────────────────
+    if issue["type"] == "missing_api":
+        # 添加 /relations API 端点
+        code = '''
+@app.get("/relations/{civ_id}")
+async def get_relations(civ_id: str):
+    """获取某个文明与其他文明的全部关系"""
+    matrix = get_relation_matrix()
+    all_relations = matrix._relations.get(civ_id, {})
+    civ = universe.get_civilization(civ_id)
+    if not civ:
+        return {"error": "文明不存在"}
+    result = {}
+    for target_id, rel in all_relations.items():
+        target = universe.get_civilization(target_id)
+        result[target_id] = {
+            "target_name": target.name if target else target_id,
+            **rel
+        }
+    return result
+
+
+@app.post("/relations/send_signal")
+async def send_diplomatic_signal(req: dict):
+    """发送外交信号"""
+    from universe.diplomacy import get_relation_matrix
+    civ = universe.get_civilization(req.get("civilization_id"))
+    target = universe.get_civilization(req.get("target_id"))
+    if not civ or not target:
+        return {"error": "文明不存在"}
+    matrix = get_relation_matrix()
+    result = matrix.send_signal(
+        civ.id, target.id,
+        req.get("content", ""),
+        encrypted=req.get("encrypted", False)
+    )
+    if result["success"]:
+        # 记录外交事件
+        event = UniverseEvent(
+            event_id=f"{civ.id}_signal_{int(time.time())}",
+            event_type=EventType.DIPLOMATIC_SIGNAL,
+            timestamp=civ.last_active,
+            actor_id=civ.id,
+            target_id=target.id,
+            narrative=f"{civ.name} 向 {target.name} 发送了外交信号",
+            significance="NOTABLE"
+        )
+        event_history.record(event)
+        event_history.flush()
+        await manager.broadcast({
+            "type": "event",
+            "event": event.model_dump(mode="json"),
+            "universe": universe.get_universe_summary()
+        })
+    return result
+'''
+        return {
+            "file": "universe_server/server.py",
+            "change_type": "inject",
+            "inject_anchor": "if __name__ == '__main__'",
+            "description": "添加 /relations 和 /relations/send_signal API",
+            "code": code.strip(),
+            "risk": "low"
+        }
+
+    if issue["type"] == "missing_feature":
+        # 添加外交行动到 auto_run.py
+        return {
+            "file": "node/auto_run.py",
+            "change_type": "inject",
+            "inject_anchor": "# 评估威胁",
+            "description": "Agent决策增加外交行动选项（SEND_SIGNAL/PROPOSE_ALLIANCE等）",
+            "code": '''
+            # 外交行动选项（如果关系允许）
+            diplomacy_actions = []
+            for other_civ in civilizations:
+                if other_civ["id"] == civ_id or not other_civ["is_alive"]:
+                    continue
+                rel = get_relation_between(civ_id, other_civ["id"])
+                if rel and rel["relation"] > 20 and rel["status"] != "alliance":
+                    diplomacy_actions.append({
+                        "action": "PROPOSE_ALLIANCE",
+                        "target_id": other_civ["id"],
+                        "reason": f"与{other_civ['name']}关系良好，可提议结盟"
+                    })
+                if rel and rel["relation"] < -30:
+                    diplomacy_actions.append({
+                        "action": "DECLARE_WAR",
+                        "target_id": other_civ["id"],
+                        "reason": f"{other_civ['name']}关系恶劣，威胁极大"
+                    })
+''',
+            "risk": "low"
+        }
+
+    if issue["type"] == "ui_missing":
+        # Web UI添加关系标签
+        return {
+            "file": "web/templates/index.html",
+            "change_type": "inject",
+            "inject_anchor": "popup-status",
+            "description": "文明详情弹窗显示外交关系状态",
+            "code": '''
+                    <div id="popup-relation" style="margin-top:4px;color:#74b9ff;font-size:0.7rem;"></div>
+''',
+            "risk": "low"
+        }
+
+    # ─── 模式2：LLM生成复杂改进 ─────────────────────────────────
+    prompt = f"""你是Cyber Cosmos的开发者。当前需要改进：
 
 文件: {issue['file']}
 问题类型: {issue['type']}
 问题描述: {issue['content']}
-优先级: {issue['priority']}/10
-
-当前宇宙状态:
-- 文明数: {universe_status.get('alive_civilizations', '?')}
-- 事件数: {universe_status.get('event_count', '?')}
-- 存活文明: {[c['name'] for c in civs[:5]]}
 
 请给出:
-1. 具体要修改什么（精确到文件和行号）
-2. 修改后的代码（完整可运行的Python/HTML代码）
-3. 改动的原因
+1. 要修改的具体位置（精确到文件和行号）
+2. 改动后的完整代码
+
+要求:
+- 改动必须小而精确（少于50行新增/修改）
+- 不能修改其他地方的逻辑
+- 只输出该文件的增量代码（不是完整文件）
 
 直接输出JSON格式：
 {{
   "file": "文件路径",
-  "change_type": "add/modify/refactor",
-  "description": "改动说明",
-  "code": "完整的新代码或增量",
+  "change_type": "modify",
+  "description": "简短说明",
+  "code": "完整的修改后文件内容（不是增量）",
   "risk": "low/medium/high"
 }}
 
-如果问题不重要或风险太高，返回null。"""
+如果改动超过50行或风险高，返回null。"""
 
     response = analyze_with_llm(prompt)
     try:
-        # 尝试解析JSON
         if "null" in response or "NULL" in response:
             return None
-        # 找到JSON块
         start = response.find("{")
         end = response.rfind("}") + 1
         if start >= 0 and end > start:
@@ -263,25 +430,38 @@ def apply_change(change: dict) -> bool:
     """应用代码改进"""
     file_path = PROJECT_ROOT / change["file"]
     if not file_path.exists() and change["change_type"] == "add":
-        # 新文件
         file_path.parent.mkdir(parents=True, exist_ok=True)
 
     try:
         if change["change_type"] == "add":
             file_path.write_text(change["code"])
             log(f"  ✅ 创建新文件: {change['file']}")
-        elif change["change_type"] == "modify":
-            # 简单的完全覆盖
+            return True
+
+        elif change["change_type"] == "inject":
+            # 锚点注入：在指定锚点前插入代码
             content = file_path.read_text()
-            # 检查code字段是否是完整文件
+            anchor = change.get("inject_anchor", "")
+            if anchor and anchor in content:
+                idx = content.find(anchor)
+                new_content = content[:idx] + change["code"] + "\n" + content[idx:]
+                file_path.write_text(new_content)
+                log(f"  ✅ 注入代码到: {change['file']} (anchor: {anchor[:30]})")
+                return True
+            else:
+                log(f"  ⚠️  未找到注入锚点: {anchor[:30] if anchor else 'none'}")
+                return False
+
+        elif change["change_type"] == "modify":
+            content = file_path.read_text()
             if len(change["code"]) > len(content) * 0.5:
-                # 完整替换
                 file_path.write_text(change["code"])
                 log(f"  ✅ 修改文件: {change['file']} (完整替换)")
             else:
-                # 增量修改，只替换特定部分
                 log(f"  ⚠️  部分修改需要人工处理: {change['file']}")
                 return False
+            return True
+
         return True
     except Exception as e:
         log(f"  ❌ 应用失败: {e}")
