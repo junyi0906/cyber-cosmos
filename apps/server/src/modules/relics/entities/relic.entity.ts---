@@ -1,42 +1,45 @@
-import {
-  Entity,
-  PrimaryGeneratedColumn,
-  Column,
-  CreateDateColumn,
-  UpdateDateColumn,
-  Index,
-} from 'typeorm';
-import { RelicType, RelicStatus, RelicBonusData, RelicCoordinates } from '../interfaces/relic.interface';
+import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, Point } from 'typeorm';
+
+export enum RelicType {
+  RUINS = 'ruins',
+  ARTIFACT = 'artifact',
+  DATA_CACHE = 'data_cache',
+  WRECKAGE = 'wreckage',
+  MONOLITH = 'monolith',
+  BEACON = 'beacon',
+}
+
+export enum RelicStatus {
+  UNDISCOVERED = 'undiscovered',
+  DISCOVERED = 'discovered',
+  EXPLORED = 'explored',
+  CONTESTED = 'contested',
+  EXHAUSTED = 'exhausted',
+}
 
 @Entity('relics')
 export class Relic {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'jsonb' })
-  @Index()
-  coordinates: RelicCoordinates;
+  @Column({ type: 'geometry', spatialFeatureType: 'Point', srid: 4326 })
+  coordinates: Point;
 
   @Column({
     type: 'enum',
     enum: RelicType,
-    default: RelicType.TECH_BONUS,
+    default: RelicType.RUINS,
   })
   type: RelicType;
 
-  @Column({ type: 'jsonb', nullable: true })
-  bonusData: RelicBonusData;
+  @Column({ type: 'varchar', length: 500 })
+  name: string;
 
-  @Column({ name: 'origin_event_id', type: 'uuid', nullable: true })
-  @Index()
+  @Column({ type: 'text' })
+  description: string;
+
+  @Column({ type: 'uuid' })
   originEventId: string;
-
-  @Column({ name: 'owner_id', type: 'uuid', nullable: true })
-  @Index()
-  ownerId: string;
-
-  @Column({ name: 'discovered_at', type: 'timestamp', nullable: true })
-  discoveredAt: Date;
 
   @Column({
     type: 'enum',
@@ -45,21 +48,25 @@ export class Relic {
   })
   status: RelicStatus;
 
-  @Column({ type: 'text', nullable: true })
-  description: string;
+  @Column({ type: 'jsonb', nullable: true })
+  resources: {
+    ore?: number;
+    energy?: number;
+    techPoints?: number;
+  };
 
-  @Column({ name: 'historical_context', type: 'text', nullable: true })
-  historicalContext: string;
+  @Column({ type: 'jsonb', nullable: true })
+  techFragments: {
+    techId: string;
+    progress: number;
+  }[];
 
-  @Column({ name: 'research_progress', type: 'integer', default: 0 })
-  researchProgress: number;
+  @Column({ type: 'uuid', nullable: true })
+  discoveredBy: string;
 
-  @Column({ name: 'research_required', type: 'integer', default: 100 })
-  researchRequired: number;
+  @Column({ type: 'timestamp', nullable: true })
+  discoveredAt: Date;
 
-  @CreateDateColumn({ name: 'created_at' })
+  @CreateDateColumn()
   createdAt: Date;
-
-  @UpdateDateColumn({ name: 'updated_at' })
-  updatedAt: Date;
 }

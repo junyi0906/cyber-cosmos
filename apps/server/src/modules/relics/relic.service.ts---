@@ -1,0 +1,114 @@
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Relic, RelicStatus, RelicType } from './entities/relic.entity';
+
+export interface ExploreResult {
+  success: boolean;
+  resources?: {
+    ore?: number;
+    energy?: number;
+    techPoints?: number;
+  };
+  techFragments?: {
+    techId: string;
+    progress: number;
+  }[];
+  message: string;
+}
+
+@Injectable()
+export class RelicService {
+  private readonly logger = new Logger(RelicService.name);
+
+  constructor(
+    @InjectRepository(Relic)
+    private readonly relicRepository: Repository<Relic>,
+  ) {}
+
+  async findAll(): Promise<Relic[]> {
+    return this.relicRepository.find({
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  async findById(id: string): Promise<Relic | null> {
+    return this.relicRepository.findOne({ where: { id } });
+  }
+
+  async findByStatus(status: RelicStatus): Promise<Relic[]> {
+    return this.relicRepository.find({ where: { status } });
+  }
+
+  async findByOriginEvent(originEventId: string): Promise<Relic[]> {
+    return this.relicRepository.find({ where: { originEventId } });
+  }
+
+  async explore(relicId: string, civilizationId: string): Promise<ExploreResult> {
+    const relic = await this.findById(relicId);
+    
+    if (!relic) {
+      throw new NotFoundException(`Relic with ID ${relicId} not found`);
+    }
+
+    if (relic.status === RelicStatus.EXHAUSTED) {
+      return {
+        success: false,
+        message: 'This relic has been exhausted and contains nothing of value.',
+      };
+    }
+
+    relic.discoveredBy = civilizationId;
+    relic.discoveredAt = new Date();
+    relic.status = RelicStatus.DISCOVERED;
+
+    await this.relicRepository.save(relic);
+
+    return {
+      success: true,
+      resources: relic.resources,
+      techFragments: relic.techFragments || undefined,
+      message: `Successfully explored ${relic.name}. Resources and knowledge have been acquired.`,
+    };
+  }
+
+  async contest(relicId: string, civilizationId: string): Promise<{ success: boolean; message: string }> {
+    const relic = await this.findById(relicId);
+    
+    if (!relic) {
+      throw new NotFoundException(`Relic with ID ${relicId} not found`);
+    }
+
+    relic.status = RelicStatus.CONTESTED;
+    await this.relicRepository.save(relic);
+
+    this.logger.log(`Relic ${relicId} is now being contested by civilization ${civilizationId}`);
+
+    return {
+      success: true,
+      message: `Civilization ${civilizationId} has initiated a contest for ${relic.name}.`,
+    };
+  }
+
+  async exhaust(relicId: string): Promise<void> {
+    const relic = await this.findById(relicId);
+    
+    if (!relic) {
+      throw new NotFoundException(`Relic with ID ${relicId} not found`);
+    }
+
+    relic.status = RelicStatus.EXHAUSTED;
+    relic.resources = {};
+    relic.techFragments = null;
+
+    await this.relicRepository.save(relic);
+    this.logger.log(`Relic ${relicId} has been exhausted`);
+  }
+
+  async getRelicsInRadius(x: number, y: number, radius: number): Promise<Relic[]> {
+    return this.relicRepository
+      .createQueryBuilder('relic')
+      .where(`ST_DWithin(relic.coordinates, ST_MakePoint(${x}, ${y})::geometry, ${radius})`)
+      .getMany();
+  }
+}

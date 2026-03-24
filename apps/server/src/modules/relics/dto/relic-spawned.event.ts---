@@ -1,0 +1,13 @@
+export interface RelicSpawnedEvent {
+  relicId: string;
+  type: string;
+  name: string;
+  coordinates: {
+    x: number;
+    y: number;
+    z: number;
+  };
+  originEventId: string;
+  description: string;
+  timestamp: Date;
+}

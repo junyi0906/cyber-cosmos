@@ -1,0 +1,15 @@
+export interface MajorEventPayload {
+  id: string;
+  type: string;
+  name: string;
+  description: string;
+  impactLevel: number;
+  coordinates: {
+    x: number;
+    y: number;
+    z: number;
+  };
+  involvedCivilizations?: string[];
+  timestamp: Date;
+  metadata?: Record<string, any>;
+}
