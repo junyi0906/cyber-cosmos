@@ -123,9 +123,10 @@
         "feat-005",
         "feat-003"
       ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "依赖事件生成器和 Redis 通道"
+      "passes": true,
+      "last_attempt": "2026-03-24T18:54:38.767795",
+      "notes": "依赖事件生成器和 Redis 通道",
+      "retry_count": 0
     },
     {
       "id": "feat-007",
