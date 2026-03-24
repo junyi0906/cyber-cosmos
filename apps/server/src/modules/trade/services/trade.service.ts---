@@ -1,0 +1,166 @@
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { MarketService } from './market.service';
+import { ResourceType, SupplyDemand } from '../interfaces/market.interface';
+
+export interface TradeRoute {
+  id: string;
+  fromCivilization: string;
+  toCivilization: string;
+  resourceType: ResourceType;
+  quantity: number;
+  stability: number;
+  createdAt: Date;
+}
+
+export interface TradeAgreement {
+  id: string;
+  parties: [string, string];
+  resourceTypes: ResourceType[];
+  discount: number;
+  expiresAt: Date;
+}
+
+@Injectable()
+export class TradeService {
+  private readonly logger = new Logger(TradeService.name);
+  private readonly tradeRoutes: Map<string, TradeRoute> = new Map();
+  private readonly tradeAgreements: Map<string, TradeAgreement> = new Map();
+
+  constructor(private readonly marketService: MarketService) {}
+
+  async createTradeRoute(
+    fromCivilization: string,
+    toCivilization: string,
+    resourceType: ResourceType,
+    quantity: number,
+  ): Promise<TradeRoute> {
+    const id = `route-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    const stability = this.calculateRouteStability(fromCivilization, toCivilization);
+    
+    const route: TradeRoute = {
+      id,
+      fromCivilization,
+      toCivilization,
+      resourceType,
+      quantity,
+      stability,
+      createdAt: new Date(),
+    };
+    
+    this.tradeRoutes.set(id, route);
+    this.logger.log(`Created trade route ${id} from ${fromCivilization} to ${toCivilization}`);
+    
+    return route;
+  }
+
+  private calculateRouteStability(from: string, to: string): number {
+    const baseStability = 0.8;
+    const randomFactor = Math.random() * 0.2;
+    return Math.min(1, baseStability + randomFactor);
+  }
+
+  async executeTrade(routeId: string): Promise<{ success: boolean; totalPrice: number }> {
+    const route = this.tradeRoutes.get(routeId);
+    if (!route) {
+      throw new NotFoundException(`Trade route ${routeId} not found`);
+    }
+    
+    const marketPrice = await this.marketService.getPrice(route.resourceType);
+    if (!marketPrice) {
+      throw new NotFoundException(`Market price for ${route.resourceType} not found`);
+    }
+    
+    const agreement = this.findAgreementForParties(
+      route.fromCivilization,
+      route.toCivilization,
+    );
+    
+    let discount = 0;
+    if (agreement) {
+      discount = agreement.discount;
+    }
+    
+    const finalPrice = marketPrice.currentPrice * route.quantity * (1 - discount);
+    const success = Math.random() < route.stability;
+    
+    if (success) {
+      this.logger.log(
+        `Trade executed: ${route.quantity} ${route.resourceType} for ${finalPrice}`,
+      );
+    }
+    
+    return { success, totalPrice: success ? finalPrice : 0 };
+  }
+
+  private findAgreementForParties(
+    party1: string,
+    party2: string,
+  ): TradeAgreement | undefined {
+    for (const agreement of this.tradeAgreements.values()) {
+      if (
+        (agreement.parties[0] === party1 && agreement.parties[1] === party2) ||
+        (agreement.parties[0] === party2 && agreement.parties[1] === party1)
+      ) {
+        if (agreement.expiresAt > new Date()) {
+          return agreement;
+        }
+      }
+    }
+    return undefined;
+  }
+
+  async createTradeAgreement(
+    party1: string,
+    party2: string,
+    resourceTypes: ResourceType[],
+    discount: number,
+    durationDays: number = 30,
+  ): Promise<TradeAgreement> {
+    const id = `agreement-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    const agreement: TradeAgreement = {
+      id,
+      parties: [party1, party2],
+      resourceTypes,
+      discount,
+      expiresAt: new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000),
+    };
+    
+    this.tradeAgreements.set(id, agreement);
+    this.logger.log(`Created trade agreement ${id} between ${party1} and ${party2}`);
+    
+    return agreement;
+  }
+
+  getTradeRoutes(): TradeRoute[] {
+    return Array.from(this.tradeRoutes.values());
+  }
+
+  getTradeAgreements(): TradeAgreement[] {
+    return Array.from(this.tradeAgreements.values()).filter(
+      (a) => a.expiresAt > new Date(),
+    );
+  }
+
+  async getMarketOverview() {
+    const prices = await this.marketService.getAllPrices();
+    
+    const totalSupply = prices.reduce((sum, p) => sum + p.supply, 0);
+    const totalDemand = prices.reduce((sum, p) => sum + p.demand, 0);
+    
+    const avgPriceChange = prices.reduce((sum, p) => sum + p.priceChange, 0) / prices.length;
+    
+    let marketTrend: 'bullish' | 'bearish' | 'stable' = 'stable';
+    if (avgPriceChange > 5) marketTrend = 'bullish';
+    else if (avgPriceChange < -5) marketTrend = 'bearish';
+    
+    return {
+      prices,
+      totalSupply,
+      totalDemand,
+      marketTrend,
+      timestamp: new Date(),
+    };
+  }
+}

@@ -1,22 +1,45 @@
-export interface ResourcePrice {
-  resourceType: string;
-  basePrice: number;
+export interface MarketPrice {
+  resourceType: ResourceType;
   currentPrice: number;
-  volatility: number;
+  supply: number;
+  demand: number;
+  lastUpdate: Date;
+  priceChange: number;
 }
 
-export interface PriceQuote {
-  resourceType: string;
-  price: number;
-  quantity: number;
-  totalPrice: number;
+export enum ResourceType {
+  ORE = 'ore',
+  ENERGY = 'energy',
+  TECH_POINT = 'tech_point',
 }
 
-export interface CivilizationResources {
-  civilizationId: string;
-  resources: {
-    ore: number;
-    energy: number;
-    techPoints: number;
-  };
+export interface MarketState {
+  prices: Map<ResourceType, MarketPrice>;
+  totalVolume: number;
+  timestamp: Date;
 }
+
+export interface SupplyDemand {
+  resourceType: ResourceType;
+  supply: number;
+  demand: number;
+}
+
+export interface PriceCalculationResult {
+  basePrice: number;
+  calculatedPrice: number;
+  supplyDemandRatio: number;
+}
+
+export const BASE_PRICES: Record<ResourceType, number> = {
+  [ResourceType.ORE]: 100,
+  [ResourceType.ENERGY]: 150,
+  [ResourceType.TECH_POINT]: 500,
+};
+
+export const PRICE_CONSTANTS = {
+  MIN_PRICE: 10,
+  MAX_PRICE: 10000,
+  CACHE_TTL: 60,
+  VOLATILITY_FACTOR: 0.1,
+};

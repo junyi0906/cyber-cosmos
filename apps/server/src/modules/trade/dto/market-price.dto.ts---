@@ -1,30 +1,86 @@
-import { IsEnum, IsNumber, IsDateString } from 'class-validator';
-import { ResourceType } from '../interfaces/trade.interface';
+import { IsEnum, IsNumber, IsDate, IsOptional, Min, Max } from 'class-validator';
+import { Type } from 'class-transformer';
+import { ResourceType } from '../interfaces/market.interface';
 
 export class MarketPriceDto {
   @IsEnum(ResourceType)
   resourceType: ResourceType;
 
   @IsNumber()
-  price: number;
+  @Min(0)
+  currentPrice: number;
 
   @IsNumber()
-  changeRate: number;
+  @Min(0)
+  supply: number;
 
-  @IsDateString()
-  timestamp: string;
+  @IsNumber()
+  @Min(0)
+  demand: number;
+
+  @IsDate()
+  @Type(() => Date)
+  lastUpdate: Date;
+
+  @IsNumber()
+  priceChange: number;
 }
 
-export class MarketPriceHistoryDto {
+export class SupplyDemandDto {
+  @IsEnum(ResourceType)
   resourceType: ResourceType;
-  prices: {
-    price: number;
-    timestamp: Date;
-  }[];
+
+  @IsNumber()
+  @Min(0)
+  supply: number;
+
+  @IsNumber()
+  @Min(0)
+  demand: number;
+}
+
+export class PriceQueryDto {
+  @IsOptional()
+  @IsEnum(ResourceType)
+  resourceType?: ResourceType;
+}
+
+export class MarketUpdateDto {
+  @IsNumber()
+  @Min(0)
+  @Max(1000000)
+  oreSupply: number;
+
+  @IsNumber()
+  @Min(0)
+  @Max(1000000)
+  oreDemand: number;
+
+  @IsNumber()
+  @Min(0)
+  @Max(1000000)
+  energySupply: number;
+
+  @IsNumber()
+  @Min(0)
+  @Max(1000000)
+  energyDemand: number;
+
+  @IsNumber()
+  @Min(0)
+  @Max(1000000)
+  techPointSupply: number;
+
+  @IsNumber()
+  @Min(0)
+  @Max(1000000)
+  techPointDemand: number;
 }
 
 export class MarketOverviewDto {
   prices: MarketPriceDto[];
-  lastUpdated: Date;
+  totalSupply: number;
+  totalDemand: number;
   marketTrend: 'bullish' | 'bearish' | 'stable';
+  timestamp: Date;
 }

@@ -1,0 +1,204 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { Inject } from '@nestjs/common';
+import { 
+  MarketPrice, 
+  ResourceType, 
+  SupplyDemand, 
+  BASE_PRICES, 
+  PRICE_CONSTANTS 
+} from '../interfaces/market.interface';
+
+@Injectable()
+export class MarketService {
+  private readonly logger = new Logger(MarketService.name);
+  private readonly marketState: Map<ResourceType, MarketPrice> = new Map();
+  private previousPrices: Map<ResourceType, number> = new Map();
+
+  constructor(
+    @Inject('REDIS_CLIENT') private readonly redisClient: any,
+  ) {
+    this.initializeMarket();
+  }
+
+  private initializeMarket(): void {
+    Object.values(ResourceType).forEach(type => {
+      const basePrice = BASE_PRICES[type];
+      this.marketState.set(type, {
+        resourceType: type,
+        currentPrice: basePrice,
+        supply: 1000,
+        demand: 1000,
+        lastUpdate: new Date(),
+        priceChange: 0,
+      });
+      this.previousPrices.set(type, basePrice);
+    });
+  }
+
+  calculatePrice(supply: number, demand: number, basePrice: number): number {
+    if (supply <= 0) {
+      supply = 0.1;
+    }
+    
+    const supplyDemandRatio = demand / supply;
+    let calculatedPrice = basePrice * supplyDemandRatio * 0.5 + basePrice * 0.5;
+    
+    const volatility = (Math.random() - 0.5) * 2 * PRICE_CONSTANTS.VOLATILITY_FACTOR;
+    calculatedPrice = calculatedPrice * (1 + volatility);
+    
+    calculatedPrice = Math.max(
+      PRICE_CONSTANTS.MIN_PRICE,
+      Math.min(PRICE_CONSTANTS.MAX_PRICE, calculatedPrice)
+    );
+    
+    return Math.round(calculatedPrice * 100) / 100;
+  }
+
+  async updateMarketState(supplyDemands: SupplyDemand[]): Promise<MarketPrice[]> {
+    const updatedPrices: MarketPrice[] = [];
+    
+    for (const sd of supplyDemands) {
+      const basePrice = BASE_PRICES[sd.resourceType];
+      const newPrice = this.calculatePrice(sd.supply, sd.demand, basePrice);
+      
+      const previousPrice = this.previousPrices.get(sd.resourceType) || basePrice;
+      const priceChange = ((newPrice - previousPrice) / previousPrice) * 100;
+      
+      const marketPrice: MarketPrice = {
+        resourceType: sd.resourceType,
+        currentPrice: newPrice,
+        supply: sd.supply,
+        demand: sd.demand,
+        lastUpdate: new Date(),
+        priceChange: Math.round(priceChange * 100) / 100,
+      };
+      
+      this.marketState.set(sd.resourceType, marketPrice);
+      this.previousPrices.set(sd.resourceType, newPrice);
+      updatedPrices.push(marketPrice);
+    }
+    
+    await this.cachePrices(updatedPrices);
+    
+    this.logger.log(`Updated market state for ${supplyDemands.length} resources`);
+    return updatedPrices;
+  }
+
+  async getPrice(resourceType: ResourceType): Promise<MarketPrice | null> {
+    try {
+      const cachedPrice = await this.redisClient?.get(`market:price:${resourceType}`);
+      
+      if (cachedPrice) {
+        return JSON.parse(cachedPrice);
+      }
+      
+      const memoryPrice = this.marketState.get(resourceType);
+      if (memoryPrice) {
+        await this.cacheSinglePrice(memoryPrice);
+        return memoryPrice;
+      }
+      
+      return null;
+    } catch (error) {
+      this.logger.error(`Failed to get price for ${resourceType}: ${error.message}`);
+      return this.marketState.get(resourceType) || null;
+    }
+  }
+
+  async getAllPrices(): Promise<MarketPrice[]> {
+    try {
+      const cachedPrices = await this.redisClient?.get('market:prices:all');
+      
+      if (cachedPrices) {
+        return JSON.parse(cachedPrices);
+      }
+      
+      const prices = Array.from(this.marketState.values());
+      await this.cachePrices(prices);
+      return prices;
+    } catch (error) {
+      this.logger.error(`Failed to get all prices: ${error.message}`);
+      return Array.from(this.marketState.values());
+    }
+  }
+
+  async cachePrices(prices: MarketPrice[]): Promise<void> {
+    try {
+      if (!this.redisClient) {
+        this.logger.warn('Redis client not available, skipping cache');
+        return;
+      }
+      
+      const multi = this.redisClient.multi();
+      
+      for (const price of prices) {
+        const key = `market:price:${price.resourceType}`;
+        multi.set(key, JSON.stringify(price), 'EX', PRICE_CONSTANTS.CACHE_TTL);
+      }
+      
+      multi.set(
+        'market:prices:all',
+        JSON.stringify(prices),
+        'EX',
+        PRICE_CONSTANTS.CACHE_TTL
+      );
+      
+      await multi.exec();
+      this.logger.debug(`Cached ${prices.length} market prices`);
+    } catch (error) {
+      this.logger.error(`Failed to cache prices: ${error.message}`);
+    }
+  }
+
+  private async cacheSinglePrice(price: MarketPrice): Promise<void> {
+    try {
+      if (!this.redisClient) return;
+      
+      await this.redisClient.set(
+        `market:price:${price.resourceType}`,
+        JSON.stringify(price),
+        'EX',
+        PRICE_CONSTANTS.CACHE_TTL
+      );
+    } catch (error) {
+      this.logger.error(`Failed to cache single price: ${error.message}`);
+    }
+  }
+
+  getMarketHistory(resourceType: ResourceType, limit: number = 24): Promise<MarketPrice[]> {
+    return new Promise((resolve) => {
+      resolve([this.marketState.get(resourceType)!].filter(Boolean));
+    });
+  }
+
+  async aggregateUniverseSupplyDemand(): Promise<SupplyDemand[]> {
+    const result: SupplyDemand[] = [];
+    
+    for (const [type, price] of this.marketState) {
+      result.push({
+        resourceType: type,
+        supply: price.supply,
+        demand: price.demand,
+      });
+    }
+    
+    return result;
+  }
+
+  simulateMarketTick(): void {
+    const supplyDemands: SupplyDemand[] = [];
+    
+    for (const [type, price] of this.marketState) {
+      const supplyChange = (Math.random() - 0.5) * 100;
+      const demandChange = (Math.random() - 0.5) * 100;
+      
+      supplyDemands.push({
+        resourceType: type,
+        supply: Math.max(100, price.supply + supplyChange),
+        demand: Math.max(100, price.demand + demandChange),
+      });
+    }
+    
+    this.updateMarketState(supplyDemands);
+  }
+}

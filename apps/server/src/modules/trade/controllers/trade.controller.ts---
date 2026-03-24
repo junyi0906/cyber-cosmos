@@ -1,0 +1,33 @@
+import { Controller, Get, Post, Body, Param, Query } from '@nestjs/common';
+import { MarketService } from '../services/market.service';
+import { TradeService } from '../services/trade.service';
+import { ResourceType } from '../interfaces/market.interface';
+import { MarketUpdateDto, PriceQueryDto } from '../dto/market-price.dto';
+
+@Controller('trade')
+export class TradeController {
+  constructor(
+    private readonly marketService: MarketService,
+    private readonly tradeService: TradeService,
+  ) {}
+
+  @Get('market/prices')
+  async getAllPrices() {
+    return this.marketService.getAllPrices();
+  }
+
+  @Get('market/price/:type')
+  async getPrice(@Param('type') type: ResourceType) {
+    return this.marketService.getPrice(type);
+  }
+
+  @Get('market/overview')
+  async getMarketOverview() {
+    return this.tradeService.getMarketOverview();
+  }
+
+  @Post('market/update')
+  async updateMarket(@Body() updateDto: MarketUpdateDto) {
+    const supplyDemands = [
+      { resourceType: ResourceType.ORE, supply: updateDto.oreSupply, demand: updateDto.oreDemand },
+      { resourceType: ResourceType.ENER
