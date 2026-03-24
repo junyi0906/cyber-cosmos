@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import h337 from 'heatmap.js';
 
-interface GalaxyData {
+interface StarSystem {
   id: string;
   name: string;
   x: number;
@@ -13,432 +13,259 @@ interface GalaxyData {
     water: number;
   };
   population?: number;
-  civilizations?: string[];
+  civilizationId?: string;
 }
 
 interface HeatmapProps {
-  data: GalaxyData[];
-  width?: number;
-  height?: number;
-  onPointClick?: (data: GalaxyData) => void;
+  starSystems: StarSystem[];
+  width: number;
+  height: number;
+  visible?: boolean;
+  onLayerChange?: (layer: HeatmapLayer) => void;
+  onOpacityChange?: (opacity: number) => void;
 }
 
-type HeatmapType = 'resources' | 'population' | 'none';
+export type HeatmapLayer = 'resources' | 'population' | 'none';
 
-interface HeatmapConfig {
-  type: HeatmapType;
-  opacity: number;
-  radius: number;
-  blur: number;
+interface HeatmapData {
+  max: number;
+  data: Array<{ x: number; y: number; value: number }>;
 }
 
 const Heatmap: React.FC<HeatmapProps> = ({
-  data,
-  width = 800,
-  height = 600,
-  onPointClick,
+  starSystems,
+  width,
+  height,
+  visible = true,
+  onLayerChange,
+  onOpacityChange,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const heatmapInstanceRef = useRef<h337.Heatmap<'value', 'x' | 'y' | 'value'> | null>(null);
-  const overlayRef = useRef<HTMLDivElement>(null);
-
-  const [config, setConfig] = useState<HeatmapConfig>({
-    type: 'none',
-    opacity: 0.6,
-    radius: 40,
-    blur: 0.85,
-  });
-
-  const [showControls, setShowControls] = useState(true);
+  const heatmapInstanceRef = useRef<h337.Heatmap<'value', 'x', 'y'> | null>(null);
+  const [currentLayer, setCurrentLayer] = useState<HeatmapLayer>('none');
+  const [opacity, setOpacity] = useState(0.6);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   // 初始化热力图实例
   useEffect(() => {
-    if (!containerRef.current) return;
-
-    heatmapInstanceRef.current = h337.create({
-      container: containerRef.current,
-      radius: config.radius,
-      maxOpacity: config.opacity,
-      minOpacity: 0,
-      blur: config.blur,
-    });
-
-    return () => {
-      heatmapInstanceRef.current = null;
-    };
-  }, []);
-
-  // 更新热力图配置
-  useEffect(() => {
-    if (!heatmapInstanceRef.current) return;
-
-    heatmapInstanceRef.current.configure({
-      radius: config.radius,
-      maxOpacity: config.opacity,
-      blur: config.blur,
-    });
-  }, [config.opacity, config.radius, config.blur]);
-
-  // 计算数据范围
-  const getDataBounds = useCallback((galaxyData: GalaxyData[]) => {
-    if (galaxyData.length === 0) {
-      return { minX: 0, maxX: 100, minY: 0, maxY: 100 };
+    if (containerRef.current && !heatmapInstanceRef.current) {
+      heatmapInstanceRef.current = h337.create({
+        container: containerRef.current,
+        radius: 40,
+        maxOpacity: opacity,
+        minOpacity: 0,
+        blur: 0.75,
+      });
+      setIsInitialized(true);
     }
-
-    let minX = Infinity, maxX = -Infinity;
-    let minY = Infinity, maxY = -Infinity;
-
-    galaxyData.forEach(galaxy => {
-      minX = Math.min(minX, galaxy.x);
-      maxX = Math.max(maxX, galaxy.x);
-      minY = Math.min(minY, galaxy.y);
-      maxY = Math.max(maxY, galaxy.y);
-    });
-
-    // 添加边距
-    const paddingX = (maxX - minX) * 0.1 || 10;
-    const paddingY = (maxY - minY) * 0.1 || 10;
-
-    return {
-      minX: minX - paddingX,
-      maxX: maxX + paddingX,
-      minY: minY - paddingY,
-      maxY: maxY + paddingY,
-    };
   }, []);
 
-  // 坐标转换
-  const transformCoordinates = useCallback((
-    x: number,
-    y: number,
-    bounds: { minX: number; maxX: number; minY: number; maxY: number }
-  ) => {
-    const scaleX = width / (bounds.maxX - bounds.minX);
-    const scaleY = height / (bounds.maxY - bounds.minY);
+  // 更新透明度
+  useEffect(() => {
+    if (heatmapInstanceRef.current) {
+      heatmapInstanceRef.current.configure({
+        maxOpacity: opacity,
+      });
+    }
+  }, [opacity]);
 
-    return {
-      x: Math.round((x - bounds.minX) * scaleX),
-      y: Math.round(height - (y - bounds.minY) * scaleY), // 翻转Y轴
-    };
-  }, [width, height]);
+  // 计算资源分布数据
+  const calculateResourceData = useCallback((): HeatmapData => {
+    const data: Array<{ x: number; y: number; value: number }> = [];
+    let max = 0;
 
-  // 生成资源热力图数据
-  const generateResourceData = useCallback((galaxyData: GalaxyData[]) => {
-    const bounds = getDataBounds(galaxyData);
-    const points: Array<{ x: number; y: number; value: number }> = [];
-    let maxValue = 0;
+    starSystems.forEach((system) => {
+      if (system.resources) {
+        const totalResources =
+          (system.resources.minerals || 0) +
+          (system.resources.energy || 0) +
+          (system.resources.water || 0);
+        
+        // 将3D坐标投影到2D
+        const x = ((system.x + 1000) / 2000) * width;
+        const y = ((system.y + 1000) / 2000) * height;
 
-    galaxyData.forEach(galaxy => {
-      const totalResources = (galaxy.resources?.minerals || 0) +
-        (galaxy.resources?.energy || 0) +
-        (galaxy.resources?.water || 0);
-
-      if (totalResources > 0) {
-        const coords = transformCoordinates(galaxy.x, galaxy.y, bounds);
-        points.push({
-          x: coords.x,
-          y: coords.y,
-          value: totalResources,
-        });
-        maxValue = Math.max(maxValue, totalResources);
+        if (totalResources > 0) {
+          data.push({
+            x: Math.max(0, Math.min(width, x)),
+            y: Math.max(0, Math.min(height, y)),
+            value: totalResources,
+          });
+          max = Math.max(max, totalResources);
+        }
       }
     });
 
-    return { points, maxValue };
-  }, [getDataBounds, transformCoordinates]);
+    return { max: max || 1, data };
+  }, [starSystems, width, height]);
 
-  // 生成人口热力图数据
-  const generatePopulationData = useCallback((galaxyData: GalaxyData[]) => {
-    const bounds = getDataBounds(galaxyData);
-    const points: Array<{ x: number; y: number; value: number }> = [];
-    let maxValue = 0;
+  // 计算人口密度数据
+  const calculatePopulationData = useCallback((): HeatmapData => {
+    const data: Array<{ x: number; y: number; value: number }> = [];
+    let max = 0;
 
-    galaxyData.forEach(galaxy => {
-      const population = galaxy.population || 0;
-      if (population > 0) {
-        const coords = transformCoordinates(galaxy.x, galaxy.y, bounds);
-        points.push({
-          x: coords.x,
-          y: coords.y,
-          value: population,
+    starSystems.forEach((system) => {
+      if (system.population && system.population > 0) {
+        // 将3D坐标投影到2D
+        const x = ((system.x + 1000) / 2000) * width;
+        const y = ((system.y + 1000) / 2000) * height;
+
+        data.push({
+          x: Math.max(0, Math.min(width, x)),
+          y: Math.max(0, Math.min(height, y)),
+          value: system.population,
         });
-        maxValue = Math.max(maxValue, population);
+        max = Math.max(max, system.population);
       }
     });
 
-    return { points, maxValue };
-  }, [getDataBounds, transformCoordinates]);
+    return { max: max || 1, data };
+  }, [starSystems, width, height]);
 
   // 更新热力图数据
   useEffect(() => {
-    if (!heatmapInstanceRef.current || config.type === 'none') {
-      if (heatmapInstanceRef.current) {
-        heatmapInstanceRef.current.setData({ max: 0, data: [] });
-      }
-      return;
-    }
+    if (!heatmapInstanceRef.current || !isInitialized) return;
 
-    let heatmapData: { points: Array<{ x: number; y: number; value: number }>; maxValue: number };
+    let heatmapData: HeatmapData;
 
-    switch (config.type) {
+    switch (currentLayer) {
       case 'resources':
-        heatmapData = generateResourceData(data);
+        heatmapData = calculateResourceData();
         break;
       case 'population':
-        heatmapData = generatePopulationData(data);
+        heatmapData = calculatePopulationData();
         break;
+      case 'none':
       default:
-        return;
+        heatmapData = { max: 1, data: [] };
+        break;
     }
 
-    if (heatmapData.points.length === 0) return;
+    heatmapInstanceRef.current.setData(heatmapData);
+  }, [
+    currentLayer,
+    starSystems,
+    isInitialized,
+    calculateResourceData,
+    calculatePopulationData,
+  ]);
 
-    heatmapInstanceRef.current.setData({
-      max: heatmapData.maxValue,
-      data: heatmapData.points,
-    });
-  }, [data, config.type, generateResourceData, generatePopulationData]);
-
-  // 处理点击事件
-  const handleContainerClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
-    if (!onPointClick || !overlayRef.current) return;
-
-    const rect = overlayRef.current.getBoundingClientRect();
-    const clickX = event.clientX - rect.left;
-    const clickY = event.clientY - rect.top;
-
-    const bounds = getDataBounds(data);
-    const scaleX = (bounds.maxX - bounds.minX) / width;
-    const scaleY = (bounds.maxY - bounds.minY) / height;
-
-    const worldX = bounds.minX + clickX * scaleX;
-    const worldY = bounds.maxY - clickY * scaleY;
-
-    // 找到最近的星系
-    let closestGalaxy: GalaxyData | null = null;
-    let minDistance = Infinity;
-
-    data.forEach(galaxy => {
-      const distance = Math.sqrt(
-        Math.pow(galaxy.x - worldX, 2) + Math.pow(galaxy.y - worldY, 2)
-      );
-      if (distance < minDistance && distance < 20) {
-        minDistance = distance;
-        closestGalaxy = galaxy;
-      }
-    });
-
-    if (closestGalaxy) {
-      onPointClick(closestGalaxy);
-    }
-  }, [data, width, height, getDataBounds, onPointClick]);
-
-  // 图层类型切换
-  const handleTypeChange = (type: HeatmapType) => {
-    setConfig(prev => ({ ...prev, type }));
+  // 图层切换处理
+  const handleLayerChange = (layer: HeatmapLayer) => {
+    setCurrentLayer(layer);
+    onLayerChange?.(layer);
   };
 
-  // 透明度调节
+  // 透明度调节处理
   const handleOpacityChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setConfig(prev => ({ ...prev, opacity: parseFloat(event.target.value) }));
+    const newOpacity = parseFloat(event.target.value);
+    setOpacity(newOpacity);
+    onOpacityChange?.(newOpacity);
   };
 
-  // 半径调节
-  const handleRadiusChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setConfig(prev => ({ ...prev, radius: parseInt(event.target.value, 10) }));
-  };
-
-  // 模糊度调节
-  const handleBlurChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setConfig(prev => ({ ...prev, blur: parseFloat(event.target.value) }));
-  };
+  if (!visible) {
+    return null;
+  }
 
   return (
-    <div className="heatmap-container" style={{ position: 'relative', width, height }}>
-      {/* 热力图层 */}
+    <div className="heatmap-container" style={{ position: 'relative' }}>
+      {/* 热力图画布 */}
       <div
         ref={containerRef}
         style={{
+          width: `${width}px`,
+          height: `${height}px`,
           position: 'absolute',
           top: 0,
           left: 0,
-          width: '100%',
-          height: '100%',
           pointerEvents: 'none',
-          zIndex: 10,
-        }}
-      />
-
-      {/* 交互覆盖层 */}
-      <div
-        ref={overlayRef}
-        onClick={handleContainerClick}
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          width: '100%',
-          height: '100%',
-          zIndex: 20,
-          cursor: 'crosshair',
+          zIndex: 5,
         }}
       />
 
       {/* 控制面板 */}
       <div
+        className="heatmap-controls"
         style={{
           position: 'absolute',
-          top: 10,
-          right: 10,
-          zIndex: 30,
-          background: 'rgba(0, 0, 0, 0.8)',
+          top: '10px',
+          right: '10px',
+          backgroundColor: 'rgba(0, 0, 0, 0.7)',
           padding: '15px',
           borderRadius: '8px',
+          zIndex: 10,
           color: '#fff',
           minWidth: '200px',
         }}
       >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: '10px',
-            cursor: 'pointer',
-          }}
-          onClick={() => setShowControls(!showControls)}
-        >
-          <span style={{ fontWeight: 'bold' }}>热力图控制</span>
-          <span>{showControls ? '▼' : '▲'}</span>
+        <h4 style={{ margin: '0 0 10px 0', fontSize: '14px' }}>热力图控制</h4>
+        
+        {/* 图层选择 */}
+        <div style={{ marginBottom: '15px' }}>
+          <label style={{ display: 'block', marginBottom: '5px', fontSize: '12px' }}>
+            图层类型
+          </label>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+            {(['none', 'resources', 'population'] as HeatmapLayer[]).map((layer) => (
+              <label
+                key={layer}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                }}
+              >
+                <input
+                  type="radio"
+                  name="heatmapLayer"
+                  value={layer}
+                  checked={currentLayer === layer}
+                  onChange={() => handleLayerChange(layer)}
+                  style={{ marginRight: '8px' }}
+                />
+                {layer === 'none' && '无'}
+                {layer === 'resources' && '资源分布'}
+                {layer === 'population' && '人口密度'}
+              </label>
+            ))}
+          </div>
         </div>
 
-        {showControls && (
-          <>
-            {/* 图层类型选择 */}
-            <div style={{ marginBottom: '15px' }}>
-              <label style={{ display: 'block', marginBottom: '5px', fontSize: '12px' }}>
-                图层类型
-              </label>
-              <div style={{ display: 'flex', gap: '5px' }}>
-                {(['none', 'resources', 'population'] as HeatmapType[]).map(type => (
-                  <button
-                    key={type}
-                    onClick={() => handleTypeChange(type)}
-                    style={{
-                      flex: 1,
-                      padding: '6px 8px',
-                      border: 'none',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      fontSize: '11px',
-                      background: config.type === type ? '#4a9eff' : '#333',
-                      color: '#fff',
-                      transition: 'background 0.2s',
-                    }}
-                  >
-                    {type === 'none' ? '关闭' : type === 'resources' ? '资源' : '人口'}
-                  </button>
-                ))}
-              </div>
+        {/* 透明度调节 */}
+        <div>
+          <label style={{ display: 'block', marginBottom: '5px', fontSize: '12px' }}>
+            透明度: {Math.round(opacity * 100)}%
+          </label>
+          <input
+            type="range"
+            min="0.1"
+            max="1"
+            step="0.05"
+            value={opacity}
+            onChange={handleOpacityChange}
+            style={{
+              width: '100%',
+              cursor: 'pointer',
+            }}
+          />
+        </div>
+
+        {/* 图例 */}
+        {currentLayer !== 'none' && (
+          <div style={{ marginTop: '15px', fontSize: '11px' }}>
+            <div
+              style={{
+                height: '15px',
+                background: 'linear-gradient(to right, rgba(0,0,255,0.5), rgba(0,255,0,0.5), rgba(255,255,0,0.5), rgba(255,0,0,0.5))',
+                borderRadius: '3px',
+                marginBottom: '5px',
+              }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span>低</span>
+              <span>高</span>
             </div>
-
-            {/* 透明度滑块 */}
-            <div style={{ marginBottom: '12px' }}>
-              <label style={{ display: 'block', marginBottom: '5px', fontSize: '12px' }}>
-                透明度: {Math.round(config.opacity * 100)}%
-              </label>
-              <input
-                type="range"
-                min="0.1"
-                max="1"
-                step="0.05"
-                value={config.opacity}
-                onChange={handleOpacityChange}
-                style={{ width: '100%', cursor: 'pointer' }}
-              />
-            </div>
-
-            {/* 半径滑块 */}
-            <div style={{ marginBottom: '12px' }}>
-              <label style={{ display: 'block', marginBottom: '5px', fontSize: '12px' }}>
-                影响半径: {config.radius}px
-              </label>
-              <input
-                type="range"
-                min="10"
-                max="100"
-                step="5"
-                value={config.radius}
-                onChange={handleRadiusChange}
-                style={{ width: '100%', cursor: 'pointer' }}
-              />
-            </div>
-
-            {/* 模糊度滑块 */}
-            <div style={{ marginBottom: '5px' }}>
-              <label style={{ display: 'block', marginBottom: '5px', fontSize: '12px' }}>
-                模糊度: {Math.round(config.blur * 100)}%
-              </label>
-              <input
-                type="range"
-                min="0.3"
-                max="1"
-                step="0.05"
-                value={config.blur}
-                onChange={handleBlurChange}
-                style={{ width: '100%', cursor: 'pointer' }}
-              />
-            </div>
-
-            {/* 图例 */}
-            {config.type !== 'none' && (
-              <div style={{ marginTop: '15px', paddingTop: '10px', borderTop: '1px solid #444' }}>
-                <div style={{ fontSize: '11px', marginBottom: '5px' }}>图例</div>
-                <div
-                  style={{
-                    height: '15px',
-                    borderRadius: '3px',
-                    background: 'linear-gradient(to right, rgba(0,0,255,0.5), rgba(0,255,0,0.8), rgba(255,255,0,0.9), rgba(255,0,0,1))',
-                  }}
-                />
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', marginTop: '3px' }}>
-                  <span>低</span>
-                  <span>{config.type === 'resources' ? '资源密度' : '人口密度'}</span>
-                  <span>高</span>
-                </div>
-              </div>
-            )}
-          </>
-        )}
-      </div>
-
-      {/* 数据统计 */}
-      <div
-        style={{
-          position: 'absolute',
-          bottom: 10,
-          left: 10,
-          zIndex: 30,
-          background: 'rgba(0, 0, 0, 0.7)',
-          padding: '10px',
-          borderRadius: '6px',
-          color: '#fff',
-          fontSize: '11px',
-        }}
-      >
-        <div>星系总数: {data.length}</div>
-        {config.type === 'resources' && (
-          <div>
-            总资源:{' '}
-            {data.reduce((sum, g) =>
-              sum + (g.resources?.minerals || 0) + (g.resources?.energy || 0) + (g.resources?.water || 0), 0
-            ).toLocaleString()}
-          </div>
-        )}
-        {config.type === 'population' && (
-          <div>
-            总人口:{' '}
-            {data.reduce((sum, g) => sum + (g.population || 0), 0).toLocaleString()}
           </div>
         )}
       </div>
