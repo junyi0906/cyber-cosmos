@@ -1,4 +1,15 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
-import { Relic, RelicStatus, RelicType }
+import { Repository } from 'typeorm';
+import { Relic } from './relic.entity';
+import { Civilization } from '../civilization/civilization.entity';
+
+@Injectable()
+export class RelicService {
+  private readonly logger = new Logger(RelicService.name);
+
+  constructor(
+    @InjectRepository(Relic)
+    private relicRepository: Repository<Relic>,
+    @InjectRepository(Civilization)
+    private civilizationRepository: Repository<Civilization>,

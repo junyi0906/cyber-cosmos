@@ -1,0 +1,22 @@
+import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
+
+@Entity('civilizations')
+export class Civilization {
+  @PrimaryGeneratedColumn()
+  id: number;
+
+  @Column()
+  name: string;
+
+  @Column('float')
+  x: number;
+
+  @Column('float')
+  y: number;
+
+  @Column('simple-json', { default: '{}' })
+  resources: { minerals?: number; energy?: number; knowledge?: number };
+
+  @Column('simple-json', { default: '{}' })
+  attributes: { military?: number; science?: number; stability?: number };
+}
