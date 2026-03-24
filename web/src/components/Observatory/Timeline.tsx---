@@ -1,161 +1,201 @@
-import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as d3 from 'd3';
-import { useMockTimelineData, TimelineEvent, Civilization, TimelineFilters } from '../../hooks/useTimelineData';
+import { useTimelineData, TimelineEvent, TimelineFilters } from '../../hooks/useTimelineData';
 
-interface TimelineProps {
-  onEventSelect?: (event: TimelineEvent) => void;
-  onTimeChange?: (start: number, end: number) => void;
-  height?: number;
-  initialZoom?: number;
-}
-
-const EVENT_COLORS: Record<string, string> = {
+// 事件类型颜色映射
+const EVENT_COLORS: Record<TimelineEvent['type'], string> = {
   macro: '#FF6B6B',
   micro: '#4ECDC4',
   diplomacy: '#45B7D1',
-  war: '#F7DC6F',
-  discovery: '#BB8FCE',
-  disaster: '#E74C3C',
+  war: '#FF8C42',
+  discovery: '#96CEB4',
+  disaster: '#DDA0DD',
 };
 
-const EVENT_ICONS: Record<string, string> = {
-  macro: '★',
-  micro: '●',
-  diplomacy: '♦',
-  war: '⚔',
-  discovery: '✦',
-  disaster: '⚡',
+// 事件类型标签
+const EVENT_LABELS: Record<TimelineEvent['type'], string> = {
+  macro: '宏观事件',
+  micro: '微观事件',
+  diplomacy: '外交事件',
+  war: '战争事件',
+  discovery: '发现事件',
+  disaster: '灾难事件',
 };
 
-export const Timeline: React.FC<TimelineProps> = ({
-  onEventSelect,
-  onTimeChange,
-  height = 300,
-  initialZoom = 1,
-}) => {
-  const svgRef = useRef<SVGSVGElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [containerWidth, setContainerWidth] = useState(800);
-  const [selectedEvent, setSelectedEvent] = useState<TimelineEvent | null>(null);
-  const [hoveredEvent, setHoveredEvent] = useState<TimelineEvent | null>(null);
-  const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
-  const [zoomLevel, setZoomLevel] = useState(initialZoom);
-  const [visibleRange, setVisibleRange] = useState<{ start: number; end: number } | null>(null);
+interface TimelineProps {
+  height?: number;
+  onEventSelect?: (event: TimelineEvent) => void;
+  onTimeRangeChange?: (range: [number, number]) => void;
+}
 
-  const {
-    events,
-    allEvents,
-    civilizations,
-    galaxies,
-    loading,
-    error,
-    filters,
-    updateFilters,
-    resetFilters,
-  } = useMockTimelineData();
+interface EventDetailModalProps {
+  event: TimelineEvent | null;
+  onClose: () => void;
+  onRelatedEventClick: (eventId: string) => void;
+}
 
-  const margin = { top: 40, right: 40, bottom: 60, left: 60 };
-  const innerWidth = containerWidth - margin.left - margin.right;
-  const innerHeight = height - margin.top - margin.bottom;
+// 事件详情弹窗组件
+const EventDetailModal: React.FC<EventDetailModalProps> = ({ event, onClose, onRelatedEventClick }) => {
+  if (!event) return null;
 
-  useEffect(() => {
-    const handleResize = () => {
-      if (containerRef.current) {
-        setContainerWidth(containerRef.current.clientWidth);
-      }
-    };
+  const formatImpact = (value: number | undefined, prefix: string = '') => {
+    if (value === undefined) return null;
+    const sign = value >= 0 ? '+' : '';
+    const color = value >= 0 ? '#4ECDC4' : '#FF6B6B';
+    return (
+      <span style={{ color, marginLeft: '8px' }}>
+        {prefix}{sign}{value.toLocaleString()}
+      </span>
+    );
+  };
 
-    handleResize();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  const timeDomain = useMemo(() => {
-    if (events.length === 0) {
-      const now = Date.now();
-      return [now - 365 * 24 * 60 * 60 * 1000, now];
-    }
-    const timestamps = events.map(e => e.timestamp);
-    const minTime = Math.min(...timestamps);
-    const maxTime = Math.max(...timestamps);
-    const padding = (maxTime - minTime) * 0.1;
-    return [minTime - padding, maxTime + padding];
-  }, [events]);
-
-  const xScale = useMemo(() => {
-    return d3.scaleTime()
-      .domain(timeDomain)
-      .range([0, innerWidth]);
-  }, [timeDomain, innerWidth]);
-
-  const yScale = useMemo(() => {
-    const types = ['macro', 'micro', 'diplomacy', 'war', 'discovery', 'disaster'];
-    return d3.scaleBand<string>()
-      .domain(types)
-      .range([0, innerHeight])
-      .padding(0.3);
-  }, [innerHeight]);
-
-  useEffect(() => {
-    if (!svgRef.current || events.length === 0 || loading) return;
-
-    const svg = d3.select(svgRef.current);
-    svg.selectAll('*').remove();
-
-    const g = svg.append('g')
-      .attr('transform', `translate(${margin.left},${margin.top})`);
-
-    const zoom = d3.zoom<SVGSVGElement, unknown>()
-      .scaleExtent([0.1, 10])
-      .on('zoom', (event) => {
-        const { transform } = event;
-        setZoomLevel(transform.k);
+  return (
+    <div style={styles.modalOverlay} onClick={onClose}>
+      <div style={styles.modalContent} onClick={e => e.stopPropagation()}>
+        <div style={styles.modalHeader}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{
+              ...styles.eventTypeBadge,
+              backgroundColor: EVENT_COLORS[event.type],
+            }}>
+              {EVENT_LABELS[event.type]}
+            </div>
+            <h3 style={styles.modalTitle}>{event.title}</h3>
+          </div>
+          <button style={styles.closeButton} onClick={onClose}>×</button>
+        </div>
         
-        const newXScale = transform.rescaleX(xScale);
-        
-        g.selectAll('.event-marker')
-          .attr('cx', d => newXScale((d as TimelineEvent).timestamp));
-        
-        g.selectAll('.event-line')
-          .attr('x1', d => newXScale((d as TimelineEvent).timestamp))
-          .attr('x2', d => newXScale((d as TimelineEvent).timestamp));
-        
-        g.select('.x-axis').call(
-          d3.axisBottom(newXScale)
-            .ticks(Math.floor(innerWidth / 80))
-            .tickFormat(d => d3.timeFormat('%Y-%m-%d')(d as Date))
-        );
+        <div style={styles.modalBody}>
+          <div style={styles.modalSection}>
+            <div style={styles.timestamp}>
+              {new Date(event.timestamp).toLocaleString('zh-CN', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
+            </div>
+          </div>
 
-        g.select('.grid-lines').selectAll('.grid-line')
-          .attr('x1', d => newXScale(d as Date))
-          .attr('x2', d => newXScale(d as Date));
+          <div style={styles.modalSection}>
+            <p style={styles.description}>{event.description}</p>
+          </div>
 
-        const domain = newXScale.domain();
-        setVisibleRange({ start: domain[0].getTime(), end: domain[1].getTime() });
-        onTimeChange?.(domain[0].getTime(), domain[1].getTime());
-      });
+          <div style={styles.modalSection}>
+            <h4 style={styles.sectionTitle}>位置信息</h4>
+            <div style={styles.infoGrid}>
+              <div style={styles.infoItem}>
+                <span style={styles.infoLabel}>文明:</span>
+                <span style={styles.infoValue}>{event.civilizationName || '未知'}</span>
+              </div>
+              <div style={styles.infoItem}>
+                <span style={styles.infoLabel}>星系:</span>
+                <span style={styles.infoValue}>{event.galaxyName || '未知'}</span>
+              </div>
+            </div>
+          </div>
 
-    svg.call(zoom);
+          <div style={styles.modalSection}>
+            <h4 style={styles.sectionTitle}>影响评估</h4>
+            <div style={styles.impactGrid}>
+              <div style={styles.impactItem}>
+                <span style={styles.impactLabel}>人口</span>
+                {formatImpact(event.impact.population)}
+              </div>
+              <div style={styles.impactItem}>
+                <span style={styles.impactLabel}>科技</span>
+                {formatImpact(event.impact.technology, '+')}
+              </div>
+              <div style={styles.impactItem}>
+                <span style={styles.impactLabel}>经济</span>
+                {formatImpact(event.impact.economy)}
+              </div>
+              <div style={styles.impactItem}>
+                <span style={styles.impactLabel}>军事</span>
+                {formatImpact(event.impact.military, '+')}
+              </div>
+            </div>
+          </div>
 
-    const gridLines = g.append('g').attr('class', 'grid-lines');
-    const tickCount = Math.floor(innerWidth / 60);
-    const ticks = xScale.ticks(tickCount);
-    
-    gridLines.selectAll('.grid-line')
-      .data(ticks)
-      .enter()
-      .append('line')
-      .attr('class', 'grid-line')
-      .attr('x1', d => xScale(d))
-      .attr('x2', d => xScale(d))
-      .attr('y1', 0)
-      .attr('y2', innerHeight)
-      .attr('stroke', 'rgba(255,255,255,0.1)')
-      .attr('stroke-dasharray', '2,2');
+          {event.relatedEvents && event.relatedEvents.length > 0 && (
+            <div style={styles.modalSection}>
+              <h4 style={styles.sectionTitle}>相关事件</h4>
+              <div style={styles.relatedEventsList}>
+                {event.relatedEvents.map(relId => (
+                  <button
+                    key={relId}
+                    style={styles.relatedEventButton}
+                    onClick={() => onRelatedEventClick(relId)}
+                  >
+                    {relId}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
 
-    g.append('g')
-      .attr('class', 'y-axis')
-      .call(d3.axisLeft(yScale)
-        .tickFormat(d => d.toUpperCase()))
-      .selectAll('text')
-      .attr('fill',
+// 悬停预览组件
+const HoverPreview: React.FC<{ event: TimelineEvent | null; position: { x: number; y: number } }> = ({ event, position }) => {
+  if (!event) return null;
+
+  return (
+    <div
+      style={{
+        ...styles.hoverPreview,
+        left: position.x,
+        top: position.y,
+      }}
+    >
+      <div style={styles.hoverHeader}>
+        <div
+          style={{
+            ...styles.hoverTypeDot,
+            backgroundColor: EVENT_COLORS[event.type],
+          }}
+        />
+        <span style={styles.hoverTitle}>{event.title}</span>
+      </div>
+      <div style={styles.hoverTime}>
+        {new Date(event.timestamp).toLocaleDateString('zh-CN')}
+      </div>
+      <div style={styles.hoverCiv}>
+        {event.civilizationName} · {event.galaxyName}
+      </div>
+    </div>
+  );
+};
+
+// 筛选器组件
+const FilterPanel: React.FC<{
+  filters: TimelineFilters;
+  civilizations: { id: string; name: string; color: string }[];
+  galaxies: { id: string; name: string }[];
+  onFilterChange: (filters: Partial<TimelineFilters>) => void;
+  onReset: () => void;
+}> = ({ filters, civilizations, galaxies, onFilterChange, onReset }) => {
+  const eventTypes: TimelineEvent['type'][] = ['macro', 'micro', 'diplomacy', 'war', 'discovery', 'disaster'];
+
+  return (
+    <div style={styles.filterPanel}>
+      <div style={styles.filterSection}>
+        <label style={styles.filterLabel}>文明筛选</label>
+        <div style={styles.filterOptions}>
+          {civilizations.map(civ => (
+            <label key={civ.id} style={styles.filterCheckbox}>
+              <input
+                type="checkbox"
+                checked={filters.civilizations.includes(civ.id)}
+                onChange={(e) => {
+                  const newCivs = e.target.checked
+                    ? [...filters.civilizations, civ.id]
+                    : filters.civilizations.filter(id => id !== civ.id);
+                  onFilterChange({ civilizations: newCivs });
+                }}
+              />
+              <span style

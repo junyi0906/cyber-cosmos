@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 
+// 事件类型定义
 export interface TimelineEvent {
   id: string;
   timestamp: number;
@@ -36,7 +37,7 @@ export interface TimelineFilters {
   civilizations: string[];
   galaxies: string[];
   eventTypes: string[];
-  timeRange: { start: number; end: number };
+  timeRange: [number, number];
 }
 
 export interface TimelineState {
@@ -45,262 +46,199 @@ export interface TimelineState {
   galaxies: Galaxy[];
   loading: boolean;
   error: string | null;
-  totalEvents: number;
 }
 
-const API_BASE = '/api';
+// 模拟数据生成器
+const generateMockEvents = (count: number): TimelineEvent[] => {
+  const eventTypes: TimelineEvent['type'][] = ['macro', 'micro', 'diplomacy', 'war', 'discovery', 'disaster'];
+  const civilizations = [
+    { id: 'civ-001', name: 'Zephyr Dominion' },
+    { id: 'civ-002', name: 'Nova Collective' },
+    { id: 'civ-003', name: 'Quantum Ascendancy' },
+    { id: 'civ-004', name: 'Stellar Federation' },
+    { id: 'civ-005', name: 'Void Walkers' },
+  ];
+  const galaxies = [
+    { id: 'gal-001', name: 'Andromeda Prime' },
+    { id: 'gal-002', name: 'Milky Way Core' },
+    { id: 'gal-003', name: 'Triangulum Nebula' },
+  ];
 
-export function useTimelineData() {
-  const [state, setState] = useState<TimelineState>({
-    events: [],
-    civilizations: [],
-    galaxies: [],
-    loading: false,
-    error: null,
-    totalEvents: 0,
-  });
-
-  const [filters, setFilters] = useState<TimelineFilters>({
-    civilizations: [],
-    galaxies: [],
-    eventTypes: [],
-    timeRange: { start: 0, end: Date.now() },
-  });
-
-  const fetchEvents = useCallback(async () => {
-    setState(prev => ({ ...prev, loading: true, error: null }));
-    
-    try {
-      const params = new URLSearchParams();
-      
-      if (filters.civilizations.length > 0) {
-        params.append('civilizations', filters.civilizations.join(','));
-      }
-      if (filters.galaxies.length > 0) {
-        params.append('galaxies', filters.galaxies.join(','));
-      }
-      if (filters.eventTypes.length > 0) {
-        params.append('types', filters.eventTypes.join(','));
-      }
-      params.append('start', filters.timeRange.start.toString());
-      params.append('end', filters.timeRange.end.toString());
-
-      const response = await fetch(`${API_BASE}/timeline/events?${params}`);
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch events: ${response.statusText}`);
-      }
-      
-      const data = await response.json();
-      
-      setState(prev => ({
-        ...prev,
-        events: data.events || [],
-        totalEvents: data.total || 0,
-        loading: false,
-      }));
-    } catch (error) {
-      setState(prev => ({
-        ...prev,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        loading: false,
-      }));
-    }
-  }, [filters]);
-
-  const fetchCivilizations = useCallback(async () => {
-    try {
-      const response = await fetch(`${API_BASE}/civilizations`);
-      if (response.ok) {
-        const data = await response.json();
-        setState(prev => ({ ...prev, civilizations: data.civilizations || [] }));
-      }
-    } catch (error) {
-      console.error('Failed to fetch civilizations:', error);
-    }
-  }, []);
-
-  const fetchGalaxies = useCallback(async () => {
-    try {
-      const response = await fetch(`${API_BASE}/galaxies`);
-      if (response.ok) {
-        const data = await response.json();
-        setState(prev => ({ ...prev, galaxies: data.galaxies || [] }));
-      }
-    } catch (error) {
-      console.error('Failed to fetch galaxies:', error);
-    }
-  }, []);
-
-  const fetchEventDetails = useCallback(async (eventId: string): Promise<TimelineEvent | null> => {
-    try {
-      const response = await fetch(`${API_BASE}/timeline/events/${eventId}`);
-      if (response.ok) {
-        return await response.json();
-      }
-    } catch (error) {
-      console.error('Failed to fetch event details:', error);
-    }
-    return null;
-  }, []);
-
-  const updateFilters = useCallback((newFilters: Partial<TimelineFilters>) => {
-    setFilters(prev => ({ ...prev, ...newFilters }));
-  }, []);
-
-  const resetFilters = useCallback(() => {
-    setFilters({
-      civilizations: [],
-      galaxies: [],
-      eventTypes: [],
-      timeRange: { start: 0, end: Date.now() },
-    });
-  }, []);
-
-  useEffect(() => {
-    fetchCivilizations();
-    fetchGalaxies();
-  }, [fetchCivilizations, fetchGalaxies]);
-
-  useEffect(() => {
-    fetchEvents();
-  }, [fetchEvents]);
-
-  return {
-    ...state,
-    filters,
-    updateFilters,
-    resetFilters,
-    fetchEventDetails,
-    refresh: fetchEvents,
+  const eventTitles: Record<TimelineEvent['type'], string[]> = {
+    macro: ['Supernova Eruption', 'Black Hole Formation', 'Nebula Collision', 'Cosmic Radiation Wave'],
+    micro: ['Resource Depletion', 'Environmental Shift', 'Technology Singularity', 'Population Boom'],
+    diplomacy: ['Alliance Formed', 'Trade Agreement', 'Non-Aggression Pact', 'Peace Treaty Signed'],
+    war: ['Border Conflict', 'System Invasion', 'Fleet Battle', 'Siege Begun'],
+    discovery: ['New System Charted', 'Ancient Artifact Found', 'Wormhole Discovered', 'Life Signal Detected'],
+    disaster: ['Plague Outbreak', 'Solar Flare', 'Asteroid Impact', 'Gravity Anomaly'],
   };
-}
 
-export function useMockTimelineData() {
+  const now = Date.now();
+  const yearInMs = 365 * 24 * 60 * 60 * 1000;
+
+  return Array.from({ length: count }, (_, i) => {
+    const type = eventTypes[Math.floor(Math.random() * eventTypes.length)];
+    const civ = civilizations[Math.floor(Math.random() * civilizations.length)];
+    const gal = galaxies[Math.floor(Math.random() * galaxies.length)];
+    const titles = eventTitles[type];
+    const title = titles[Math.floor(Math.random() * titles.length)];
+
+    return {
+      id: `event-${String(i + 1).padStart(4, '0')}`,
+      timestamp: now - Math.random() * 100 * yearInMs,
+      title,
+      description: `A significant ${type} event occurred involving ${civ.name} in ${gal.name}. This event has shaped the course of history in the region.`,
+      type,
+      civilizationId: civ.id,
+      civilizationName: civ.name,
+      galaxyId: gal.id,
+      galaxyName: gal.name,
+      impact: {
+        population: type === 'disaster' ? -Math.floor(Math.random() * 1000000) : Math.floor(Math.random() * 500000),
+        technology: type === 'discovery' ? Math.floor(Math.random() * 100) : Math.floor(Math.random() * 20),
+        economy: type === 'war' ? -Math.floor(Math.random() * 50) : Math.floor(Math.random() * 30),
+        military: type === 'war' ? Math.floor(Math.random() * 40) : Math.floor(Math.random() * 10),
+      },
+      relatedEvents: [],
+    };
+  }).sort((a, b) => a.timestamp - b.timestamp);
+};
+
+const generateMockCivilizations = (): Civilization[] => [
+  { id: 'civ-001', name: 'Zephyr Dominion', color: '#FF6B6B', status: 'active' },
+  { id: 'civ-002', name: 'Nova Collective', color: '#4ECDC4', status: 'active' },
+  { id: 'civ-003', name: 'Quantum Ascendancy', color: '#45B7D1', status: 'active' },
+  { id: 'civ-004', name: 'Stellar Federation', color: '#96CEB4', status: 'destroyed' },
+  { id: 'civ-005', name: 'Void Walkers', color: '#DDA0DD', status: 'ascended' },
+];
+
+const generateMockGalaxies = (): Galaxy[] => [
+  { id: 'gal-001', name: 'Andromeda Prime', position: { x: 100, y: 200, z: 50 } },
+  { id: 'gal-002', name: 'Milky Way Core', position: { x: -50, y: 100, z: -30 } },
+  { id: 'gal-003', name: 'Triangulum Nebula', position: { x: 200, y: -100, z: 80 } },
+];
+
+export function useTimelineData(initialFilters?: Partial<TimelineFilters>) {
   const [state, setState] = useState<TimelineState>({
     events: [],
     civilizations: [],
     galaxies: [],
     loading: true,
     error: null,
-    totalEvents: 0,
   });
 
   const [filters, setFilters] = useState<TimelineFilters>({
-    civilizations: [],
-    galaxies: [],
-    eventTypes: [],
-    timeRange: { start: 0, end: Date.now() },
+    civilizations: initialFilters?.civilizations || [],
+    galaxies: initialFilters?.galaxies || [],
+    eventTypes: initialFilters?.eventTypes || [],
+    timeRange: initialFilters?.timeRange || [0, Date.now()],
   });
 
+  // 加载数据
   useEffect(() => {
-    const mockCivilizations: Civilization[] = [
-      { id: 'civ-001', name: 'Zephyrian Collective', color: '#4FC3F7', status: 'active' },
-      { id: 'civ-002', name: 'Voidborn Empire', color: '#AB47BC', status: 'active' },
-      { id: 'civ-003', name: 'Crystalline Hegemony', color: '#26A69A', status: 'active' },
-      { id: 'civ-004', name: 'Solarian Dominion', color: '#FFA726', status: 'destroyed' },
-      { id: 'civ-005', name: 'Nebula Federation', color: '#EF5350', status: 'active' },
-    ];
+    const loadData = async () => {
+      setState(prev => ({ ...prev, loading: true, error: null }));
+      
+      try {
+        // 模拟 API 调用延迟
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        const events = generateMockEvents(150);
+        const civilizations = generateMockCivilizations();
+        const galaxies = generateMockGalaxies();
 
-    const mockGalaxies: Galaxy[] = [
-      { id: 'gal-001', name: 'Andromeda Prime', position: { x: 100, y: 200, z: 50 } },
-      { id: 'gal-002', name: 'Triangulum Nebula', position: { x: -50, y: 100, z: -30 } },
-      { id: 'gal-003', name: 'Sombrero Galaxy', position: { x: 200, y: -100, z: 80 } },
-    ];
+        // 设置时间范围为数据范围
+        if (events.length > 0) {
+          const minTime = events[0].timestamp;
+          const maxTime = events[events.length - 1].timestamp;
+          setFilters(prev => ({
+            ...prev,
+            timeRange: [minTime, maxTime],
+          }));
+        }
 
-    const now = Date.now();
-    const day = 86400000;
-    
-    const eventTypes = ['macro', 'micro', 'diplomacy', 'war', 'discovery', 'disaster'] as const;
-    const eventTitles = {
-      macro: ['Supernova Eruption', 'Black Hole Formation', 'Nebula Collision', 'Cosmic Radiation Wave'],
-      micro: ['Resource Depletion', 'Environmental Shift', 'Technology Singularity', 'Population Boom'],
-      diplomacy: ['Alliance Formed', 'Trade Agreement', 'Non-Aggression Pact', 'Embassy Established'],
-      war: ['Border Conflict', 'System Invasion', 'Fleet Battle', 'Siege Begun'],
-      discovery: ['New System Charted', 'Ancient Artifact Found', 'Wormhole Detected', 'Life Signal Discovered'],
-      disaster: ['Plague Outbreak', 'Famine Crisis', 'Economic Collapse', 'AI Rebellion'],
+        setState({
+          events,
+          civilizations,
+          galaxies,
+          loading: false,
+          error: null,
+        });
+      } catch (err) {
+        setState(prev => ({
+          ...prev,
+          loading: false,
+          error: err instanceof Error ? err.message : 'Failed to load timeline data',
+        }));
+      }
     };
 
-    const mockEvents: TimelineEvent[] = Array.from({ length: 50 }, (_, i) => {
-      const type = eventTypes[Math.floor(Math.random() * eventTypes.length)];
-      const civ = mockCivilizations[Math.floor(Math.random() * mockCivilizations.length)];
-      const galaxy = mockGalaxies[Math.floor(Math.random() * mockGalaxies.length)];
-      const titles = eventTitles[type];
-      
-      return {
-        id: `event-${String(i + 1).padStart(3, '0')}`,
-        timestamp: now - Math.floor(Math.random() * 365 * day),
-        title: titles[Math.floor(Math.random() * titles.length)],
-        description: `A significant ${type} event occurred in ${galaxy.name}. The ${civ.name} was directly involved in this cosmic occurrence, leading to major changes in the region.`,
-        type,
-        civilizationId: civ.id,
-        civilizationName: civ.name,
-        galaxyId: galaxy.id,
-        galaxyName: galaxy.name,
-        impact: {
-          population: Math.floor(Math.random() * 100) - 50,
-          technology: Math.floor(Math.random() * 100) - 50,
-          economy: Math.floor(Math.random() * 100) - 50,
-          military: Math.floor(Math.random() * 100) - 50,
-        },
-        relatedEvents: i > 0 ? [`event-${String(Math.floor(Math.random() * i) + 1).padStart(3, '0')}`] : undefined,
-      };
-    }).sort((a, b) => a.timestamp - b.timestamp);
-
-    setTimeout(() => {
-      setState({
-        events: mockEvents,
-        civilizations: mockCivilizations,
-        galaxies: mockGalaxies,
-        loading: false,
-        error: null,
-        totalEvents: mockEvents.length,
-      });
-    }, 500);
+    loadData();
   }, []);
 
+  // 过滤事件
+  const filteredEvents = useMemo(() => {
+    return state.events.filter(event => {
+      // 文明筛选
+      if (filters.civilizations.length > 0 && !filters.civilizations.includes(event.civilizationId || '')) {
+        return false;
+      }
+      // 星系筛选
+      if (filters.galaxies.length > 0 && !filters.galaxies.includes(event.galaxyId || '')) {
+        return false;
+      }
+      // 事件类型筛选
+      if (filters.eventTypes.length > 0 && !filters.eventTypes.includes(event.type)) {
+        return false;
+      }
+      // 时间范围筛选
+      if (event.timestamp < filters.timeRange[0] || event.timestamp > filters.timeRange[1]) {
+        return false;
+      }
+      return true;
+    });
+  }, [state.events, filters]);
+
+  // 更新筛选器
   const updateFilters = useCallback((newFilters: Partial<TimelineFilters>) => {
     setFilters(prev => ({ ...prev, ...newFilters }));
   }, []);
 
+  // 重置筛选器
   const resetFilters = useCallback(() => {
-    setFilters({
-      civilizations: [],
-      galaxies: [],
-      eventTypes: [],
-      timeRange: { start: 0, end: Date.now() },
-    });
-  }, []);
-
-  const fetchEventDetails = useCallback(async (eventId: string): Promise<TimelineEvent | null> => {
-    const event = state.events.find(e => e.id === eventId);
-    return event || null;
+    if (state.events.length > 0) {
+      const minTime = state.events[0].timestamp;
+      const maxTime = state.events[state.events.length - 1].timestamp;
+      setFilters({
+        civilizations: [],
+        galaxies: [],
+        eventTypes: [],
+        timeRange: [minTime, maxTime],
+      });
+    }
   }, [state.events]);
 
-  const filteredEvents = state.events.filter(event => {
-    if (filters.civilizations.length > 0 && !filters.civilizations.includes(event.civilizationId || '')) {
-      return false;
-    }
-    if (filters.galaxies.length > 0 && !filters.galaxies.includes(event.galaxyId || '')) {
-      return false;
-    }
-    if (filters.eventTypes.length > 0 && !filters.eventTypes.includes(event.type)) {
-      return false;
-    }
-    if (event.timestamp < filters.timeRange.start || event.timestamp > filters.timeRange.end) {
-      return false;
-    }
-    return true;
-  });
+  // 获取事件详情
+  const getEventById = useCallback((id: string): TimelineEvent | undefined => {
+    return state.events.find(e => e.id === id);
+  }, [state.events]);
+
+  // 获取相关事件
+  const getRelatedEvents = useCallback((eventId: string): TimelineEvent[] => {
+    const event = getEventById(eventId);
+    if (!event?.relatedEvents) return [];
+    return event.relatedEvents
+      .map(id => getEventById(id))
+      .filter((e): e is TimelineEvent => e !== undefined);
+  }, [getEventById]);
 
   return {
     ...state,
-    events: filteredEvents,
-    allEvents: state.events,
+    filteredEvents,
     filters,
     updateFilters,
     resetFilters,
-    fetchEventDetails,
-    refresh: () => {},
+    getEventById,
+    getRelatedEvents,
   };
 }
