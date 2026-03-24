@@ -1,0 +1,212 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { MarketPanel } from './MarketPanel';
+import { RouteManager } from './RouteManager';
+import { TradeStats } from './TradeStats';
+import { TradeHistory } from './TradeHistory';
+import { useWebSocket } from '../../hooks/useWebSocket';
+import './TradeDashboard.css';
+
+interface TradeStats {
+  totalVolume: number;
+  totalTransactions: number;
+  activeRoutes: number;
+  priceIndex: number;
+}
+
+interface TradeUpdate {
+  type: 'order_filled' | 'order_created' | 'route_update' | 'price_change';
+  data: any;
+  timestamp: string;
+}
+
+interface TradeDashboardProps {
+  civilizationId?: string;
+  onNotification?: (message: string, type: 'success' | 'error' | 'info') => void;
+}
+
+export const TradeDashboard: React.FC<TradeDashboardProps> = ({
+  civilizationId,
+  onNotification
+}) => {
+  const [activeTab, setActiveTab] = useState<'market' | 'routes' | 'history'>('market');
+  const [stats, setStats] = useState<TradeStats>({
+    totalVolume: 0,
+    totalTransactions: 0,
+    activeRoutes: 0,
+    priceIndex: 100
+  });
+  const [tradeUpdates, setTradeUpdates] = useState<TradeUpdate[]>([]);
+  const [isConnected, setIsConnected] = useState(false);
+
+  const handleTradeUpdate = useCallback((update: TradeUpdate) => {
+    setTradeUpdates(prev => [update, ...prev].slice(0, 100));
+    
+    if (update.type === 'order_filled' && onNotification) {
+      onNotification(
+        `订单已成交: ${update.data.resource} x${update.data.quantity}`,
+        'success'
+      );
+    }
+    
+    if (update.type === 'price_change') {
+      setStats(prev => ({
+        ...prev,
+        priceIndex: update.data.newIndex || prev.priceIndex
+      }));
+    }
+  }, [onNotification]);
+
+  const { subscribe, unsubscribe, send, status } = useWebSocket({
+    url: `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`,
+    onMessage: (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.channel === 'trade_updates') {
+          handleTradeUpdate(data.payload);
+        }
+      } catch (e) {
+        console.error('Failed to parse trade update:', e);
+      }
+    },
+    onOpen: () => {
+      setIsConnected(true);
+      subscribe('trade_updates');
+      if (civilizationId) {
+        send({ type: 'subscribe', channel: `civilization_${civilizationId}` });
+      }
+    },
+    onClose: () => setIsConnected(false)
+  });
+
+  useEffect(() => {
+    fetchTradeStats();
+    return () => {
+      unsubscribe('trade_updates');
+    };
+  }, []);
+
+  const fetchTradeStats = async () => {
+    try {
+      const response = await fetch('/api/trade/stats');
+      if (response.ok) {
+        const data = await response.json();
+        setStats(data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch trade stats:', error);
+    }
+  };
+
+  const renderTabContent = () => {
+    switch (activeTab) {
+      case 'market':
+        return (
+          <MarketPanel 
+            civilizationId={civilizationId}
+            onTrade={fetchTradeStats}
+            isConnected={isConnected}
+          />
+        );
+      case 'routes':
+        return (
+          <RouteManager 
+            civilizationId={civilizationId}
+            onRouteUpdate={fetchTradeStats}
+          />
+        );
+      case 'history':
+        return (
+          <TradeHistory 
+            updates={tradeUpdates}
+            civilizationId={civilizationId}
+          />
+        );
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <div className="trade-dashboard">
+      <header className="trade-header">
+        <h1 className="trade-title">
+          <span className="title-icon">💹</span>
+          星际贸易中心
+        </h1>
+        <div className="connection-status">
+          <span className={`status-dot ${isConnected ? 'connected' : 'disconnected'}`} />
+          {isConnected ? '实时连接' : '连接中断'}
+        </div>
+      </header>
+
+      <TradeStats stats={stats} />
+
+      <nav className="trade-tabs">
+        <button
+          className={`tab-btn ${activeTab === 'market' ? 'active' : ''}`}
+          onClick={() => setActiveTab('market')}
+        >
+          <span className="tab-icon">📊</span>
+          交易市场
+        </button>
+        <button
+          className={`tab-btn ${activeTab === 'routes' ? 'active' : ''}`}
+          onClick={() => setActiveTab('routes')}
+        >
+          <span className="tab-icon">🛸</span>
+          贸易路线
+          {stats.activeRoutes > 0 && (
+            <span className="badge">{stats.activeRoutes}</span>
+          )}
+        </button>
+        <button
+          className={`tab-btn ${activeTab === 'history' ? 'active' : ''}`}
+          onClick={() => setActiveTab('history')}
+        >
+          <span className="tab-icon">📜</span>
+          交易记录
+        </button>
+      </nav>
+
+      <main className="trade-content">
+        {renderTabContent()}
+      </main>
+
+      <div className="live-updates">
+        <h3>实时动态</h3>
+        <div className="updates-list">
+          {tradeUpdates.slice(0, 5).map((update, index) => (
+            <div key={index} className={`update-item ${update.type}`}>
+              <span className="update-time">
+                {new Date(update.timestamp).toLocaleTimeString()}
+              </span>
+              <span className="update-content">
+                {formatUpdateMessage(update)}
+              </span>
+            </div>
+          ))}
+          {tradeUpdates.length === 0 && (
+            <div className="no-updates">暂无实时动态</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const formatUpdateMessage = (update: TradeUpdate): string => {
+  switch (update.type) {
+    case 'order_filled':
+      return `成交: ${update.data.resource} x${update.data.quantity} @ ${update.data.price}`;
+    case 'order_created':
+      return `新订单: ${update.data.type === 'buy' ? '买入' : '卖出'} ${update.data.resource}`;
+    case 'route_update':
+      return `航线更新: ${update.data.routeName} - ${update.data.status}`;
+    case 'price_change':
+      return `价格变动: ${update.data.resource} ${update.data.change > 0 ? '↑' : '↓'}${Math.abs(update.data.change).toFixed(1)}%`;
+    default:
+      return '未知更新';
+  }
+};
+
+export default TradeDashboard;
