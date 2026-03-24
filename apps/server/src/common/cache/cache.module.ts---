@@ -1,0 +1,10 @@
+import { Module, Global } from '@nestjs/common';
+import { RedisProvider } from './redis.provider';
+import { MarketCache } from './market.cache';
+
+@Global()
+@Module({
+  providers: [RedisProvider, MarketCache],
+  exports: [RedisProvider, MarketCache],
+})
+export class CacheModule {}

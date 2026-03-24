@@ -1,0 +1,46 @@
+import { Provider } from '@nestjs/common';
+import Redis from 'ioredis';
+import { ConfigService } from '@nestjs/config';
+import { RedisConfig } from '../../config/redis.config';
+
+export const REDIS_CLIENT = 'REDIS_CLIENT';
+
+export const RedisProvider: Provider = {
+  provide: REDIS_CLIENT,
+  useFactory: (configService: ConfigService): Redis => {
+    const redisConfig = configService.get<RedisConfig>('redis');
+    
+    const client = new Redis({
+      host: redisConfig?.host || 'localhost',
+      port: redisConfig?.port || 6379,
+      password: redisConfig?.password || undefined,
+      retryStrategy: (times: number) => {
+        if (times > 3) {
+          console.error('Redis connection failed after 3 retries');
+          return null;
+        }
+        return Math.min(times * 200, 2000);
+      },
+      maxRetriesPerRequest: 3,
+      enableReadyCheck: true,
+      lazyConnect: false,
+    });
+
+    client.on('connect', () => {
+      console.log('Redis client connected');
+    });
+
+    client.on('error', (err) => {
+      console.error('Redis client error:', err);
+    });
+
+    client.on('close', () => {
+      console.log('Redis client connection closed');
+    });
+
+    return client;
+  },
+  inject: [ConfigService],
+};
+
+export type RedisClient = Redis;

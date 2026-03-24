@@ -1,0 +1,146 @@
+import { Inject, Injectable, OnModuleDestroy } from '@nestjs/common';
+import { REDIS_CLIENT, RedisClient } from './redis.provider';
+
+// Market price cache key constants
+export const MARKET_PRICES_KEY = 'market:prices';
+export const MARKET_TRENDS_KEY = 'market:trends';
+export const MARKET_HISTORY_KEY = 'market:history';
+export const MARKET_VOLUME_KEY = 'market:volume';
+
+export interface MarketPrice {
+  resourceId: string;
+  resourceName: string;
+  basePrice: number;
+  currentPrice: number;
+  volatility: number;
+  lastUpdated: Date;
+}
+
+export interface MarketTrend {
+  resourceId: string;
+  trend: 'up' | 'down' | 'stable';
+  changePercent: number;
+  timestamp: Date;
+}
+
+@Injectable()
+export class MarketCache implements OnModuleDestroy {
+  private readonly ttl = 3600; // 1 hour default TTL
+
+  constructor(
+    @Inject(REDIS_CLIENT)
+    private readonly redis: RedisClient,
+  ) {}
+
+  // Get all market prices
+  async getAllPrices(): Promise<Record<string, MarketPrice>> {
+    const data = await this.redis.get(MARKET_PRICES_KEY);
+    return data ? JSON.parse(data) : {};
+  }
+
+  // Get price for specific resource
+  async getPrice(resourceId: string): Promise<MarketPrice | null> {
+    const prices = await this.getAllPrices();
+    return prices[resourceId] || null;
+  }
+
+  // Set all market prices
+  async setAllPrices(prices: Record<string, MarketPrice>): Promise<void> {
+    await this.redis.set(
+      MARKET_PRICES_KEY,
+      JSON.stringify(prices),
+      'EX',
+      this.ttl,
+    );
+  }
+
+  // Update price for specific resource
+  async updatePrice(resourceId: string, price: MarketPrice): Promise<void> {
+    const prices = await this.getAllPrices();
+    prices[resourceId] = {
+      ...price,
+      lastUpdated: new Date(),
+    };
+    await this.setAllPrices(prices);
+  }
+
+  // Get market trend
+  async getTrend(resourceId: string): Promise<MarketTrend | null> {
+    const data = await this.redis.hget(MARKET_TRENDS_KEY, resourceId);
+    return data ? JSON.parse(data) : null;
+  }
+
+  // Set market trend
+  async setTrend(resourceId: string, trend: MarketTrend): Promise<void> {
+    await this.redis.hset(
+      MARKET_TRENDS_KEY,
+      resourceId,
+      JSON.stringify(trend),
+    );
+  }
+
+  // Add price to history (for time series data)
+  async addPriceHistory(
+    resourceId: string,
+    price: number,
+    timestamp: Date = new Date(),
+  ): Promise<void> {
+    const key = `${MARKET_HISTORY_KEY}:${resourceId}`;
+    await this.redis.zadd(key, timestamp.getTime(), JSON.stringify({ price, timestamp }));
+    // Keep only last 24 hours of data
+    const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
+    await this.redis.zremrangebyscore(key, '-inf', dayAgo);
+  }
+
+  // Get price history for a resource
+  async getPriceHistory(
+    resourceId: string,
+    from: Date,
+    to: Date,
+  ): Promise<Array<{ price: number; timestamp: Date }>> {
+    const key = `${MARKET_HISTORY_KEY}:${resourceId}`;
+    const data = await this.redis.zrangebyscore(
+      key,
+      from.getTime(),
+      to.getTime(),
+    );
+    return data.map((item) => JSON.parse(item));
+  }
+
+  // Update trading volume
+  async updateVolume(resourceId: string, volume: number): Promise<void> {
+    await this.redis.hincrby(MARKET_VOLUME_KEY, resourceId, volume);
+  }
+
+  // Get trading volume
+  async getVolume(resourceId: string): Promise<number> {
+    const volume = await this.redis.hget(MARKET_VOLUME_KEY, resourceId);
+    return volume ? parseInt(volume, 10) : 0;
+  }
+
+  // Clear all market cache
+  async clearAll(): Promise<void> {
+    await this.redis.del(MARKET_PRICES_KEY);
+    await this.redis.del(MARKET_TRENDS_KEY);
+    await this.redis.del(MARKET_VOLUME_KEY);
+    // Clear history keys
+    const historyKeys = await this.redis.keys(`${MARKET_HISTORY_KEY}:*`);
+    if (historyKeys.length > 0) {
+      await this.redis.del(...historyKeys);
+    }
+  }
+
+  // Health check
+  async isHealthy(): Promise<boolean> {
+    try {
+      const result = await this.redis.ping();
+      return result === 'PONG';
+    } catch {
+      return false;
+    }
+  }
+
+  async onModuleDestroy(): Promise<void> {
+    await this.redis.quit();
+  }
+}
