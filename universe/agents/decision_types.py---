@@ -1,0 +1,198 @@
+"""
+Decision Types Module - Defines decision type enums and related data structures
+for the Agent Decision Engine Enhancement (feat-012)
+"""
+
+from enum import Enum, auto
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Any
+import time
+
+
+class DecisionType(Enum):
+    """Types of decisions an agent can make"""
+    # Diplomatic decisions
+    DECLARE_WAR = auto()
+    SUE_FOR_PEACE = auto()
+    FORM_ALLIANCE = auto()
+    BREAK_ALLIANCE = auto()
+    SIGN_TRADE_AGREEMENT = auto()
+    CANCEL_TRADE_AGREEMENT = auto()
+    SIGN_NON_AGGRESSION = auto()
+    BREAK_NON_AGGRESSION = auto()
+    
+    # Military decisions
+    ATTACK_TARGET = auto()
+    DEFEND_POSITION = auto()
+    RETREAT = auto()
+    EXPAND_TERRITORY = auto()
+    BUILD_FLEET = auto()
+    
+    # Economic decisions
+    INVEST_ECONOMY = auto()
+    INVEST_TECHNOLOGY = auto()
+    INVEST_CULTURE = auto()
+    ESTABLISH_TRADE_ROUTE = auto()
+    
+    # Exploration decisions
+    EXPLORE_SECTOR = auto()
+    COLONIZE_PLANET = auto()
+    RESEARCH_ANOMALY = auto()
+    
+    # Social decisions
+    BROADCAST_MESSAGE = auto()
+    SEND_GIFT = auto()
+    REQUEST_AID = auto()
+    
+    # Internal decisions
+    CHANGE_IDEOLOGY = auto()
+    REFORM_GOVERNMENT = auto()
+    CRISIS_RESPONSE = auto()
+    
+    # Default/Passive
+    NO_ACTION = auto()
+    OBSERVE = auto()
+
+
+class DecisionPriority(Enum):
+    """Priority levels for decisions"""
+    CRITICAL = 1    # Immediate survival threats
+    HIGH = 2        # Important strategic decisions
+    MEDIUM = 3      # Standard decisions
+    LOW = 4         # Minor or delayed decisions
+    PASSIVE = 5     # No urgent action needed
+
+
+class DecisionOutcome(Enum):
+    """Possible outcomes of a decision"""
+    SUCCESS = auto()
+    PARTIAL_SUCCESS = auto()
+    FAILURE = auto()
+    CATASTROPHIC = auto()
+    PENDING = auto()
+
+
+class DiplomacyStatus(Enum):
+    """Diplomatic relationship statuses between civilizations"""
+    NEUTRAL = auto()
+    FRIENDLY = auto()
+    ALLIED = auto()
+    AT_WAR = auto()
+    COLD_WAR = auto()
+    TRADE_PARTNER = auto()
+    NON_AGGRESSION = auto()
+    SUSPICIOUS = auto()
+    HOSTILE = auto()
+
+
+@dataclass
+class DiplomaticRelation:
+    """Represents a diplomatic relation between two civilizations"""
+    target_civ_id: str
+    status: DiplomacyStatus
+    trust_level: float = 0.5  # 0.0 to 1.0
+    threat_assessment: float = 0.5  # 0.0 to 1.0
+    trade_value: float = 0.0
+    shared_border: bool = False
+    historical_events: List[str] = field(default_factory=list)
+    last_interaction: float = field(default_factory=lambda: time.time())
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'target_civ_id': self.target_civ_id,
+            'status': self.status.name,
+            'trust_level': self.trust_level,
+            'threat_assessment': self.threat_assessment,
+            'trade_value': self.trade_value,
+            'shared_border': self.shared_border,
+            'historical_events': self.historical_events,
+            'last_interaction': self.last_interaction
+        }
+
+
+@dataclass
+class AllianceInfo:
+    """Information about an alliance"""
+    alliance_id: str
+    name: str
+    member_ids: List[str]
+    founder_id: str
+    formation_time: float
+    ideology: Optional[str] = None
+    strength: float = 1.0
+    cohesion: float = 0.5  # How united the alliance is
+    mutual_defense: bool = True
+    shared_research: bool = False
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'alliance_id': self.alliance_id,
+            'name': self.name,
+            'member_ids': self.member_ids,
+            'founder_id': self.founder_id,
+            'formation_time': self.formation_time,
+            'ideology': self.ideology,
+            'strength': self.strength,
+            'cohesion': self.cohesion,
+            'mutual_defense': self.mutual_defense,
+            'shared_research': self.shared_research
+        }
+
+
+@dataclass
+class EventImpact:
+    """Impact of a recent event on decision making"""
+    event_id: str
+    event_type: str
+    severity: float  # 0.0 to 1.0
+    affected_civ_ids: List[str]
+    timestamp: float
+    description: str
+    diplomatic_impact: Dict[str, float] = field(default_factory=dict)  # civ_id -> impact
+    economic_impact: float = 0.0
+    military_impact: float = 0.0
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'event_id': self.event_id,
+            'event_type': self.event_type,
+            'severity': self.severity,
+            'affected_civ_ids': self.affected_civ_ids,
+            'timestamp': self.timestamp,
+            'description': self.description,
+            'diplomatic_impact': self.diplomatic_impact,
+            'economic_impact': self.economic_impact,
+            'military_impact': self.military_impact
+        }
+
+
+@dataclass
+class DecisionOption:
+    """A possible decision option with calculated weights"""
+    decision_type: DecisionType
+    base_weight: float
+    diplomacy_modifier: float = 0.0
+    alliance_modifier: float = 0.0
+    event_modifier: float = 0.0
+    final_weight: float = 0.0
+    target_id: Optional[str] = None
+    reasoning: str = ""
+    
+    def calculate_final_weight(self) -> float:
+        self.final_weight = max(0.0, self.base_weight + 
+                                 self.diplomacy_modifier + 
+                                 self.alliance_modifier + 
+                                 self.event_modifier)
+        return self.final_weight
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'decision_type': self.decision_type.name,
+            'base_weight': self.base_weight,
+            'diplomacy_modifier': self.diplomacy_modifier,
+            'alliance_modifier': self.alliance_modifier,
+            'event_modifier': self.event_modifier,
+            'final_weight': self.final_weight,
+            'target_id': self.target_id,
+            'reasoning': self.reasoning
+        }
