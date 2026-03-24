@@ -1,0 +1,19 @@
+import { Router, Request, Response } from 'express';
+import { DecisionService } from '../services/decision.service';
+import { validateRequest } from '../middleware/validation';
+import { decisionQuerySchema } from '../schemas/decision.schemas';
+
+const router = Router();
+const decisionService = new DecisionService();
+
+/**
+ * GET /api/agents/:id/decisions
+ * 获取 Agent 决策历史
+ * Query params:
+ *   - startDate: 开始日期
+ *   - endDate: 结束日期
+ *   - type: 决策类型过滤
+ *   - outcome: 结果过滤
+ *   - limit: 返回数量限制
+ */
+router.get('/:id/decisions', validateRequest(decisionQuerySchema, 'query'), async (req: Request, res: Response) => {

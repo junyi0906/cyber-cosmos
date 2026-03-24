@@ -1,116 +1,43 @@
 import { Router, Request, Response } from 'express';
-import { EventTimelineQuery, EventDetailResponse, EventType } from '../types/event.types';
+import { EventService } from '../services/event.service';
+import { validateRequest } from '../middleware/validation';
+import { eventTimelineQuerySchema, eventIdSchema } from '../schemas/event.schemas';
 
 const router = Router();
-
-// In-memory store for events (would be replaced with database in production)
-const eventsStore: Map<string, any> = new Map();
-const timelineEvents: any[] = [];
-
-// Initialize with sample events
-const initializeSampleEvents = () => {
-  const sampleEvents = [
-    {
-      id: 'evt-001',
-      type: EventType.SUPERNOVA,
-      title: '超新星爆发',
-      description: '银河系边缘发生超新星爆发，释放巨大能量',
-      timestamp: Date.now() - 86400000 * 7,
-      location: { galaxy: '银河系', coordinates: { x: 120, y: -45, z: 30 } },
-      impact: { affectedCivilizations: ['civ-001'], resourceChange: -0.15 },
-      relatedEvents: []
-    },
-    {
-      id: 'evt-002',
-      type: EventType.TECH_BREAKTHROUGH,
-      title: '科技突破',
-      description: '文明阿尔法实现了量子通讯技术的重大突破',
-      timestamp: Date.now() - 86400000 * 3,
-      location: { galaxy: '银河系', coordinates: { x: 80, y: 20, z: -10 } },
-      impact: { affectedCivilizations: ['civ-001'], techLevel: +2 },
-      relatedEvents: ['evt-001']
-    },
-    {
-      id: 'evt-003',
-      type: EventType.DIPLOMATIC_TREATY,
-      title: '外交条约签订',
-      description: '文明阿尔法与文明贝塔签订互不侵犯条约',
-      timestamp: Date.now() - 86400000,
-      location: { galaxy: '银河系', coordinates: { x: 100, y: 0, z: 0 } },
-      impact: { affectedCivilizations: ['civ-001', 'civ-002'], relationChange: +0.3 },
-      relatedEvents: []
-    }
-  ];
-
-  sampleEvents.forEach(event => {
-    eventsStore.set(event.id, event);
-    timelineEvents.push(event);
-  });
-};
-
-initializeSampleEvents();
+const eventService = new EventService();
 
 /**
  * GET /api/events/timeline
  * 获取事件时间线
- * Query params: start, end, type, civilization, limit, offset
+ * Query params:
+ *   - startYear: 开始年份
+ *   - endYear: 结束年份
+ *   - type: 事件类型过滤
+ *   - civilizationId: 文明ID过滤
+ *   - limit: 返回数量限制
  */
-router.get('/timeline', async (req: Request, res: Response) => {
+router.get('/timeline', validateRequest(eventTimelineQuerySchema, 'query'), async (req: Request, res: Response) => {
   try {
-    const { 
-      start, 
-      end, 
-      type, 
-      civilization, 
-      limit = '50', 
-      offset = '0' 
-    } = req.query as EventTimelineQuery;
-
-    let filteredEvents = [...timelineEvents];
-
-    // Filter by time range
-    if (start) {
-      const startTime = parseInt(start);
-      filteredEvents = filteredEvents.filter(e => e.timestamp >= startTime);
-    }
-    if (end) {
-      const endTime = parseInt(end);
-      filteredEvents = filteredEvents.filter(e => e.timestamp <= endTime);
-    }
-
-    // Filter by event type
-    if (type) {
-      filteredEvents = filteredEvents.filter(e => e.type === type);
-    }
-
-    // Filter by civilization
-    if (civilization) {
-      filteredEvents = filteredEvents.filter(e => 
-        e.impact?.affectedCivilizations?.includes(civilization)
-      );
-    }
-
-    // Sort by timestamp descending
-    filteredEvents.sort((a, b) => b.timestamp - a.timestamp);
-
-    // Pagination
-    const limitNum = parseInt(limit);
-    const offsetNum = parseInt(offset);
-    const paginatedEvents = filteredEvents.slice(offsetNum, offsetNum + limitNum);
+    const { startYear, endYear, type, civilizationId, limit = 100 } = req.query;
+    
+    const timeline = await eventService.getTimeline({
+      startYear: startYear ? parseInt(startYear as string) : undefined,
+      endYear: endYear ? parseInt(endYear as string) : undefined,
+      type: type as string,
+      civilizationId: civilizationId as string,
+      limit: parseInt(limit as string)
+    });
 
     res.json({
       success: true,
-      data: {
-        events: paginatedEvents,
-        pagination: {
-          total: filteredEvents.length,
-          limit: limitNum,
-          offset: offsetNum,
-          hasMore: offsetNum + limitNum < filteredEvents.length
-        }
+      data: timeline,
+      meta: {
+        total: timeline.length,
+        query: { startYear, endYear, type, civilizationId }
       }
     });
   } catch (error) {
+    console.error('Error fetching event timeline:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to fetch event timeline',
@@ -123,34 +50,26 @@ router.get('/timeline', async (req: Request, res: Response) => {
  * GET /api/events/:id
  * 获取事件详情
  */
-router.get('/:id', async (req: Request, res: Response) => {
+router.get('/:id', validateRequest(eventIdSchema, 'params'), async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const event = eventsStore.get(id);
-
+    
+    const event = await eventService.getEventById(id);
+    
     if (!event) {
       return res.status(404).json({
         success: false,
         error: 'Event not found',
-        message: `No event exists with id: ${id}`
+        message: `No event exists with ID: ${id}`
       });
     }
 
-    // Fetch related events details
-    const relatedEventDetails = event.relatedEvents
-      .map((relatedId: string) => eventsStore.get(relatedId))
-      .filter(Boolean);
-
-    const response: EventDetailResponse = {
+    res.json({
       success: true,
-      data: {
-        ...event,
-        relatedEventDetails
-      }
-    };
-
-    res.json(response);
+      data: event
+    });
   } catch (error) {
+    console.error('Error fetching event details:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to fetch event details',
@@ -160,32 +79,34 @@ router.get('/:id', async (req: Request, res: Response) => {
 });
 
 /**
- * POST /api/events
- * 创建新事件（内部使用）
+ * GET /api/events
+ * 获取所有事件列表（带分页）
  */
-router.post('/', async (req: Request, res: Response) => {
+router.get('/', async (req: Request, res: Response) => {
   try {
-    const event = req.body;
+    const { page = 1, limit = 20, type } = req.query;
     
-    if (!event.id || !event.type || !event.timestamp) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid event data',
-        message: 'Event must have id, type, and timestamp'
-      });
-    }
+    const result = await eventService.getAllEvents({
+      page: parseInt(page as string),
+      limit: parseInt(limit as string),
+      type: type as string
+    });
 
-    eventsStore.set(event.id, event);
-    timelineEvents.push(event);
-
-    res.status(201).json({
+    res.json({
       success: true,
-      data: event
+      data: result.events,
+      pagination: {
+        page: parseInt(page as string),
+        limit: parseInt(limit as string),
+        total: result.total,
+        totalPages: Math.ceil(result.total / parseInt(limit as string))
+      }
     });
   } catch (error) {
+    console.error('Error fetching events:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to create event',
+      error: 'Failed to fetch events',
       message: error instanceof Error ? error.message : 'Unknown error'
     });
   }

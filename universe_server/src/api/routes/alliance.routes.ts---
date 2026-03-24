@@ -1,88 +1,221 @@
 import { Router, Request, Response } from 'express';
-import { Alliance, AllianceMember, AllianceRequest, AllianceQuery } from '../models/alliance.model';
+import { AllianceService } from '../services/alliance.service';
+import { validateRequest } from '../middleware/validation';
+import { createAllianceSchema, allianceQuerySchema } from '../schemas/alliance.schemas';
 
 const router = Router();
-
-// In-memory stores
-let alliancesStore: Alliance[] = [];
-let allianceMembersStore: AllianceMember[] = [];
-let allianceCounter = 1;
+const allianceService = new AllianceService();
 
 /**
- * Initialize alliance stores
+ * GET /api/alliances
+ * 获取联盟列表
+ * Query params:
+ *   - status: 联盟状态
+ *   - civilizationId: 文明ID（返回该文明所属的联盟）
+ *   - includeMembers: 是否包含成员详情
  */
-export function initializeAllianceStores(
-  alliances: Alliance[], 
-  members: AllianceMember[]
-) {
-  alliancesStore = alliances;
-  allianceMembersStore = members;
-  allianceCounter = alliances.length > 0 ? Math.max(...alliances.map(a => a.id)) + 1 : 1;
-}
-
-/**
- * GET /api/alliances - 获取联盟列表
- * Query params: status, agentId
- */
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', validateRequest(allianceQuerySchema, 'query'), async (req: Request, res: Response) => {
   try {
-    const query: AllianceQuery = {
-      status: req.query.status as string,
-      agentId: req.query.agentId ? parseInt(req.query.agentId as string) : undefined
-    };
-
-    let filteredAlliances = alliancesStore.filter(alliance => {
-      const statusMatch = !query.status || alliance.status === query.status;
-      
-      let agentMatch = true;
-      if (query.agentId) {
-        const memberIds = allianceMembersStore
-          .filter(m => m.allianceId === alliance.id)
-          .map(m => m.agentId);
-        agentMatch = memberIds.includes(query.agentId);
-      }
-      
-      return statusMatch && agentMatch;
-    });
-
-    // Enrich alliances with member information
-    const enrichedAlliances = filteredAlliances.map(alliance => {
-      const members = allianceMembersStore.filter(m => m.allianceId === alliance.id);
-      return {
-        ...alliance,
-        members: members,
-        memberCount: members.length
-      };
+    const { status, civilizationId, includeMembers } = req.query;
+    
+    const alliances = await allianceService.getAlliances({
+      status: status as string,
+      civilizationId: civilizationId as string,
+      includeMembers: includeMembers === 'true'
     });
 
     res.json({
       success: true,
-      data: {
-        alliances: enrichedAlliances,
-        total: enrichedAlliances.length
+      data: alliances,
+      meta: {
+        total: alliances.length,
+        query: { status, civilizationId }
       }
     });
   } catch (error) {
     console.error('Error fetching alliances:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to fetch alliances'
+      error: 'Failed to fetch alliances',
+      message: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 });
 
 /**
- * GET /api/alliances/:id - 获取联盟详情
+ * POST /api/alliances
+ * 创建联盟
+ * Body:
+ *   - name: 联盟名称
+ *   - founderId: 创始文明ID
+ *   - type: 联盟类型
+ *   - charter: 联盟章程
+ *   - initialMembers: 初始成员ID列表
+ */
+router.post('/', validateRequest(createAllianceSchema, 'body'), async (req: Request, res: Response) => {
+  try {
+    const { name, founderId, type, charter, initialMembers } = req.body;
+    
+    const alliance = await allianceService.createAlliance({
+      name,
+      founderId,
+      type,
+      charter,
+      initialMembers: initialMembers || [founderId]
+    });
+
+    res.status(201).json({
+      success: true,
+      data: alliance,
+      message: `Alliance "${name}" has been established`
+    });
+  } catch (error) {
+    console.error('Error creating alliance:', error);
+    res.status(400).json({
+      success: false,
+      error: 'Failed to create alliance',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * GET /api/alliances/:id
+ * 获取联盟详情
  */
 router.get('/:id', async (req: Request, res: Response) => {
   try {
-    const allianceId = parseInt(req.params.id);
-
-    if (isNaN(allianceId)) {
-      return res.status(400).json({
+    const { id } = req.params;
+    
+    const alliance = await allianceService.getAllianceById(id);
+    
+    if (!alliance) {
+      return res.status(404).json({
         success: false,
-        error: 'Invalid alliance ID'
+        error: 'Alliance not found',
+        message: `No alliance exists with ID: ${id}`
       });
     }
 
-    const alliance
+    res.json({
+      success: true,
+      data: alliance
+    });
+  } catch (error) {
+    console.error('Error fetching alliance details:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch alliance details',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * POST /api/alliances/:id/join
+ * 加入联盟
+ */
+router.post('/:id/join', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { civilizationId } = req.body;
+    
+    const result = await allianceService.joinAlliance(id, civilizationId);
+
+    res.json({
+      success: true,
+      data: result,
+      message: `Civilization ${civilizationId} has joined the alliance`
+    });
+  } catch (error) {
+    console.error('Error joining alliance:', error);
+    res.status(400).json({
+      success: false,
+      error: 'Failed to join alliance',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * POST /api/alliances/:id/leave
+ * 退出联盟
+ */
+router.post('/:id/leave', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { civilizationId, reason } = req.body;
+    
+    const result = await allianceService.leaveAlliance(id, civilizationId, reason);
+
+    res.json({
+      success: true,
+      data: result,
+      message: `Civilization ${civilizationId} has left the alliance`
+    });
+  } catch (error) {
+    console.error('Error leaving alliance:', error);
+    res.status(400).json({
+      success: false,
+      error: 'Failed to leave alliance',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * POST /api/alliances/:id/dissolve
+ * 解散联盟
+ */
+router.post('/:id/dissolve', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { initiatorId, reason } = req.body;
+    
+    const result = await allianceService.dissolveAlliance(id, initiatorId, reason);
+
+    res.json({
+      success: true,
+      data: result,
+      message: 'Alliance has been dissolved'
+    });
+  } catch (error) {
+    console.error('Error dissolving alliance:', error);
+    res.status(400).json({
+      success: false,
+      error: 'Failed to dissolve alliance',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * GET /api/alliances/:id/events
+ * 获取联盟事件历史
+ */
+router.get('/:id/events', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { limit = 50 } = req.query;
+    
+    const events = await allianceService.getAllianceEvents(id, parseInt(limit as string));
+
+    res.json({
+      success: true,
+      data: events,
+      meta: {
+        allianceId: id,
+        total: events.length
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching alliance events:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch alliance events',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+export default router;
