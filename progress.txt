@@ -8,7 +8,9 @@ Started: 2026-03-25T00:00:57.954774
 Total Features: 23
 Completed: 0
 Status: initializing
-Current Feature: (none)
+Current Feature: feat-001
 ==================================================
 Log:
 [2026-03-25T00:00:57.954798] Initializer 完成
+[2026-03-25T00:01:28.051309] [Warning] dev server 启动失败，跳过开发服务器检查继续执行（仅文件开发模式）。
+[2026-03-25T00:01:28.197854] 开始实现 feat-001: 数据库迁移 - 新增资源、贸易路线、赛季、遗迹相关表结构

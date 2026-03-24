@@ -1,0 +1,14 @@
+import {
+  Entity,
+  Column,
+  PrimaryGeneratedColumn,
+  CreateDateColumn,
+  UpdateDateColumn,
+  Index,
+} from 'typeorm';
+
+export enum CivilizationStatus {
+  ACTIVE = 'active',
+  DORMANT = 'dormant',
+  COLLAPSED = 'collapsed',
+  ASCENDED = '

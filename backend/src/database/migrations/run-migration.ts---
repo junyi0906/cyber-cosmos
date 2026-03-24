@@ -1,0 +1,46 @@
+import { dataSource, initializeDatabase } from '../data-source';
+import { getMigrationStatus } from './index';
+
+async function runMigrations(): Promise<void> {
+  try {
+    console.log('Starting database migration...');
+    
+    // Initialize database connection
+    await initializeDatabase();
+    
+    // Check migration status
+    const status = await getMigrationStatus(dataSource);
+    console.log('Migration status:');
+    console.log(`  Executed: ${status.executed.length}`);
+    console.log(`  Pending: ${status.pending.length}`);
+    
+    if (status.pending.length > 0) {
+      console.log('Pending migrations:', status.pending);
+    }
+    
+    // Run migrations
+    await dataSource.runMigrations({ transaction: 'all' });
+    
+    console.log('Migrations completed successfully');
+    
+    // Show final status
+    const finalStatus = await getMigrationStatus(dataSource);
+    console.log('Final migration status:');
+    console.log(`  Total executed: ${finalStatus.executed.length}`);
+    
+  } catch (error) {
+    console.error('Migration failed:', error);
+    process.exit(1);
+  } finally {
+    if (dataSource.isInitialized) {
+      await dataSource.destroy();
+    }
+  }
+}
+
+// Run if called directly
+if (require.main === module) {
+  runMigrations();
+}
+
+export { runMigrations };

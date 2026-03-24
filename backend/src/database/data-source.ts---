@@ -1,0 +1,27 @@
+import { DataSource, DataSourceOptions } from 'typeorm';
+import { migrations } from './migrations/index';
+
+export const dataSourceOptions: DataSourceOptions = {
+  type: 'postgres',
+  host: process.env.DB_HOST || 'localhost',
+  port: parseInt(process.env.DB_PORT || '5432', 10),
+  username: process.env.DB_USERNAME || 'postgres',
+  password: process.env.DB_PASSWORD || 'postgres',
+  database: process.env.DB_DATABASE || 'cyber_cosmos',
+  entities: [__dirname + '/../**/*.entity{.ts,.js}'],
+  migrations: migrations,
+  synchronize: false,
+  logging: process.env.NODE_ENV === 'development',
+  migrationsRun: true,
+};
+
+export const dataSource = new DataSource(dataSourceOptions);
+
+// Initialize connection
+export async function initializeDatabase(): Promise<DataSource> {
+  if (!dataSource.isInitialized) {
+    await dataSource.initialize();
+    console.log('Database connection initialized');
+  }
+  return dataSource;
+}

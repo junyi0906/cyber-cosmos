@@ -1,0 +1,387 @@
+import { MigrationInterface, QueryRunner, Table, TableColumn, TableForeignKey, TableIndex } from 'typeorm';
+
+export class EconomySetup1700000000002 implements MigrationInterface {
+  name = 'EconomySetup1700000000002';
+
+  public async up(queryRunner: QueryRunner): Promise<void> {
+    // Step 2: Add resources JSONB column to civilizations table
+    const civilizationsTable = await queryRunner.getTable('civilizations');
+    if (civilizationsTable) {
+      const resourcesColumnExists = civilizationsTable.columns.find(col => col.name === 'resources');
+      if (!resourcesColumnExists) {
+        await queryRunner.addColumn(
+          'civilizations',
+          new TableColumn({
+            name: 'resources',
+            type: 'jsonb',
+            default: `'{"ore": 1000, "energy": 1000, "tech_points": 100}'`,
+            comment: '文明资源：矿石、能源、技术点',
+          }),
+        );
+      }
+    }
+
+    // Step 3: Create trade_routes table
+    await queryRunner.createTable(
+      new Table({
+        name: 'trade_routes',
+        columns: [
+          {
+            name: 'id',
+            type: 'uuid',
+            isPrimary: true,
+            generationStrategy: 'uuid',
+            default: 'uuid_generate_v4()',
+          },
+          {
+            name: 'from_civ_id',
+            type: 'uuid',
+            isNullable: false,
+          },
+          {
+            name: 'to_civ_id',
+            type: 'uuid',
+            isNullable: false,
+          },
+          {
+            name: 'resources',
+            type: 'jsonb',
+            default: `'{"ore": 0, "energy": 0, "tech_points": 0}'`,
+            comment: '贸易资源配置',
+          },
+          {
+            name: 'stability',
+            type: 'decimal',
+            precision: 5,
+            scale: 2,
+            default: 1.0,
+            comment: '贸易路线稳定性 0-1',
+          },
+          {
+            name: 'status',
+            type: 'enum',
+            enum: ['pending', 'active', 'suspended', 'closed'],
+            default: "'pending'",
+          },
+          {
+            name: 'created_at',
+            type: 'timestamp',
+            default: 'CURRENT_TIMESTAMP',
+          },
+          {
+            name: 'updated_at',
+            type: 'timestamp',
+            default: 'CURRENT_TIMESTAMP',
+          },
+        ],
+      }),
+      true,
+    );
+
+    // Add foreign keys for trade_routes
+    await queryRunner.createForeignKeys('trade_routes', [
+      new TableForeignKey({
+        columnNames: ['from_civ_id'],
+        referencedTableName: 'civilizations',
+        referencedColumnNames: ['id'],
+        onDelete: 'CASCADE',
+      }),
+      new TableForeignKey({
+        columnNames: ['to_civ_id'],
+        referencedTableName: 'civilizations',
+        referencedColumnNames: ['id'],
+        onDelete: 'CASCADE',
+      }),
+    ]);
+
+    // Add index for trade routes lookup
+    await queryRunner.createIndex(
+      'trade_routes',
+      new TableIndex({
+        name: 'IDX_trade_routes_from_civ',
+        columnNames: ['from_civ_id'],
+      }),
+    );
+    await queryRunner.createIndex(
+      'trade_routes',
+      new TableIndex({
+        name: 'IDX_trade_routes_to_civ',
+        columnNames: ['to_civ_id'],
+      }),
+    );
+
+    // Step 4: Create seasons table
+    await queryRunner.createTable(
+      new Table({
+        name: 'seasons',
+        columns: [
+          {
+            name: 'id',
+            type: 'uuid',
+            isPrimary: true,
+            generationStrategy: 'uuid',
+            default: 'uuid_generate_v4()',
+          },
+          {
+            name: 'name',
+            type: 'varchar',
+            length: '100',
+            isNullable: false,
+          },
+          {
+            name: 'phase',
+            type: 'enum',
+            enum: ['exploration', 'expansion', 'conflict', 'finale'],
+            default: "'exploration'",
+            comment: '开拓期、扩张期、纷争期、终焉期',
+          },
+          {
+            name: 'rules_modifiers',
+            type: 'jsonb',
+            default: `'{}'`,
+            comment: '赛季规则变量：资源产出、外交系数等',
+          },
+          {
+            name: 'started_at',
+            type: 'timestamp',
+            default: 'CURRENT_TIMESTAMP',
+          },
+          {
+            name: 'ended_at',
+            type: 'timestamp',
+            isNullable: true,
+          },
+          {
+            name: 'created_at',
+            type: 'timestamp',
+            default: 'CURRENT_TIMESTAMP',
+          },
+          {
+            name: 'updated_at',
+            type: 'timestamp',
+            default: 'CURRENT_TIMESTAMP',
+          },
+        ],
+      }),
+      true,
+    );
+
+    // Add index for active season lookup
+    await queryRunner.createIndex(
+      'seasons',
+      new TableIndex({
+        name: 'IDX_seasons_active',
+        columnNames: ['started_at', 'ended_at'],
+      }),
+    );
+
+    // Step 5: Create relics table
+    await queryRunner.createTable(
+      new Table({
+        name: 'relics',
+        columns: [
+          {
+            name: 'id',
+            type: 'uuid',
+            isPrimary: true,
+            generationStrategy: 'uuid',
+            default: 'uuid_generate_v4()',
+          },
+          {
+            name: 'name',
+            type: 'varchar',
+            length: '200',
+            isNullable: false,
+          },
+          {
+            name: 'type',
+            type: 'enum',
+            enum: ['ruins', 'artifact', 'anomaly', 'monument'],
+            default: "'ruins'",
+            comment: '遗迹类型：废墟、神器、异常、纪念碑',
+          },
+          {
+            name: 'coordinates',
+            type: 'jsonb',
+            isNullable: false,
+            comment: '坐标位置 {x, y, z}',
+          },
+          {
+            name: 'effect',
+            type: 'jsonb',
+            default: `'{}'`,
+            comment: '遗迹效果配置',
+          },
+          {
+            name: 'discoverer_id',
+            type: 'uuid',
+            isNullable: true,
+            comment: '发现者文明ID',
+          },
+          {
+            name: 'durability',
+            type: 'int',
+            default: 100,
+            comment: '遗迹耐久度',
+          },
+          {
+            name: 'origin_event',
+            type: 'varchar',
+            length: '500',
+            isNullable: true,
+            comment: '遗迹起源事件描述',
+          },
+          {
+            name: 'created_at',
+            type: 'timestamp',
+            default: 'CURRENT_TIMESTAMP',
+          },
+          {
+            name: 'updated_at',
+            type: 'timestamp',
+            default: 'CURRENT_TIMESTAMP',
+          },
+        ],
+      }),
+      true,
+    );
+
+    // Add foreign key for discoverer
+    await queryRunner.createForeignKey(
+      'relics',
+      new TableForeignKey({
+        columnNames: ['discoverer_id'],
+        referencedTableName: 'civilizations',
+        referencedColumnNames: ['id'],
+        onDelete: 'SET NULL',
+      }),
+    );
+
+    // Add spatial index for relics
+    await queryRunner.createIndex(
+      'relics',
+      new TableIndex({
+        name: 'IDX_relics_coordinates',
+        columnNames: ['coordinates'],
+      }),
+    );
+
+    // Step 6: Create market_orders table
+    await queryRunner.createTable(
+      new Table({
+        name: 'market_orders',
+        columns: [
+          {
+            name: 'id',
+            type: 'uuid',
+            isPrimary: true,
+            generationStrategy: 'uuid',
+            default: 'uuid_generate_v4()',
+          },
+          {
+            name: 'civ_id',
+            type: 'uuid',
+            isNullable: false,
+          },
+          {
+            name: 'resource_type',
+            type: 'enum',
+            enum: ['ore', 'energy', 'tech_points'],
+            isNullable: false,
+          },
+          {
+            name: 'amount',
+            type: 'int',
+            isNullable: false,
+          },
+          {
+            name: 'price',
+            type: 'decimal',
+            precision: 10,
+            scale: 4,
+            isNullable: false,
+            comment: '单价',
+          },
+          {
+            name: 'order_type',
+            type: 'enum',
+            enum: ['buy', 'sell'],
+            isNullable: false,
+          },
+          {
+            name: 'status',
+            type: 'enum',
+            enum: ['open', 'partial', 'filled', 'cancelled'],
+            default: "'open'",
+          },
+          {
+            name: 'filled_amount',
+            type: 'int',
+            default: 0,
+          },
+          {
+            name: 'created_at',
+            type: 'timestamp',
+            default: 'CURRENT_TIMESTAMP',
+          },
+          {
+            name: 'updated_at',
+            type: 'timestamp',
+            default: 'CURRENT_TIMESTAMP',
+          },
+        ],
+      }),
+      true,
+    );
+
+    // Add foreign key for market_orders
+    await queryRunner.createForeignKey(
+      'market_orders',
+      new TableForeignKey({
+        columnNames: ['civ_id'],
+        referencedTableName: 'civilizations',
+        referencedColumnNames: ['id'],
+        onDelete: 'CASCADE',
+      }),
+    );
+
+    // Add indexes for market queries
+    await queryRunner.createIndex(
+      'market_orders',
+      new TableIndex({
+        name: 'IDX_market_orders_civ',
+        columnNames: ['civ_id'],
+      }),
+    );
+    await queryRunner.createIndex(
+      'market_orders',
+      new TableIndex({
+        name: 'IDX_market_orders_type_status',
+        columnNames: ['resource_type', 'order_type', 'status'],
+      }),
+    );
+  }
+
+  public async down(queryRunner: QueryRunner): Promise<void> {
+    // Drop market_orders table
+    await queryRunner.dropTable('market_orders', true);
+
+    // Drop relics table
+    await queryRunner.dropTable('relics', true);
+
+    // Drop seasons table
+    await queryRunner.dropTable('seasons', true);
+
+    // Drop trade_routes table
+    await queryRunner.dropTable('trade_routes', true);
+
+    // Remove resources column from civilizations
+    const civilizationsTable = await queryRunner.getTable('civilizations');
+    if (civilizationsTable) {
+      const resourcesColumn = civilizationsTable.columns.find(col => col.name === 'resources');
+      if (resourcesColumn) {
+        await queryRunner.dropColumn('civilizations', 'resources');
+      }
+    }
+  }
+}

@@ -1,0 +1,59 @@
+import { DataSource } from 'typeorm';
+import { MigrationInterface } from 'typeorm';
+
+// Import all migrations
+import { EconomySetup1700000000002 } from './002_economy_setup';
+
+// Export migrations array for registration
+export const migrations: (new () => MigrationInterface)[] = [
+  EconomySetup1700000000002,
+];
+
+// Migration registry for tracking
+export const migrationRegistry = {
+  '002_economy_setup': {
+    id: 'feat-001',
+    description: '数据库迁移 - 新增资源、贸易路线、赛季、遗迹相关表结构',
+    tables: ['trade_routes', 'seasons', 'relics', 'market_orders'],
+    columns: {
+      civilizations: ['resources'],
+    },
+    createdAt: new Date().toISOString(),
+  },
+};
+
+// Helper function to get migration status
+export async function getMigrationStatus(dataSource: DataSource): Promise<{
+  executed: string[];
+  pending: string[];
+}> {
+  const queryRunner = dataSource.createQueryRunner();
+  try {
+    // Check if migrations table exists
+    const hasTable = await queryRunner.hasTable('migrations');
+    if (!hasTable) {
+      return {
+        executed: [],
+        pending: migrations.map(m => m.name),
+      };
+    }
+
+    const executedMigrations = await queryRunner.query(
+      'SELECT name FROM migrations ORDER BY id',
+    );
+
+    const executedNames = executedMigrations.map((m: any) => m.name);
+    const pendingNames = migrations
+      .map(m => m.name)
+      .filter(name => !executedNames.includes(name));
+
+    return {
+      executed: executedNames,
+      pending: pendingNames,
+    };
+  } finally {
+    await queryRunner.release();
+  }
+}
+
+export { EconomySetup1700000000002 };
