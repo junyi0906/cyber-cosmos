@@ -3,41 +3,38 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Event } from '../events/entities/event.entity';
 
-export interface HeatmapPoint {
-  x: number;
-  y: number;
-  z: number;
-  value: number;
-  factionId: string;
-  factionName: string;
-  factionColor: string;
-}
-
-export interface HeatmapData {
-  points: HeatmapPoint[];
-  bounds: {
-    minX: number;
-    maxX: number;
-    minY: number;
-    maxY: number;
-    minZ: number;
-    maxZ: number;
-  };
-  factions: Map<string, { name: string; color: string; totalInfluence: number }>;
-}
-
-export interface CivilizationSector {
-  id: string;
+export interface ResourceFlowNode {
   name: string;
-  color: string;
-  sectors: { x: number; y: number; z: number; influence: number }[];
+  sectorId: string;
+  totalIn: number;
+  totalOut: number;
+}
+
+export interface ResourceFlowLink {
+  source: string;
+  target: string;
+  value: number;
+  resourceType: string;
+}
+
+export interface ResourceFlowData {
+  nodes: ResourceFlowNode[];
+  links: ResourceFlowLink[];
+  summary: {
+    totalFlow: number;
+    topRoutes: Array<{
+      from: string;
+      to: string;
+      value: number;
+    }>;
+    resourceBreakdown: Record<string, number>;
+  };
 }
 
 @Injectable()
 export class TimelineService {
-  private civilizationSectors: Map<string, CivilizationSector> = new Map();
-  private lastHeatmapUpdate: number = 0;
-  private cachedHeatmapData: HeatmapData | null = null;
+  private tradeRoutes: Map<string, TradeRoute> = new Map();
+  private sectorResources: Map<string, SectorResource> = new Map();
 
   constructor(
     @InjectRepository(Event)
@@ -47,233 +44,142 @@ export class TimelineService {
   }
 
   private initializeMockData() {
-    // Initialize with mock civilization data for demonstration
-    const civilizations = [
-      {
-        id: 'civ-001',
-        name: '星际联邦',
-        color: '#4A90D9',
-        sectors: this.generateClusterSectors(0, 0, 0, 15, 0.8),
-      },
-      {
-        id: 'civ-002',
-        name: '赛博帝国',
-        color: '#D94A4A',
-        sectors: this.generateClusterSectors(50, 20, -30, 12, 0.7),
-      },
-      {
-        id: 'civ-003',
-        name: '机械联盟',
-        color: '#4AD98A',
-        sectors: this.generateClusterSectors(-40, 30, 20, 10, 0.6),
-      },
-      {
-        id: 'civ-004',
-        name: '虚空行者',
-        color: '#9B4AD9',
-        sectors: this.generateClusterSectors(30, -40, 40, 8, 0.5),
-      },
-      {
-        id: 'civ-005',
-        name: '贸易联盟',
-        color: '#D9B84A',
-        sectors: this.generateClusterSectors(-20, -30, -20, 14, 0.65),
-      },
+    // 初始化模拟贸易路线数据
+    const mockRoutes: TradeRoute[] = [
+      { id: 'tr-001', sourceSector: 'Alpha', targetSector: 'Beta', resourceType: 'minerals', flow: 1500, active: true },
+      { id: 'tr-002', sourceSector: 'Alpha', targetSector: 'Gamma', resourceType: 'energy', flow: 800, active: true },
+      { id: 'tr-003', sourceSector: 'Beta', targetSector: 'Gamma', resourceType: 'technology', flow: 600, active: true },
+      { id: 'tr-004', sourceSector: 'Gamma', targetSector: 'Delta', resourceType: 'minerals', flow: 1200, active: true },
+      { id: 'tr-005', sourceSector: 'Delta', targetSector: 'Alpha', resourceType: 'energy', flow: 900, active: true },
+      { id: 'tr-006', sourceSector: 'Beta', targetSector: 'Delta', resourceType: 'energy', flow: 700, active: true },
+      { id: 'tr-007', sourceSector: 'Alpha', targetSector: 'Delta', resourceType: 'technology', flow: 400, active: true },
+      { id: 'tr-008', sourceSector: 'Epsilon', targetSector: 'Alpha', resourceType: 'minerals', flow: 1100, active: true },
+      { id: 'tr-009', sourceSector: 'Epsilon', targetSector: 'Beta', resourceType: 'energy', flow: 650, active: true },
+      { id: 'tr-010', sourceSector: 'Gamma', targetSector: 'Epsilon', resourceType: 'technology', flow: 550, active: true },
+      { id: 'tr-011', sourceSector: 'Zeta', targetSector: 'Alpha', resourceType: 'minerals', flow: 950, active: true },
+      { id: 'tr-012', sourceSector: 'Zeta', targetSector: 'Gamma', resourceType: 'energy', flow: 480, active: true },
+      { id: 'tr-013', sourceSector: 'Delta', targetSector: 'Zeta', resourceType: 'technology', flow: 380, active: true },
+      { id: 'tr-014', sourceSector: 'Epsilon', targetSector: 'Zeta', resourceType: 'minerals', flow: 720, active: true },
+      { id: 'tr-015', sourceSector: 'Beta', targetSector: 'Epsilon', resourceType: 'technology', flow: 520, active: false },
     ];
 
-    civilizations.forEach(civ => {
-      this.civilizationSectors.set(civ.id, civ);
+    mockRoutes.forEach(route => {
+      this.tradeRoutes.set(route.id, route);
     });
   }
 
-  private generateClusterSectors(
-    centerX: number,
-    centerY: number,
-    centerZ: number,
-    count: number,
-    baseInfluence: number,
-  ): { x: number; y: number; z: number; influence: number }[] {
-    const sectors: { x: number; y: number; z: number; influence: number }[] = [];
-    
-    for (let i = 0; i < count; i++) {
-      // Generate clustered distribution around center
-      const angle = Math.random() * Math.PI * 2;
-      const radius = Math.random() * 30 + 5;
-      const heightVariation = (Math.random() - 0.5) * 20;
-      
-      sectors.push({
-        x: centerX + Math.cos(angle) * radius,
-        y: centerY + heightVariation,
-        z: centerZ + Math.sin(angle) * radius,
-        influence: baseInfluence + (Math.random() * 0.4 - 0.2),
-      });
-    }
-    
-    return sectors;
+  async getTimelineEvents(options: { limit?: number; offset?: number } = {}) {
+    const { limit = 50, offset = 0 } = options;
+    return this.eventRepository.find({
+      order: { timestamp: 'DESC' },
+      take: limit,
+      skip: offset,
+    });
   }
 
-  async getHeatmapData(): Promise<HeatmapData> {
-    const now = Date.now();
-    
-    // Cache for 5 seconds to avoid recalculation
-    if (this.cachedHeatmapData && now - this.lastHeatmapUpdate < 5000) {
-      return this.cachedHeatmapData;
-    }
+  async getResourceFlowData(): Promise<ResourceFlowData> {
+    // 聚合贸易路线数据
+    const activeRoutes = Array.from(this.tradeRoutes.values()).filter(r => r.active);
 
-    const points: HeatmapPoint[] = [];
-    const factionStats = new Map<string, { name: string; color: string; totalInfluence: number }>();
-    
-    let minX = Infinity, maxX = -Infinity;
-    let minY = Infinity, maxY = -Infinity;
-    let minZ = Infinity, maxZ = -Infinity;
+    // 计算节点数据
+    const nodeMap = new Map<string, ResourceFlowNode>();
 
-    // Process each civilization's sectors
-    this.civilizationSectors.forEach((civ, factionId) => {
-      let totalInfluence = 0;
-      
-      civ.sectors.forEach(sector => {
-        // Update bounds
-        minX = Math.min(minX, sector.x);
-        maxX = Math.max(maxX, sector.x);
-        minY = Math.min(minY, sector.y);
-        maxY = Math.max(maxY, sector.y);
-        minZ = Math.min(minZ, sector.z);
-        maxZ = Math.max(maxZ, sector.z);
-        
-        // Calculate density based on nearby sectors
-        const density = this.calculateLocalDensity(sector, civ.sectors);
-        const value = sector.influence * density;
-        totalInfluence += value;
-        
-        points.push({
-          x: sector.x,
-          y: sector.y,
-          z: sector.z,
-          value: value,
-          factionId: factionId,
-          factionName: civ.name,
-          factionColor: civ.color,
+    activeRoutes.forEach(route => {
+      // 处理源节点
+      if (!nodeMap.has(route.sourceSector)) {
+        nodeMap.set(route.sourceSector, {
+          name: route.sourceSector,
+          sectorId: route.sourceSector,
+          totalIn: 0,
+          totalOut: 0,
         });
-      });
-      
-      factionStats.set(factionId, {
-        name: civ.name,
-        color: civ.color,
-        totalInfluence: totalInfluence,
-      });
+      }
+      nodeMap.get(route.sourceSector)!.totalOut += route.flow;
+
+      // 处理目标节点
+      if (!nodeMap.has(route.targetSector)) {
+        nodeMap.set(route.targetSector, {
+          name: route.targetSector,
+          sectorId: route.targetSector,
+          totalIn: 0,
+          totalOut: 0,
+        });
+      }
+      nodeMap.get(route.targetSector)!.totalIn += route.flow;
     });
 
-    // Add padding to bounds
-    const padding = 10;
-    const bounds = {
-      minX: minX - padding,
-      maxX: maxX + padding,
-      minY: minY - padding,
-      maxY: maxY + padding,
-      minZ: minZ - padding,
-      maxZ: maxZ + padding,
+    // 构建链接数据
+    const links: ResourceFlowLink[] = activeRoutes.map(route => ({
+      source: route.sourceSector,
+      target: route.targetSector,
+      value: route.flow,
+      resourceType: route.resourceType,
+    }));
+
+    // 计算汇总数据
+    const totalFlow = activeRoutes.reduce((sum, r) => sum + r.flow, 0);
+
+    // 排序获取顶级路线
+    const topRoutes = [...activeRoutes]
+      .sort((a, b) => b.flow - a.flow)
+      .slice(0, 5)
+      .map(r => ({
+        from: r.sourceSector,
+        to: r.targetSector,
+        value: r.flow,
+      }));
+
+    // 按资源类型分组
+    const resourceBreakdown: Record<string, number> = {};
+    activeRoutes.forEach(route => {
+      if (!resourceBreakdown[route.resourceType]) {
+        resourceBreakdown[route.resourceType] = 0;
+      }
+      resourceBreakdown[route.resourceType] += route.flow;
+    });
+
+    return {
+      nodes: Array.from(nodeMap.values()),
+      links,
+      summary: {
+        totalFlow,
+        topRoutes,
+        resourceBreakdown,
+      },
     };
-
-    this.cachedHeatmapData = { points, bounds, factions: factionStats };
-    this.lastHeatmapUpdate = now;
-    
-    return this.cachedHeatmapData;
   }
 
-  private calculateLocalDensity(
-    sector: { x: number; y: number; z: number },
-    allSectors: { x: number; y: number; z: number; influence: number }[],
-  ): number {
-    const radius = 20;
-    let nearbyCount = 0;
-    let weightedSum = 0;
-    
-    allSectors.forEach(other => {
-      const distance = Math.sqrt(
-        Math.pow(sector.x - other.x, 2) +
-        Math.pow(sector.y - other.y, 2) +
-        Math.pow(sector.z - other.z, 2)
-      );
-      
-      if (distance <= radius && distance > 0) {
-        const weight = 1 - (distance / radius);
-        nearbyCount++;
-        weightedSum += weight;
-      }
-    });
-    
-    // Density factor: more nearby sectors = higher density
-    return 1 + (weightedSum * 0.3);
+  // 添加贸易路线
+  addTradeRoute(route: TradeRoute): void {
+    this.tradeRoutes.set(route.id, route);
   }
 
-  async getFactionTerritoryStats(): Promise<{
-    factionId: string;
-    factionName: string;
-    sectorCount: number;
-    totalInfluence: number;
-    centroid: { x: number; y: number; z: number };
-  }[]> {
-    const stats: any[] = [];
-    
-    this.civilizationSectors.forEach((civ, factionId) => {
-      let totalX = 0, totalY = 0, totalZ = 0;
-      let totalInfluence = 0;
-      
-      civ.sectors.forEach(sector => {
-        totalX += sector.x * sector.influence;
-        totalY += sector.y * sector.influence;
-        totalZ += sector.z * sector.influence;
-        totalInfluence += sector.influence;
-      });
-      
-      stats.push({
-        factionId,
-        factionName: civ.name,
-        sectorCount: civ.sectors.length,
-        totalInfluence,
-        centroid: {
-          x: totalX / totalInfluence,
-          y: totalY / totalInfluence,
-          z: totalZ / totalInfluence,
-        },
-      });
-    });
-    
-    return stats.sort((a, b) => b.totalInfluence - a.totalInfluence);
-  }
-
-  // Update civilization sectors based on events
-  async updateFromEvents(events: Event[]): Promise<void> {
-    // Process events that might affect territory
-    for (const event of events) {
-      if (event.type === 'territory_expansion' || event.type === 'colony_established') {
-        // Add new sectors based on event data
-        // This would integrate with actual event processing
-      }
+  // 更新贸易路线状态
+  updateRouteStatus(routeId: string, active: boolean): boolean {
+    const route = this.tradeRoutes.get(routeId);
+    if (route) {
+      route.active = active;
+      return true;
     }
-    
-    // Invalidate cache
-    this.cachedHeatmapData = null;
+    return false;
   }
 
-  // Add a new sector to a civilization
-  addSectorToFaction(
-    factionId: string,
-    x: number,
-    y: number,
-    z: number,
-    influence: number = 0.5,
-  ): boolean {
-    const civ = this.civilizationSectors.get(factionId);
-    if (!civ) return false;
-    
-    civ.sectors.push({ x, y, z, influence });
-    this.cachedHeatmapData = null;
-    return true;
+  // 获取所有贸易路线
+  getAllTradeRoutes(): TradeRoute[] {
+    return Array.from(this.tradeRoutes.values());
   }
+}
 
-  // Get all civilizations data
-  getCivilizations(): CivilizationSector[] {
-    return Array.from(this.civilizationSectors.values());
-  }
+interface TradeRoute {
+  id: string;
+  sourceSector: string;
+  targetSector: string;
+  resourceType: string;
+  flow: number;
+  active: boolean;
+}
+
+interface SectorResource {
+  sectorId: string;
+  resources: Record<string, number>;
 }

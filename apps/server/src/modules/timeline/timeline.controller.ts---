@@ -1,41 +1,23 @@
 import { Controller, Get, Query } from '@nestjs/common';
-import { TimelineService, HeatmapData, HeatmapPoint } from './timeline.service';
+import { TimelineService } from './timeline.service';
 
 @Controller('api/observatory')
 export class TimelineController {
   constructor(private readonly timelineService: TimelineService) {}
 
-  @Get('heatmap')
-  async getHeatmap(): Promise<HeatmapData> {
-    return this.timelineService.getHeatmapData();
+  @Get('events')
+  async getEvents(
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    return this.timelineService.getTimelineEvents({
+      limit: limit ? parseInt(limit, 10) : undefined,
+      offset: offset ? parseInt(offset, 10) : undefined,
+    });
   }
 
-  @Get('heatmap/factions')
-  async getFactionTerritoryStats() {
-    return this.timelineService.getFactionTerritoryStats();
-  }
-
-  @Get('heatmap/points')
-  async getHeatmapPoints(
-    @Query('factionId') factionId?: string,
-    @Query('minValue') minValue?: number,
-  ): Promise<HeatmapPoint[]> {
-    const data = await this.timelineService.getHeatmapData();
-    let points = data.points;
-    
-    if (factionId) {
-      points = points.filter(p => p.factionId === factionId);
-    }
-    
-    if (minValue !== undefined) {
-      points = points.filter(p => p.value >= minValue);
-    }
-    
-    return points;
-  }
-
-  @Get('civilizations')
-  async getCivilizations() {
-    return this.timelineService.getCivilizations();
+  @Get('resource-flow')
+  async getResourceFlow() {
+    return this.timelineService.getResourceFlowData();
   }
 }

@@ -1,0 +1,287 @@
+import React, { useEffect, useRef, useState } from 'react';
+import * as echarts from 'echarts';
+
+interface ResourceFlowNode {
+  name: string;
+  sectorId: string;
+  totalIn: number;
+  totalOut: number;
+}
+
+interface ResourceFlowLink {
+  source: string;
+  target: string;
+  value: number;
+  resourceType: string;
+}
+
+interface ResourceFlowData {
+  nodes: ResourceFlowNode[];
+  links: ResourceFlowLink[];
+  summary: {
+    totalFlow: number;
+    topRoutes: Array<{
+      from: string;
+      to: string;
+      value: number;
+    }>;
+    resourceBreakdown: Record<string, number>;
+  };
+}
+
+const RESOURCE_COLORS: Record<string, string> = {
+  minerals: '#5470c6',
+  energy: '#91cc75',
+  technology: '#fac858',
+  relics: '#ee6666',
+  darkMatter: '#73c0de',
+};
+
+const ResourceFlowChart: React.FC = () => {
+  const chartRef = useRef<HTMLDivElement>(null);
+  const chartInstance = useRef<echarts.ECharts | null>(null);
+  const [data, setData] = useState<ResourceFlowData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchResourceFlowData();
+  }, []);
+
+  useEffect(() => {
+    if (data && chartRef.current) {
+      renderChart();
+    }
+    return () => {
+      if (chartInstance.current) {
+        chartInstance.current.dispose();
+      }
+    };
+  }, [data]);
+
+  const fetchResourceFlowData = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch('/api/observatory/resource-flow');
+      if (!response.ok) {
+        throw new Error('Failed to fetch resource flow data');
+      }
+      const result: ResourceFlowData = await response.json();
+      setData(result);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const renderChart = () => {
+    if (!chartRef.current || !data) return;
+
+    if (chartInstance.current) {
+      chartInstance.current.dispose();
+    }
+
+    chartInstance.current = echarts.init(chartRef.current);
+
+    // 构建桑基图数据
+    const nodes = data.nodes.map(node => ({
+      name: node.name,
+      itemStyle: {
+        color: getNodeColor(node),
+      },
+      label: {
+        show: true,
+        position: 'right',
+        formatter: `${node.name}\n入: ${node.totalIn} | 出: ${node.totalOut}`,
+      },
+    }));
+
+    const links = data.links.map(link => ({
+      source: link.source,
+      target: link.target,
+      value: link.value,
+      lineStyle: {
+        color: RESOURCE_COLORS[link.resourceType] || '#aaa',
+        opacity: 0.6,
+        curveness: 0.5,
+      },
+      label: {
+        show: true,
+        position: 'middle',
+        formatter: `${link.resourceType}: ${link.value}`,
+        fontSize: 10,
+      },
+    }));
+
+    const option: echarts.EChartsOption = {
+      title: {
+        text: '星际资源流动图',
+        subtext: `总流量: ${data.summary.totalFlow.toLocaleString()} 单位`,
+        left: 'center',
+        top: 10,
+        textStyle: {
+          fontSize: 18,
+          color: '#fff',
+        },
+        subtextStyle: {
+          fontSize: 14,
+          color: '#aaa',
+        },
+      },
+      tooltip: {
+        trigger: 'item',
+        triggerOn: 'mousemove',
+        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+        borderColor: '#333',
+        textStyle: {
+          color: '#fff',
+        },
+        formatter: (params: any) => {
+          if (params.dataType === 'node') {
+            const node = data.nodes.find(n => n.name === params.name);
+            if (node) {
+              return `<strong>${node.name}</strong><br/>
+                流入: ${node.totalIn.toLocaleString()}<br/>
+                流出: ${node.totalOut.toLocaleString()}<br/>
+                净流量: ${(node.totalIn - node.totalOut).toLocaleString()}`;
+            }
+          } else if (params.dataType === 'edge') {
+            return `<strong>${params.data.source} → ${params.data.target}</strong><br/>
+              资源类型: ${params.data.resourceType}<br/>
+              流量: ${params.data.value.toLocaleString()}`;
+          }
+          return '';
+        },
+      },
+      series: [
+        {
+          type: 'sankey',
+          layout: 'none',
+          emphasis: {
+            focus: 'adjacency',
+          },
+          nodeAlign: 'justify',
+          nodeGap: 20,
+          nodeWidth: 30,
+          layoutIterations: 32,
+          data: nodes,
+          links: links,
+          lineStyle: {
+            color: 'gradient',
+            curveness: 0.5,
+          },
+          itemStyle: {
+            borderWidth: 1,
+            borderColor: '#333',
+          },
+          label: {
+            color: '#fff',
+            fontSize: 12,
+          },
+        },
+      ],
+      grid: {
+        left: '3%',
+        right: '4%',
+        bottom: '15%',
+        top: '15%',
+        containLabel: true,
+      },
+    };
+
+    chartInstance.current.setOption(option);
+
+    // 响应窗口大小变化
+    const handleResize = () => {
+      chartInstance.current?.resize();
+    };
+    window.addEventListener('resize', handleResize);
+  };
+
+  const getNodeColor = (node: ResourceFlowNode): string => {
+    // 根据净流量决定颜色
+    const netFlow = node.totalIn - node.totalOut;
+    if (netFlow > 500) return '#91cc75'; // 净流入多 - 绿色
+    if (netFlow < -500) return '#ee6666'; // 净流出多 - 红色
+    return '#5470c6'; // 平衡 - 蓝色
+  };
+
+  if (loading) {
+    return (
+      <div style={styles.container}>
+        <div style={styles.loading}>加载资源流动数据...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={styles.container}>
+        <div style={styles.error}>错误: {error}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={styles.container}>
+      <div ref={chartRef} style={styles.chart} />
+      
+      {data && (
+        <div style={styles.summary}>
+          <div style={styles.summarySection}>
+            <h4 style={styles.summaryTitle}>顶级贸易路线</h4>
+            <ul style={styles.list}>
+              {data.summary.topRoutes.map((route, index) => (
+                <li key={index} style={styles.listItem}>
+                  <span style={styles.routeFrom}>{route.from}</span>
+                  <span style={styles.arrow}>→</span>
+                  <span style={styles.routeTo}>{route.to}</span>
+                  <span style={styles.routeValue}>{route.value.toLocaleString()}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          
+          <div style={styles.summarySection}>
+            <h4 style={styles.summaryTitle}>资源类型分布</h4>
+            <div style={styles.resourceBreakdown}>
+              {Object.entries(data.summary.resourceBreakdown).map(([type, value]) => (
+                <div key={type} style={styles.resourceItem}>
+                  <span 
+                    style={{ 
+                      ...styles.resourceColor, 
+                      backgroundColor: RESOURCE_COLORS[type] || '#aaa' 
+                    }} 
+                  />
+                  <span style={styles.resourceName}>{type}</span>
+                  <span style={styles.resourceValue}>{value.toLocaleString()}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const styles: Record<string, React.CSSProperties> = {
+  container: {
+    width: '100%',
+    height: '100%',
+    display: 'flex',
+    flexDirection: 'column',
+    backgroundColor: '#1a1a2e',
+    borderRadius: '8px',
+    overflow: 'hidden',
+  },
+  chart: {
+    flex: 1,
+    minHeight: '500px',
+    width: '100%',
+  },
+  loading: {
+    display: 'flex',
+    alignItems:
