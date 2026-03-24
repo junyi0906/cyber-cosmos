@@ -1,7 +1,8 @@
 """
-Diplomacy and Alliance System for Cyber-Cosmos
-Implements diplomatic relations, trust scoring, and alliance management.
+外交与联盟系统模块
+实现 Agent 之间的外交关系管理和联盟机制
 """
+
 from enum import Enum, auto
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set, Tuple
@@ -13,460 +14,429 @@ logger = logging.getLogger(__name__)
 
 
 class DiplomaticStatus(Enum):
-    """Enumeration of possible diplomatic states between agents."""
-    WAR = auto()
-    PEACE = auto()
-    ALLIANCE = auto()
-    TRADE_PACT = auto()
-    NON_AGGRESSION = auto()
-    COLD_WAR = auto()
-    
+    """外交状态枚举"""
+    WAR = auto()           # 战争状态
+    PEACE = auto()         # 和平状态
+    ALLIANCE = auto()      # 联盟状态
+    TRADE_PACT = auto()    # 贸易协定
+    NON_AGGRESSION = auto()  # 互不侵犯条约
+    COLD_WAR = auto()      # 冷战状态
+    NEUTRAL = auto()       # 中立状态
+
 
 @dataclass
 class DiplomaticRelation:
-    """Represents a diplomatic relationship between two agents."""
-    agent_a: str
-    agent_b: str
-    status: DiplomaticStatus
-    trust_score: float = 50.0  # 0-100 scale
-    threat_assessment: float = 0.0  # 0-100 scale
-    established_at: datetime = field(default_factory=datetime.now)
+    """外交关系数据结构"""
+    agent_a_id: str
+    agent_b_id: str
+    status: DiplomaticStatus = DiplomaticStatus.NEUTRAL
+    trust_score: float = 50.0  # 信任度 0-100
+    threat_assessment: float = 50.0  # 威胁评估 0-100
+    established_time: datetime = field(default_factory=datetime.now)
     last_interaction: datetime = field(default_factory=datetime.now)
-    trade_volume: float = 0.0
-    conflict_count: int = 0
-    cooperation_count: int = 0
+    trade_volume: float = 0.0  # 贸易量
+    conflict_count: int = 0  # 冲突次数
+    cooperation_count: int = 0  # 合作次数
+    treaty_expiry: Optional[datetime] = None  # 条约到期时间
+    notes: List[str] = field(default_factory=list)  # 外交备忘录
     
-    def update_trust(self, delta: float) -> None:
-        """Update trust score with bounds checking."""
-        self.trust_score = max(0.0, min(100.0, self.trust_score + delta))
-        self.last_interaction = datetime.now()
-        
-    def update_threat(self, delta: float) -> None:
-        """Update threat assessment with bounds checking."""
-        self.threat_assessment = max(0.0, min(100.0, self.threat_assessment + delta))
-        self.last_interaction = datetime.now()
+    def to_dict(self) -> dict:
+        """转换为字典"""
+        return {
+            'agent_a_id': self.agent_a_id,
+            'agent_b_id': self.agent_b_id,
+            'status': self.status.name,
+            'trust_score': self.trust_score,
+            'threat_assessment': self.threat_assessment,
+            'established_time': self.established_time.isoformat(),
+            'last_interaction': self.last_interaction.isoformat(),
+            'trade_volume': self.trade_volume,
+            'conflict_count': self.conflict_count,
+            'cooperation_count': self.cooperation_count,
+            'treaty_expiry': self.treaty_expiry.isoformat() if self.treaty_expiry else None,
+            'notes': self.notes
+        }
 
 
 @dataclass
 class Alliance:
-    """Represents an alliance between multiple agents."""
+    """联盟数据结构"""
     alliance_id: str
     name: str
-    members: Set[str]
-    leader: str
-    formed_at: datetime = field(default_factory=datetime.now)
-    ideology: Optional[str] = None
-    strength: float = 0.0
-    is_active: bool = True
+    founder_id: str
+    members: Set[str] = field(default_factory=set)
+    ideology: str = "neutral"  # 联盟意识形态
+    formation_time: datetime = field(default_factory=datetime.now)
+    treasury: float = 0.0  # 联盟金库
+    collective_defense: bool = True  # 集体防御
+    trade_agreement: bool = True  # 内部贸易协定
+    votes: Dict[str, str] = field(default_factory=dict)  # 投票记录
+    history: List[str] = field(default_factory=list)  # 联盟历史事件
     
-    def calculate_strength(self, agent_powers: Dict[str, float]) -> float:
-        """Calculate alliance strength based on member powers."""
-        self.strength = sum(agent_powers.get(member, 0) for member in self.members)
-        return self.strength
+    def to_dict(self) -> dict:
+        """转换为字典"""
+        return {
+            'alliance_id': self.alliance_id,
+            'name': self.name,
+            'founder_id': self.founder_id,
+            'members': list(self.members),
+            'ideology': self.ideology,
+            'formation_time': self.formation_time.isoformat(),
+            'treasury': self.treasury,
+            'collective_defense': self.collective_defense,
+            'trade_agreement': self.trade_agreement,
+            'votes': self.votes,
+            'history': self.history
+        }
 
 
 class DiplomacyManager:
-    """Manages diplomatic relations between agents."""
+    """外交管理器"""
     
     def __init__(self):
         self.relations: Dict[Tuple[str, str], DiplomaticRelation] = {}
-        self.status_priorities: Dict[DiplomaticStatus, int] = {
-            DiplomaticStatus.WAR: 0,
-            DiplomaticStatus.COLD_WAR: 1,
-            DiplomaticStatus.PEACE: 2,
-            DiplomaticStatus.NON_AGGRESSION: 3,
-            DiplomaticStatus.TRADE_PACT: 4,
-            DiplomaticStatus.ALLIANCE: 5,
-        }
+        self.agent_reputations: Dict[str, float] = {}  # Agent 全局声誉
+        self.war_declarations: List[dict] = []  # 战争声明历史
+        self.treaty_registry: Dict[str, dict] = {}  # 条约注册表
         
     def _get_relation_key(self, agent_a: str, agent_b: str) -> Tuple[str, str]:
-        """Get normalized relation key (sorted tuple)."""
+        """获取关系键（确保顺序一致）"""
         return tuple(sorted([agent_a, agent_b]))
     
     def get_or_create_relation(self, agent_a: str, agent_b: str) -> DiplomaticRelation:
-        """Get existing relation or create a new default one."""
+        """获取或创建外交关系"""
         key = self._get_relation_key(agent_a, agent_b)
         if key not in self.relations:
             self.relations[key] = DiplomaticRelation(
-                agent_a=key[0],
-                agent_b=key[1],
-                status=DiplomaticStatus.PEACE
+                agent_a_id=key[0],
+                agent_b_id=key[1]
             )
         return self.relations[key]
     
-    def declare_war(self, aggressor: str, defender: str, reason: str = "") -> Dict:
+    def get_relation(self, agent_a: str, agent_b: str) -> Optional[DiplomaticRelation]:
+        """获取外交关系"""
+        key = self._get_relation_key(agent_a, agent_b)
+        return self.relations.get(key)
+    
+    def declare_war(self, aggressor: str, defender: str, reason: str = "") -> dict:
         """
-        Declare war between two agents.
+        宣战
         
         Args:
-            aggressor: Agent initiating the war
-            defender: Agent being attacked
-            reason: Optional reason for the war
+            aggressor: 宣战方 ID
+            defender: 防御方 ID
+            reason: 宣战理由
             
         Returns:
-            Dict containing war declaration details
+            战争声明结果
         """
         relation = self.get_or_create_relation(aggressor, defender)
-        previous_status = relation.status
         
-        # Update relation status
+        # 检查当前状态
+        if relation.status == DiplomaticStatus.WAR:
+            return {
+                'success': False,
+                'message': f'{aggressor} 与 {defender} 已处于战争状态',
+                'relation': relation.to_dict()
+            }
+        
+        # 检查是否有联盟关系
+        if relation.status == DiplomaticStatus.ALLIANCE:
+            # 背叛联盟，大幅降低信任度
+            relation.trust_score = max(0, relation.trust_score - 50)
+            relation.notes.append(f"[背叛] {aggressor} 背叛联盟向 {defender} 宣战")
+        
+        old_status = relation.status
         relation.status = DiplomaticStatus.WAR
-        relation.update_trust(-30.0)  # Major trust penalty
-        relation.update_threat(40.0)  # Increase threat assessment
         relation.conflict_count += 1
+        relation.threat_assessment = min(100, relation.threat_assessment + 30)
+        relation.trust_score = max(0, relation.trust_score - 25)
+        relation.last_interaction = datetime.now()
         
-        logger.info(f"War declared: {aggressor} vs {defender}. Reason: {reason}")
+        # 记录战争声明
+        war_record = {
+            'aggressor': aggressor,
+            'defender': defender,
+            'reason': reason,
+            'timestamp': datetime.now().isoformat(),
+            'previous_status': old_status.name
+        }
+        self.war_declarations.append(war_record)
+        
+        # 更新声誉
+        self._update_reputation(aggressor, -10)
+        
+        logger.info(f"战争声明: {aggressor} -> {defender}, 理由: {reason}")
         
         return {
-            "event": "war_declared",
-            "aggressor": aggressor,
-            "defender": defender,
-            "previous_status": previous_status.name,
-            "new_status": "WAR",
-            "reason": reason,
-            "trust_score": relation.trust_score,
-            "threat_assessment": relation.threat_assessment,
-            "timestamp": datetime.now().isoformat()
+            'success': True,
+            'message': f'{aggressor} 向 {defender} 宣战!',
+            'war_record': war_record,
+            'relation': relation.to_dict()
+        }
+    
+    def make_peace(self, agent_a: str, agent_b: str, terms: dict = None) -> dict:
+        """
+        议和
+        
+        Args:
+            agent_a: 一方 ID
+            agent_b: 另一方 ID
+            terms: 和平条款
+            
+        Returns:
+            议和结果
+        """
+        relation = self.get_or_create_relation(agent_a, agent_b)
+        
+        if relation.status != DiplomaticStatus.WAR:
+            return {
+                'success': False,
+                'message': f'{agent_a} 与 {agent_b} 并未处于战争状态',
+                'relation': relation.to_dict()
+            }
+        
+        relation.status = DiplomaticStatus.PEACE
+        relation.trust_score = min(100, relation.trust_score + 10)
+        relation.threat_assessment = max(0, relation.threat_assessment - 15)
+        relation.last_interaction = datetime.now()
+        
+        if terms:
+            relation.notes.append(f"[和平条约] {terms}")
+        
+        logger.info(f"和平达成: {agent_a} <-> {agent_b}")
+        
+        return {
+            'success': True,
+            'message': f'{agent_a} 与 {agent_b} 达成和平',
+            'relation': relation.to_dict()
         }
     
     def form_alliance(self, agent_a: str, agent_b: str, 
-                      mutual_defense: bool = True) -> Dict:
+                      alliance_manager: 'AllianceManager' = None) -> dict:
         """
-        Form an alliance between two agents.
+        结盟
         
         Args:
-            agent_a: First agent
-            agent_b: Second agent
-            mutual_defense: Whether alliance includes mutual defense clause
+            agent_a: 一方 ID
+            agent_b: 另一方 ID
+            alliance_manager: 联盟管理器（可选）
             
         Returns:
-            Dict containing alliance formation details
+            结盟结果
         """
         relation = self.get_or_create_relation(agent_a, agent_b)
-        previous_status = relation.status
         
-        # Check if already at war
         if relation.status == DiplomaticStatus.WAR:
-            logger.warning(f"Cannot form alliance while at war: {agent_a} vs {agent_b}")
             return {
-                "event": "alliance_failed",
-                "reason": "agents_at_war",
-                "agents": [agent_a, agent_b]
+                'success': False,
+                'message': '处于战争状态的双方无法结盟，请先议和',
+                'relation': relation.to_dict()
             }
         
-        # Update relation status
-        relation.status = DiplomaticStatus.ALLIANCE
-        relation.update_trust(25.0)  # Major trust boost
-        relation.update_threat(-20.0)  # Reduce threat assessment
-        relation.cooperation_count += 1
+        if relation.status == DiplomaticStatus.ALLIANCE:
+            return {
+                'success': False,
+                'message': f'{agent_a} 与 {agent_b} 已是盟友',
+                'relation': relation.to_dict()
+            }
         
-        logger.info(f"Alliance formed: {agent_a} <-> {agent_b}")
+        # 检查信任度
+        if relation.trust_score < 30:
+            return {
+                'success': False,
+                'message': f'信任度过低({relation.trust_score:.1f})，无法结盟',
+                'relation': relation.to_dict()
+            }
+        
+        old_status = relation.status
+        relation.status = DiplomaticStatus.ALLIANCE
+        relation.trust_score = min(100, relation.trust_score + 20)
+        relation.threat_assessment = max(0, relation.threat_assessment - 20)
+        relation.cooperation_count += 1
+        relation.last_interaction = datetime.now()
+        relation.notes.append(f"[结盟] {agent_a} 与 {agent_b} 正式结盟")
+        
+        logger.info(f"联盟形成: {agent_a} <-> {agent_b}")
         
         return {
-            "event": "alliance_formed",
-            "agent_a": agent_a,
-            "agent_b": agent_b,
-            "previous_status": previous_status.name,
-            "new_status": "ALLIANCE",
-            "mutual_defense": mutual_defense,
-            "trust_score": relation.trust_score,
-            "threat_assessment": relation.threat_assessment,
-            "timestamp": datetime.now().isoformat()
+            'success': True,
+            'message': f'{agent_a} 与 {agent_b} 正式结盟!',
+            'relation': relation.to_dict()
         }
     
     def sign_trade_pact(self, agent_a: str, agent_b: str, 
-                        trade_value: float = 0.0) -> Dict:
+                        terms: dict = None) -> dict:
         """
-        Sign a trade pact between two agents.
+        签署贸易协定
         
         Args:
-            agent_a: First agent
-            agent_b: Second agent
-            trade_value: Initial trade value for the pact
+            agent_a: 一方 ID
+            agent_b: 另一方 ID
+            terms: 贸易条款
             
         Returns:
-            Dict containing trade pact details
+            签署结果
         """
         relation = self.get_or_create_relation(agent_a, agent_b)
-        previous_status = relation.status
         
-        # Cannot sign trade pact while at war
         if relation.status == DiplomaticStatus.WAR:
-            logger.warning(f"Cannot sign trade pact while at war: {agent_a} vs {agent_b}")
             return {
-                "event": "trade_pact_failed",
-                "reason": "agents_at_war",
-                "agents": [agent_a, agent_b]
+                'success': False,
+                'message': '处于战争状态无法签署贸易协定',
+                'relation': relation.to_dict()
             }
         
-        # Update relation - trade pact can coexist with alliance
-        if relation.status != DiplomaticStatus.ALLIANCE:
-            relation.status = DiplomaticStatus.TRADE_PACT
+        if relation.status == DiplomaticStatus.TRADE_PACT:
+            return {
+                'success': False,
+                'message': '贸易协定已存在',
+                'relation': relation.to_dict()
+            }
         
-        relation.trade_volume = trade_value
-        relation.update_trust(10.0)  # Moderate trust boost
-        relation.update_threat(-5.0)  # Slight threat reduction
+        # 检查信任度
+        if relation.trust_score < 20:
+            return {
+                'success': False,
+                'message': f'信任度过低({relation.trust_score:.1f})，无法签署贸易协定',
+                'relation': relation.to_dict()
+            }
+        
+        relation.status = DiplomaticStatus.TRADE_PACT
+        relation.trust_score = min(100, relation.trust_score + 10)
         relation.cooperation_count += 1
+        relation.last_interaction = datetime.now()
         
-        logger.info(f"Trade pact signed: {agent_a} <-> {agent_b}")
+        if terms:
+            relation.trade_volume = terms.get('volume', 100)
+            treaty_id = f"trade_{agent_a}_{agent_b}_{datetime.now().timestamp()}"
+            self.treaty_registry[treaty_id] = {
+                'type': 'trade_pact',
+                'parties': [agent_a, agent_b],
+                'terms': terms,
+                'signed_at': datetime.now().isoformat()
+            }
+            relation.notes.append(f"[贸易协定] {terms}")
         
-        return {
-            "event": "trade_pact_signed",
-            "agent_a": agent_a,
-            "agent_b": agent_b,
-            "previous_status": previous_status.name,
-            "new_status": relation.status.name,
-            "trade_volume": relation.trade_volume,
-            "trust_score": relation.trust_score,
-            "threat_assessment": relation.threat_assessment,
-            "timestamp": datetime.now().isoformat()
-        }
-    
-    def make_peace(self, agent_a: str, agent_b: str, 
-                   terms: Optional[Dict] = None) -> Dict:
-        """
-        Establish peace between two agents.
-        
-        Args:
-            agent_a: First agent
-            agent_b: Second agent
-            terms: Optional peace terms
-            
-        Returns:
-            Dict containing peace treaty details
-        """
-        relation = self.get_or_create_relation(agent_a, agent_b)
-        previous_status = relation.status
-        
-        relation.status = DiplomaticStatus.PEACE
-        relation.update_trust(5.0)  # Small trust boost for peaceful resolution
-        relation.update_threat(-10.0)  # Reduce threat
-        
-        logger.info(f"Peace established: {agent_a} <-> {agent_b}")
+        logger.info(f"贸易协定签署: {agent_a} <-> {agent_b}")
         
         return {
-            "event": "peace_established",
-            "agent_a": agent_a,
-            "agent_b": agent_b,
-            "previous_status": previous_status.name,
-            "new_status": "PEACE",
-            "terms": terms or {},
-            "trust_score": relation.trust_score,
-            "threat_assessment": relation.threat_assessment,
-            "timestamp": datetime.now().isoformat()
+            'success': True,
+            'message': f'{agent_a} 与 {agent_b} 签署贸易协定',
+            'relation': relation.to_dict()
         }
     
-    def sign_non_aggression_pact(self, agent_a: str, agent_b: str) -> Dict:
+    def sign_non_aggression_pact(self, agent_a: str, agent_b: str,
+                                  duration_days: int = 100) -> dict:
         """
-        Sign a non-aggression pact between two agents.
+        签署互不侵犯条约
         
         Args:
-            agent_a: First agent
-            agent_b: Second agent
+            agent_a: 一方 ID
+            agent_b: 另一方 ID
+            duration_days: 条约持续天数
             
         Returns:
-            Dict containing pact details
+            签署结果
         """
         relation = self.get_or_create_relation(agent_a, agent_b)
-        previous_status = relation.status
         
         if relation.status == DiplomaticStatus.WAR:
-            logger.warning(f"Cannot sign NAP while at war: {agent_a} vs {agent_b}")
             return {
-                "event": "nap_failed",
-                "reason": "agents_at_war",
-                "agents": [agent_a, agent_b]
+                'success': False,
+                'message': '处于战争状态无法签署互不侵犯条约',
+                'relation': relation.to_dict()
             }
         
+        from datetime import timedelta
         relation.status = DiplomaticStatus.NON_AGGRESSION
-        relation.update_trust(8.0)
-        relation.update_threat(-8.0)
+        relation.treaty_expiry = datetime.now() + timedelta(days=duration_days)
+        relation.trust_score = min(100, relation.trust_score + 5)
+        relation.last_interaction = datetime.now()
+        relation.notes.append(f"[互不侵犯条约] 有效期 {duration_days} 天")
         
-        logger.info(f"Non-aggression pact signed: {agent_a} <-> {agent_b}")
+        logger.info(f"互不侵犯条约签署: {agent_a} <-> {agent_b}")
         
         return {
-            "event": "nap_signed",
-            "agent_a": agent_a,
-            "agent_b": agent_b,
-            "previous_status": previous_status.name,
-            "new_status": "NON_AGGRESSION",
-            "trust_score": relation.trust_score,
-            "threat_assessment": relation.threat_assessment,
-            "timestamp": datetime.now().isoformat()
+            'success': True,
+            'message': f'{agent_a} 与 {agent_b} 签署互不侵犯条约',
+            'expiry': relation.treaty_expiry.isoformat(),
+            'relation': relation.to_dict()
         }
     
-    def get_relation_status(self, agent_a: str, agent_b: str) -> DiplomaticStatus:
-        """Get the diplomatic status between two agents."""
+    def update_trust_score(self, agent_a: str, agent_b: str, 
+                           delta: float, reason: str = "") -> float:
+        """
+        更新信任度
+        
+        Args:
+            agent_a: 一方 ID
+            agent_b: 另一方 ID
+            delta: 变化量（正为增加，负为减少）
+            reason: 变化原因
+            
+        Returns:
+            更新后的信任度
+        """
         relation = self.get_or_create_relation(agent_a, agent_b)
-        return relation.status
-    
-    def get_trust_score(self, agent_a: str, agent_b: str) -> float:
-        """Get the trust score between two agents."""
-        relation = self.get_or_create_relation(agent_a, agent_b)
+        old_score = relation.trust_score
+        relation.trust_score = max(0, min(100, relation.trust_score + delta))
+        relation.last_interaction = datetime.now()
+        
+        if reason:
+            relation.notes.append(f"[信任度] {reason}: {old_score:.1f} -> {relation.trust_score:.1f}")
+        
         return relation.trust_score
     
-    def get_threat_assessment(self, agent_a: str, agent_b: str) -> float:
-        """Get the threat assessment of agent_b from agent_a's perspective."""
+    def update_threat_assessment(self, agent_a: str, agent_b: str,
+                                  delta: float, reason: str = "") -> float:
+        """
+        更新威胁评估
+        
+        Args:
+            agent_a: 评估方 ID
+            agent_b: 被评估方 ID
+            delta: 变化量
+            reason: 变化原因
+            
+        Returns:
+            更新后的威胁评估值
+        """
         relation = self.get_or_create_relation(agent_a, agent_b)
+        old_assessment = relation.threat_assessment
+        relation.threat_assessment = max(0, min(100, relation.threat_assessment + delta))
+        relation.last_interaction = datetime.now()
+        
+        if reason:
+            relation.notes.append(f"[威胁评估] {reason}: {old_assessment:.1f} -> {relation.threat_assessment:.1f}")
+        
         return relation.threat_assessment
     
-    def get_all_relations(self, agent_id: str) -> Dict[str, DiplomaticRelation]:
-        """Get all diplomatic relations for a specific agent."""
-        relations = {}
+    def _update_reputation(self, agent_id: str, delta: float):
+        """更新 Agent 全局声誉"""
+        if agent_id not in self.agent_reputations:
+            self.agent_reputations[agent_id] = 50.0
+        self.agent_reputations[agent_id] = max(0, min(100, 
+            self.agent_reputations[agent_id] + delta))
+    
+    def get_agent_relations(self, agent_id: str) -> List[DiplomaticRelation]:
+        """获取 Agent 的所有外交关系"""
+        relations = []
         for key, relation in self.relations.items():
             if agent_id in key:
-                other_agent = key[0] if key[1] == agent_id else key[1]
-                relations[other_agent] = relation
+                relations.append(relation)
         return relations
     
-    def calculate_diplomatic_standing(self, agent_id: str) -> Dict:
-        """
-        Calculate overall diplomatic standing for an agent.
-        
-        Returns:
-            Dict containing diplomatic statistics
-        """
-        relations = self.get_all_relations(agent_id)
-        
-        allies = []
-        trade_partners = []
+    def get_agent_enemies(self, agent_id: str) -> List[str]:
+        """获取 Agent 的敌人列表"""
         enemies = []
-        neutral = []
-        
-        for other_id, relation in relations.items():
-            if relation.status == DiplomaticStatus.ALLIANCE:
-                allies.append(other_id)
-            elif relation.status == DiplomaticStatus.TRADE_PACT:
-                trade_partners.append(other_id)
-            elif relation.status == DiplomaticStatus.WAR:
-                enemies.append(other_id)
-            else:
-                neutral.append(other_id)
-        
-        avg_trust = sum(r.trust_score for r in relations.values()) / len(relations) if relations else 50.0
-        avg_threat = sum(r.threat_assessment for r in relations.values()) / len(relations) if relations else 0.0
-        
-        return {
-            "agent_id": agent_id,
-            "allies": allies,
-            "trade_partners": trade_partners,
-            "enemies": enemies,
-            "neutral": neutral,
-            "average_trust": avg_trust,
-            "average_threat": avg_threat,
-            "total_relations": len(relations)
-        }
-
-
-class AllianceManager:
-    """Manages multi-agent alliances."""
+        for relation in self.get_agent_relations(agent_id):
+            if relation.status == DiplomaticStatus.WAR:
+                other = relation.agent_b_id if relation.agent_a_id == agent_id else relation.agent_a_id
+                enemies.append(other)
+        return enemies
     
-    def __init__(self, diplomacy_manager: DiplomacyManager):
-        self.diplomacy_manager = diplomacy_manager
-        self.alliances: Dict[str, Alliance] = {}
-        self.agent_alliance_map: Dict[str, str] = {}  # agent_id -> alliance_id
-        self._alliance_counter = 0
-        
-    def _generate_alliance_id(self) -> str:
-        """Generate a unique alliance ID."""
-        self._alliance_counter += 1
-        return f"alliance_{self._alliance_counter:04d}"
-    
-    def _generate_alliance_name(self, ideology: Optional[str] = None) -> str:
-        """Generate a name for the alliance."""
-        prefixes = ["United", "Grand", "Eternal", "Sacred", "Iron", "Golden"]
-        suffixes = ["Coalition", "Federation", "Union", "League", "Pact", "Alliance"]
-        
-        prefix = random.choice(prefixes)
-        suffix = random.choice(suffixes)
-        
-        if ideology:
-            return f"{prefix} {ideology.title()} {suffix}"
-        return f"{prefix} {suffix}"
-    
-    def create_alliance(self, founder: str, ideology: Optional[str] = None,
-                        initial_members: Optional[Set[str]] = None) -> Dict:
-        """
-        Create a new alliance.
-        
-        Args:
-            founder: Agent creating the alliance
-            ideology: Optional ideological basis for the alliance
-            initial_members: Optional set of initial member agents
-            
-        Returns:
-            Dict containing alliance creation details
-        """
-        # Check if founder is already in an alliance
-        if founder in self.agent_alliance_map:
-            existing_id = self.agent_alliance_map[founder]
-            logger.warning(f"Agent {founder} is already in alliance {existing_id}")
-            return {
-                "event": "alliance_creation_failed",
-                "reason": "already_in_alliance",
-                "agent": founder,
-                "existing_alliance": existing_id
-            }
-        
-        alliance_id = self._generate_alliance_id()
-        members = initial_members or {founder}
-        members.add(founder)  # Ensure founder is included
-        
-        alliance = Alliance(
-            alliance_id=alliance_id,
-            name=self._generate_alliance_name(ideology),
-            members=members,
-            leader=founder,
-            ideology=ideology
-        )
-        
-        self.alliances[alliance_id] = alliance
-        
-        # Update agent-alliance mapping
-        for member in members:
-            self.agent_alliance_map[member] = alliance_id
-        
-        # Establish diplomatic relations between all members
-        members_list = list(members)
-        for i, agent_a in enumerate(members_list):
-            for agent_b in members_list[i+1:]:
-                self.diplomacy_manager.form_alliance(agent_a, agent_b)
-        
-        logger.info(f"Alliance created: {alliance.name} (ID: {alliance_id}) by {founder}")
-        
-        return {
-            "event": "alliance_created",
-            "alliance_id": alliance_id,
-            "name": alliance.name,
-            "leader": founder,
-            "members": list(members),
-            "ideology": ideology,
-            "timestamp": datetime.now().isoformat()
-        }
-    
-    def join_alliance(self, agent_id: str, alliance_id: str) -> Dict:
-        """
-        Have an agent join an existing alliance.
-        
-        Args:
-            agent_id: Agent wanting to join
-            alliance_id: Target alliance ID
-            
-        Returns:
-            Dict containing join details
-        """
-        # Check if agent is already in an alliance
-        if agent_id in self.agent_alliance_map:
-            existing_id = self.agent_alliance_map[agent_id]
-            if existing_id == alliance_id:
-                return {
-                    "event": "join_failed",
-                    "reason": "already_member",
-                    "agent": agent_id,
-                    "alliance": alliance_id
-                }
-            return {
-                "event": "join_failed",
-                "reason": "in_different_alliance",
-                "agent": agent_id,
-                "current_alliance": existing_id
+    def get_agent_allies(self, agent_id: str) -> List[str]:
+        """获取 Agent 的盟友列表"""
+        allies = []
+        for relation in self.get_agent_relations(agent

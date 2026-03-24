@@ -1,4 +1,8 @@
-# Social system module
-from .diplomacy import DiplomacyManager, AllianceManager, DiplomaticStatus
+from .diplomacy import DiplomacyManager, AllianceManager, DiplomaticStatus, DiplomaticRelation
 
-__all__ = ['DiplomacyManager', 'AllianceManager', 'DiplomaticStatus']
+__all__ = [
+    'DiplomacyManager',
+    'AllianceManager', 
+    'DiplomaticStatus',
+    'DiplomaticRelation'
+]
