@@ -1,6 +1,6 @@
 """
-编年史生成器 - 基于事件链生成历史叙事
-Feature ID: feat-008
+Chronicler - 历史编年史生成器
+基于事件链生成历史叙事
 """
 
 import os
@@ -8,55 +8,17 @@ import json
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass, field
-from enum import Enum
+from collections import defaultdict
 import logging
 
 try:
     from pymongo import MongoClient
     from pymongo.collection import Collection
-    MONGODB_AVAILABLE = True
+    HAS_MONGO = True
 except ImportError:
-    MONGODB_AVAILABLE = False
+    HAS_MONGO = False
 
-# 设置日志
 logger = logging.getLogger(__name__)
-
-
-class EventType(Enum):
-    """事件类型枚举"""
-    # 宏观事件
-    SUPERNOVA = "supernova"
-    BLACK_HOLE_FORMATION = "black_hole_formation"
-    NEBULA_COLLISION = "nebula_collision"
-    COSMIC_RADIATION = "cosmic_radiation"
-    
-    # 微观事件
-    RESOURCE_DEPLETION = "resource_depletion"
-    ENVIRONMENTAL_CHANGE = "environmental_change"
-    TECH_SINGULARITY = "tech_singularity"
-    
-    # 文明事件
-    CIVILIZATION_BIRTH = "civilization_birth"
-    CIVILIZATION_EXPANSION = "civilization_expansion"
-    CIVILIZATION_WAR = "civilization_war"
-    CIVILIZATION_ALLIANCE = "civilization_alliance"
-    CIVILIZATION_COLLAPSE = "civilization_collapse"
-    CIVILIZATION_EVOLUTION = "civilization_evolution"
-    
-    # 外交事件
-    DIPLOMACY_TREATY = "diplomacy_treaty"
-    DIPLOMACY_WAR = "diplomacy_war"
-    DIPLOMACY_ALLIANCE = "diplomacy_alliance"
-    DIPLOMACY_TRADE = "diplomacy_trade"
-
-
-class CausalityType(Enum):
-    """因果关系类型"""
-    DIRECT_CAUSE = "direct_cause"      # 直接因果
-    INDIRECT_CAUSE = "indirect_cause"  # 间接因果
-    TRIGGER = "trigger"                # 触发关系
-    CONSEQUENCE = "consequence"        # 后果关系
-    CORRELATION = "correlation"        # 相关关系
 
 
 @dataclass
@@ -64,427 +26,442 @@ class Event:
     """事件数据结构"""
     event_id: str
     event_type: str
-    timestamp: int  # 宇宙时间戳
+    timestamp: float
+    universe_time: int  # 宇宙纪元
     description: str
-    participants: List[str] = field(default_factory=list)  # 参与者ID列表
+    participants: List[str] = field(default_factory=list)
     location: Optional[Dict[str, Any]] = None
-    impact: Dict[str, Any] = field(default_factory=dict)
+    consequences: List[str] = field(default_factory=list)
+    causes: List[str] = field(default_factory=list)
+    severity: str = "normal"  # low, normal, high, critical
     metadata: Dict[str, Any] = field(default_factory=dict)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "event_id": self.event_id,
             "event_type": self.event_type,
             "timestamp": self.timestamp,
+            "universe_time": self.universe_time,
             "description": self.description,
             "participants": self.participants,
             "location": self.location,
-            "impact": self.impact,
+            "consequences": self.consequences,
+            "causes": self.causes,
+            "severity": self.severity,
             "metadata": self.metadata
         }
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'Event':
         return cls(
             event_id=data.get("event_id", ""),
-            event_type=data.get("event_type", ""),
-            timestamp=data.get("timestamp", 0),
+            event_type=data.get("event_type", "unknown"),
+            timestamp=data.get("timestamp", 0.0),
+            universe_time=data.get("universe_time", 0),
             description=data.get("description", ""),
             participants=data.get("participants", []),
             location=data.get("location"),
-            impact=data.get("impact", {}),
+            consequences=data.get("consequences", []),
+            causes=data.get("causes", []),
+            severity=data.get("severity", "normal"),
             metadata=data.get("metadata", {})
         )
 
 
 @dataclass
-class EventLink:
-    """事件链链接"""
-    source_event_id: str
-    target_event_id: str
-    causality_type: CausalityType
-    strength: float = 1.0  # 关系强度 0-1
-    description: str = ""
-    
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "source_event_id": self.source_event_id,
-            "target_event_id": self.target_event_id,
-            "causality_type": self.causality_type.value,
-            "strength": self.strength,
-            "description": self.description
-        }
-
-
-@dataclass
 class EventChain:
-    """事件链"""
-    events: List[Event] = field(default_factory=list)
-    links: List[EventLink] = field(default_factory=list)
-    
-    def add_event(self, event: Event):
-        self.events.append(event)
-    
-    def add_link(self, link: EventLink):
-        self.links.append(link)
-    
-    def get_event(self, event_id: str) -> Optional[Event]:
-        for event in self.events:
-            if event.event_id == event_id:
-                return event
-        return None
-    
-    def get_causes(self, event_id: str) -> List[Event]:
-        """获取某事件的所有原因事件"""
-        causes = []
-        for link in self.links:
-            if link.target_event_id == event_id:
-                source = self.get_event(link.source_event_id)
-                if source:
-                    causes.append(source)
-        return causes
-    
-    def get_consequences(self, event_id: str) -> List[Event]:
-        """获取某事件的所有后果事件"""
-        consequences = []
-        for link in self.links:
-            if link.source_event_id == event_id:
-                target = self.get_event(link.target_event_id)
-                if target:
-                    consequences.append(target)
-        return consequences
-    
+    """事件链 - 表示因果关系链"""
+    chain_id: str
+    root_event: Event
+    chain_events: List[Event] = field(default_factory=list)
+    chain_type: str = "causal"  # causal, temporal, spatial
+    narrative: str = ""
+
     def to_dict(self) -> Dict[str, Any]:
         return {
-            "events": [e.to_dict() for e in self.events],
-            "links": [l.to_dict() for l in self.links]
+            "chain_id": self.chain_id,
+            "root_event": self.root_event.to_dict(),
+            "chain_events": [e.to_dict() for e in self.chain_events],
+            "chain_type": self.chain_type,
+            "narrative": self.narrative
         }
 
 
 @dataclass
-class Civilization:
-    """文明数据结构"""
-    civilization_id: str
-    name: str
-    level: str  # 部落、城邦、王国、帝国、星际文明
-    population: int = 0
-    technology_level: float = 0.0
-    military_power: float = 0.0
-    economic_power: float = 0.0
-    culture_value: float = 0.0
-    founded_at: int = 0
-    collapsed_at: Optional[int] = None
-    status: str = "active"
-    
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "civilization_id": self.civilization_id,
-            "name": self.name,
-            "level": self.level,
-            "population": self.population,
-            "technology_level": self.technology_level,
-            "military_power": self.military_power,
-            "economic_power": self.economic_power,
-            "culture_value": self.culture_value,
-            "founded_at": self.founded_at,
-            "collapsed_at": self.collapsed_at,
-            "status": self.status
-        }
-
-
-@dataclass
-class Narrative:
-    """叙事数据结构"""
-    narrative_id: str
-    narrative_type: str  # epoch_summary, civilization_history, event_story
-    title: str
-    content: str
+class EpochSummary:
+    """纪元总结报告"""
+    epoch_id: str
     start_time: int
     end_time: int
-    related_events: List[str] = field(default_factory=list)
-    related_civilizations: List[str] = field(default_factory=list)
-    created_at: datetime = field(default_factory=datetime.now)
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    
+    title: str
+    overview: str
+    major_events: List[Dict[str, Any]]
+    civilization_summaries: Dict[str, str]
+    statistics: Dict[str, Any]
+    generated_at: float = field(default_factory=lambda: datetime.now().timestamp())
+
     def to_dict(self) -> Dict[str, Any]:
         return {
-            "narrative_id": self.narrative_id,
-            "narrative_type": self.narrative_type,
-            "title": self.title,
-            "content": self.content,
+            "epoch_id": self.epoch_id,
             "start_time": self.start_time,
             "end_time": self.end_time,
-            "related_events": self.related_events,
-            "related_civilizations": self.related_civilizations,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "metadata": self.metadata
+            "title": self.title,
+            "overview": self.overview,
+            "major_events": self.major_events,
+            "civilization_summaries": self.civilization_summaries,
+            "statistics": self.statistics,
+            "generated_at": self.generated_at
         }
 
 
 class Chronicler:
     """
     编年史生成器
-    负责从 MongoDB 收集事件、构建事件链、生成历史叙事
+    负责收集事件、构建事件链、生成历史叙事
     """
-    
-    def __init__(
-        self,
-        mongo_uri: str = "mongodb://localhost:27017",
-        db_name: str = "cyber_cosmos",
-        template_dir: Optional[str] = None
-    ):
+
+    def __init__(self, mongo_uri: str = "mongodb://localhost:27017",
+                 db_name: str = "cyber_cosmos",
+                 events_collection: str = "events",
+                 narratives_collection: str = "narratives"):
         """
         初始化编年史生成器
-        
+
         Args:
-            mongo_uri: MongoDB 连接字符串
+            mongo_uri: MongoDB连接字符串
             db_name: 数据库名称
-            template_dir: 模板目录路径
+            events_collection: 事件集合名称
+            narratives_collection: 叙事集合名称
         """
         self.mongo_uri = mongo_uri
         self.db_name = db_name
-        self.template_dir = template_dir or os.path.join(
-            os.path.dirname(__file__), "templates"
-        )
-        
-        # MongoDB 连接
+        self.events_collection_name = events_collection
+        self.narratives_collection_name = narratives_collection
+
         self._client: Optional[MongoClient] = None
         self._db = None
         self._events_collection: Optional[Collection] = None
         self._narratives_collection: Optional[Collection] = None
-        self._civilizations_collection: Optional[Collection] = None
-        
-        # 内存缓存
-        self._event_cache: Dict[str, Event] = {}
-        self._chain_cache: Dict[str, EventChain] = {}
-        
-        # 初始化连接
-        self._init_mongodb()
-    
-    def _init_mongodb(self):
-        """初始化 MongoDB 连接"""
-        if not MONGODB_AVAILABLE:
-            logger.warning("pymongo not available, using in-memory storage")
-            return
-        
-        try:
-            self._client = MongoClient(self.mongo_uri, serverSelectionTimeoutMS=5000)
-            self._db = self._client[self.db_name]
-            self._events_collection = self._db["events"]
-            self._narratives_collection = self._db["narratives"]
-            self._civilizations_collection = self._db["civilizations"]
-            
-            # 创建索引
-            if self._events_collection is not None:
-                self._events_collection.create_index([("timestamp", 1)])
-                self._events_collection.create_index([("event_type", 1)])
-                self._events_collection.create_index([("participants", 1)])
-            
-            logger.info(f"Connected to MongoDB: {self.db_name}")
-        except Exception as e:
-            logger.warning(f"Failed to connect to MongoDB: {e}, using in-memory storage")
-            self._client = None
-            self._db = None
-    
-    def _get_events_collection(self) -> Collection:
-        """获取事件集合"""
-        if self._events_collection is not None:
-            return self._events_collection
-        raise RuntimeError("MongoDB not available")
-    
-    def _get_narratives_collection(self) -> Collection:
-        """获取叙事集合"""
-        if self._narratives_collection is not None:
-            return self._narratives_collection
-        raise RuntimeError("MongoDB not available")
-    
-    def _get_civilizations_collection(self) -> Collection:
-        """获取文明集合"""
-        if self._civilizations_collection is not None:
-            return self._civilizations_collection
-        raise RuntimeError("MongoDB not available")
-    
-    def collect_events(
-        self,
-        start_time: int,
-        end_time: int,
-        event_types: Optional[List[str]] = None,
-        participant_ids: Optional[List[str]] = None,
-        limit: int = 1000
-    ) -> List[Event]:
+
+        # 事件类型分类
+        self.event_categories = {
+            "celestial": ["supernova", "blackhole_formation", "nebula_collapse",
+                         "resource_depletion", "star_birth", "planet_formation"],
+            "civilization": ["tech_breakthrough", "cultural_renaissance", "civil_war",
+                           "extinction", "expansion", "colonization", "migration"],
+            "disaster": ["gamma_ray_burst", "plague", "void_invasion",
+                        "asteroid_impact", "solar_flare"],
+            "diplomacy": ["treaty_signed", "alliance_formed", "war_declared",
+                         "peace_established", "trade_agreement"],
+            "discovery": ["new_resource", "new_species", "ancient_relic",
+                         "anomaly_detected", "signal_received"]
+        }
+
+        # 模板目录
+        self.template_dir = os.path.join(os.path.dirname(__file__), "templates")
+
+    def _ensure_connection(self):
+        """确保MongoDB连接"""
+        if not HAS_MONGO:
+            logger.warning("MongoDB driver not available, using in-memory storage")
+            return False
+
+        if self._client is None:
+            try:
+                self._client = MongoClient(self.mongo_uri, serverSelectionTimeoutMS=5000)
+                self._db = self._client[self.db_name]
+                self._events_collection = self._db[self.events_collection_name]
+                self._narratives_collection = self._db[self.narratives_collection_name]
+                # 测试连接
+                self._client.admin.command('ping')
+                logger.info(f"Connected to MongoDB: {self.db_name}")
+                return True
+            except Exception as e:
+                logger.error(f"Failed to connect to MongoDB: {e}")
+                self._client = None
+                return False
+        return True
+
+    def collect_events(self, start_time: int, end_time: int,
+                      event_types: Optional[List[str]] = None,
+                      participants: Optional[List[str]] = None,
+                      limit: int = 1000) -> List[Event]:
         """
-        从 MongoDB 收集指定时间段的事件
-        
+        从MongoDB收集指定时间段的事件
+
         Args:
-            start_time: 起始时间戳（宇宙时间）
-            end_time: 结束时间戳（宇宙时间）
-            event_types: 事件类型过滤列表
-            participant_ids: 参与者ID过滤列表
+            start_time: 起始宇宙时间
+            end_time: 结束宇宙时间
+            event_types: 事件类型过滤
+            participants: 参与者过滤（文明ID列表）
             limit: 返回事件数量限制
-        
+
         Returns:
             事件列表
         """
         events = []
-        
-        # 构建查询条件
-        query: Dict[str, Any] = {
-            "timestamp": {
-                "$gte": start_time,
-                "$lte": end_time
+
+        if self._ensure_connection() and self._events_collection is not None:
+            query = {
+                "universe_time": {"$gte": start_time, "$lte": end_time}
             }
-        }
-        
-        if event_types:
-            query["event_type"] = {"$in": event_types}
-        
-        if participant_ids:
-            query["participants"] = {"$in": participant_ids}
-        
-        # 从 MongoDB 查询
-        if self._events_collection is not None:
-            try:
-                cursor = self._events_collection.find(query).sort("timestamp", 1).limit(limit)
-                for doc in cursor:
-                    event = Event.from_dict(doc)
-                    events.append(event)
-                    self._event_cache[event.event_id] = event
-            except Exception as e:
-                logger.error(f"Failed to collect events from MongoDB: {e}")
+
+            if event_types:
+                query["event_type"] = {"$in": event_types}
+
+            if participants:
+                query["participants"] = {"$in": participants}
+
+            cursor = self._events_collection.find(query).sort("universe_time", 1).limit(limit)
+
+            for doc in cursor:
+                events.append(Event.from_dict(doc))
         else:
-            # 从内存缓存中过滤
-            for event in self._event_cache.values():
-                if start_time <= event.timestamp <= end_time:
-                    if event_types and event.event_type not in event_types:
-                        continue
-                    if participant_ids:
-                        if not any(p in event.participants for p in participant_ids):
-                            continue
-                    events.append(event)
-            events.sort(key=lambda e: e.timestamp)
-            events = events[:limit]
-        
-        logger.info(f"Collected {len(events)} events from period {start_time}-{end_time}")
+            # 回退到内存存储或文件存储
+            events = self._collect_events_from_file(start_time, end_time, event_types, participants)
+
+        logger.info(f"Collected {len(events)} events from time {start_time} to {end_time}")
         return events
-    
-    def build_event_chain(
-        self,
-        events: List[Event],
-        max_link_distance: int = 100
-    ) -> EventChain:
+
+    def _collect_events_from_file(self, start_time: int, end_time: int,
+                                   event_types: Optional[List[str]] = None,
+                                   participants: Optional[List[str]] = None) -> List[Event]:
+        """从文件收集事件（回退方案）"""
+        events = []
+        events_file = os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                                   "..", "universe_state.json")
+
+        if os.path.exists(events_file):
+            try:
+                with open(events_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    for event_data in data.get("events", []):
+                        event = Event.from_dict(event_data)
+                        if start_time <= event.universe_time <= end_time:
+                            if event_types is None or event.event_type in event_types:
+                                if participants is None or any(p in event.participants for p in participants):
+                                    events.append(event)
+            except Exception as e:
+                logger.error(f"Failed to load events from file: {e}")
+
+        return events
+
+    def build_event_chain(self, events: List[Event],
+                          chain_type: str = "causal") -> List[EventChain]:
         """
         构建事件因果关系链
-        
+
         Args:
             events: 事件列表
-            max_link_distance: 最大链接距离（时间单位）
-        
+            chain_type: 链类型 (causal, temporal, spatial)
+
         Returns:
-            事件链
+            事件链列表
         """
-        chain = EventChain()
-        
         if not events:
-            return chain
-        
-        # 添加所有事件
-        for event in events:
-            chain.add_event(event)
-        
+            return []
+
+        chains = []
+        processed_events = set()
+
         # 按时间排序
-        sorted_events = sorted(events, key=lambda e: e.timestamp)
-        
-        # 构建因果关系链接
-        for i, event in enumerate(sorted_events):
-            # 向前查找可能的原因事件
-            for j in range(max(0, i - 10), i):
-                prev_event = sorted_events[j]
-                time_diff = event.timestamp - prev_event.timestamp
-                
-                if time_diff <= 0:
-                    continue
-                
-                # 分析因果关系
-                causality = self._analyze_causality(prev_event, event, time_diff)
-                
-                if causality:
-                    link = EventLink(
-                        source_event_id=prev_event.event_id,
-                        target_event_id=event.event_id,
-                        causality_type=causality["type"],
-                        strength=causality["strength"],
-                        description=causality["description"]
-                    )
-                    chain.add_link(link)
-        
-        # 缓存事件链
-        chain_key = f"{events[0].timestamp}_{events[-1].timestamp}"
-        self._chain_cache[chain_key] = chain
-        
-        logger.info(f"Built event chain with {len(chain.events)} events and {len(chain.links)} links")
-        return chain
-    
-    def _analyze_causality(
-        self,
-        source_event: Event,
-        target_event: Event,
-        time_diff: int
-    ) -> Optional[Dict[str, Any]]:
+        sorted_events = sorted(events, key=lambda e: e.universe_time)
+
+        if chain_type == "causal":
+            chains = self._build_causal_chains(sorted_events, processed_events)
+        elif chain_type == "temporal":
+            chains = self._build_temporal_chains(sorted_events, processed_events)
+        elif chain_type == "spatial":
+            chains = self._build_spatial_chains(sorted_events, processed_events)
+
+        # 为每个链生成叙事
+        for chain in chains:
+            chain.narrative = self._generate_chain_narrative(chain)
+
+        logger.info(f"Built {len(chains)} event chains")
+        return chains
+
+    def _build_causal_chains(self, events: List[Event],
+                             processed: set) -> List[EventChain]:
+        """构建因果链"""
+        chains = []
+        event_map = {e.event_id: e for e in events}
+
+        # 找到根事件（没有原因的事件）
+        root_events = [e for e in events if not e.causes and e.event_id not in processed]
+
+        for root in root_events:
+            if root.event_id in processed:
+                continue
+
+            chain = EventChain(
+                chain_id=f"chain_{root.event_id}",
+                root_event=root,
+                chain_type="causal"
+            )
+            processed.add(root.event_id)
+
+            # 追踪后果链
+            self._trace_consequences(root, event_map, chain.chain_events, processed)
+
+            chains.append(chain)
+
+        return chains
+
+    def _trace_consequences(self, event: Event, event_map: Dict[str, Event],
+                           chain_events: List[Event], processed: set):
+        """递归追踪事件后果"""
+        for consequence_id in event.consequences:
+            if consequence_id in event_map and consequence_id not in processed:
+                next_event = event_map[consequence_id]
+                chain_events.append(next_event)
+                processed.add(consequence_id)
+                self._trace_consequences(next_event, event_map, chain_events, processed)
+
+    def _build_temporal_chains(self, events: List[Event],
+                               processed: set) -> List[EventChain]:
+        """构建时间链"""
+        chains = []
+
+        # 按事件类型分组
+        type_groups = defaultdict(list)
+        for event in events:
+            type_groups[event.event_type].append(event)
+
+        for event_type, type_events in type_groups.items():
+            if len(type_events) < 2:
+                continue
+
+            chain = EventChain(
+                chain_id=f"temporal_{event_type}",
+                root_event=type_events[0],
+                chain_type="temporal"
+            )
+            chain.chain_events = type_events[1:]
+            chains.append(chain)
+
+            for e in type_events:
+                processed.add(e.event_id)
+
+        return chains
+
+    def _build_spatial_chains(self, events: List[Event],
+                              processed: set) -> List[EventChain]:
+        """构建空间链"""
+        chains = []
+
+        # 按位置分组
+        location_groups = defaultdict(list)
+        for event in events:
+            if event.location:
+                loc_key = f"{event.location.get('galaxy', 'unknown')}_{event.location.get('sector', 'unknown')}"
+                location_groups[loc_key].append(event)
+
+        for loc_key, loc_events in location_groups.items():
+            if len(loc_events) < 2:
+                continue
+
+            sorted_events = sorted(loc_events, key=lambda e: e.universe_time)
+            chain = EventChain(
+                chain_id=f"spatial_{loc_key}",
+                root_event=sorted_events[0],
+                chain_type="spatial"
+            )
+            chain.chain_events = sorted_events[1:]
+            chains.append(chain)
+
+            for e in sorted_events:
+                processed.add(e.event_id)
+
+        return chains
+
+    def _generate_chain_narrative(self, chain: EventChain) -> str:
+        """为事件链生成叙事文本"""
+        narrative_parts = []
+
+        root = chain.root_event
+        narrative_parts.append(f"在宇宙纪元 {root.universe_time}，{root.description}")
+
+        if chain.chain_events:
+            for i, event in enumerate(chain.chain_events):
+                connector = self._get_connector(i, chain.chain_type)
+                narrative_parts.append(f"{connector}在纪元 {event.universe_time}，{event.description}")
+
+        return "。".join(narrative_parts) + "。"
+
+    def _get_connector(self, index: int, chain_type: str) -> str:
+        """获取连接词"""
+        if chain_type == "causal":
+            connectors = ["随后", "这导致", "进而引发", "最终造成", "继而"]
+        elif chain_type == "temporal":
+            connectors = ["之后", "随后", "接着", "后来", "此后"]
+        else:
+            connectors = ["同时", "附近", "相邻区域", "同一区域", "邻近"]
+
+        return connectors[index % len(connectors)]
+
+    def generate_epoch_summary(self, start_time: int, end_time: int,
+                               title: Optional[str] = None) -> EpochSummary:
         """
-        分析两个事件之间的因果关系
-        
+        生成宇宙纪元总结报告
+
         Args:
-            source_event: 源事件
-            target_event: 目标事件
-            time_diff: 时间差
-        
+            start_time: 纪元起始时间
+            end_time: 纪元结束时间
+            title: 纪元标题
+
         Returns:
-            因果关系信息，如果没有关系则返回 None
+            纪元总结报告
         """
-        # 检查参与者重叠
-        participant_overlap = set(source_event.participants) & set(target_event.participants)
-        
-        # 检查位置关联
-        location_related = False
-        if source_event.location and target_event.location:
-            # 简单的距离检查
-            try:
-                dist = self._calculate_distance(
-                    source_event.location.get("coordinates", [0, 0, 0]),
-                    target_event.location.get("coordinates", [0, 0, 0])
-                )
-                location_related = dist < 100  # 距离阈值
-            except:
-                pass
-        
-        # 根据事件类型判断因果关系
-        causality_rules = self._get_causality_rules()
-        rule_key = (source_event.event_type, target_event.event_type)
-        
-        if rule_key in causality_rules:
-            rule = causality_rules[rule_key]
-            strength = rule["base_strength"]
-            
-            # 根据时间差调整强度
-            if time_diff > 50:
-                strength *= 0.5
-            elif time_diff > 20:
-                strength *= 0.8
-            
-            # 根据参与者重叠调整强度
-            if participant_overlap:
-                strength = min(1.0, strength * 1.5)
-            
-            return {
-                "type": CausalityType(rule["causality_type"]),
-                "strength": strength,
-                "description": rule["description"]
-            }
-        
-        # 如果有参与者重叠，建立相关关系
-        if participant_overlap:
-            return {
-                "type": CausalityType.CORRELATION,
-                "strength": 0.3,
-                "description": f"涉及相同参与者: {participant_overlap}"
-            }
+        # 收集事件
+        events = self.collect_events(start_time, end_time)
+
+        # 构建事件链
+        chains = self.build_event_chain(events)
+
+        # 统计分析
+        statistics = self._calculate_statistics(events, chains)
+
+        # 提取重大事件
+        major_events = self._extract_major_events(events, chains)
+
+        # 生成文明总结
+        civilization_summaries = self._generate_civilization_summaries(events)
+
+        # 生成概述
+        overview = self._generate_overview(events, chains, statistics)
+
+        # 生成标题
+        if title is None:
+            title = self._generate_epoch_title(events, statistics)
+
+        epoch_id = f"epoch_{start_time}_{end_time}"
+
+        summary = EpochSummary(
+            epoch_id=epoch_id,
+            start_time=start_time,
+            end_time=end_time,
+            title=title,
+            overview=overview,
+            major_events=major_events,
+            civilization_summaries=civilization_summaries,
+            statistics=statistics
+        )
+
+        logger.info(f"Generated epoch summary: {epoch_id}")
+        return summary
+
+    def _calculate_statistics(self, events: List[Event],
+                              chains: List[EventChain]) -> Dict[str, Any]:
+        """计算统计数据"""
+        stats = {
+            "total_events": len(events),
+            "total_chains": len(chains),
+            "events_by_type": defaultdict(int),
+            "events_by_severity": defaultdict(int),
+            "events_by_category": defaultdict(int),
+            "active_civilizations": set(),
+            "affected_locations": set()
+        }
+
+        for event in events:
