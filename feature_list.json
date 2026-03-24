@@ -303,7 +303,7 @@
         "feat-002"
       ],
       "passes": true,
-      "last_attempt": "2026-03-24T19:08:34.951145",
+      "last_attempt": "2026-03-24T19:08:57.190761",
       "notes": "依赖决策引擎和 MongoDB",
       "retry_count": 0
     },
