@@ -1,0 +1,87 @@
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, Index } from 'typeorm';
+
+export enum RelicType {
+  PIONEER_FACTORY = 'pioneer_factory',    // 先驱者工厂 - 产能加成
+  WAR_GRAVEYARD = 'war_graveyard',        // 战争坟场 - 军事加成
+  KNOWLEDGE_VAULT = 'knowledge_vault',    // 知识库 - 科技加成
+  STELLAR_RUINS = 'stellar_ruins',        // 恒星遗迹 - 综合加成
+  ANCIENT_GATE = 'ancient_gate',          // 远古星门 - 探索加成
+}
+
+export enum RelicStatus {
+  UNCLAIMED = 'unclaimed',    // 无主
+  CLAIMED = 'claimed',        // 已占领
+  CONTESTED = 'contested',    // 争夺中
+  DESTROYED = 'destroyed',    // 已摧毁
+}
+
+@Entity('relics')
+@Index(['coordinateX', 'coordinateY'])
+@Index(['ownerId'])
+@Index(['relatedEventId'])
+export class Relic {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({
+    type: 'enum',
+    enum: RelicType,
+    default: RelicType.PIONEER_FACTORY,
+  })
+  type: RelicType;
+
+  @Column({ name: 'related_event_id', type: 'varchar', nullable: true })
+  relatedEventId: string;
+
+  @Column({ name: 'coordinate_x', type: 'float' })
+  coordinateX: number;
+
+  @Column({ name: 'coordinate_y', type: 'float' })
+  coordinateY: number;
+
+  @Column({ name: 'owner_id', type: 'varchar', nullable: true })
+  ownerId: string | null;
+
+  @Column({ name: 'owner_name', type: 'varchar', nullable: true })
+  ownerName: string | null;
+
+  @Column({
+    type: 'enum',
+    enum: RelicStatus,
+    default: RelicStatus.UNCLAIMED,
+  })
+  status: RelicStatus;
+
+  @Column({ name: 'production_bonus', type: 'float', default: 0 })
+  productionBonus: number;
+
+  @Column({ name: 'military_bonus', type: 'float', default: 0 })
+  militaryBonus: number;
+
+  @Column({ name: 'tech_bonus', type: 'float', default: 0 })
+  techBonus: number;
+
+  @Column({ name: 'exploration_bonus', type: 'float', default: 0 })
+  explorationBonus: number;
+
+  @Column({ name: 'defense_power', type: 'int', default: 100 })
+  defensePower: number;
+
+  @Column({ name: 'event_name', type: 'varchar', nullable: true })
+  eventName: string;
+
+  @Column({ name: 'event_severity', type: 'int', nullable: true })
+  eventSeverity: number;
+
+  @Column({ name: 'event_description', type: 'text', nullable: true })
+  eventDescription: string;
+
+  @Column({ type: 'jsonb', nullable: true })
+  metadata: Record<string, any>;
+
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ name: 'updated_at' })
+  updatedAt: Date;
+}
