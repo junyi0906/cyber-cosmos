@@ -32,7 +32,7 @@
       "test_command": "ls -la ~/cyber-cosmos && test -f ~/cyber-cosmos/go.mod",
       "depends_on": [],
       "passes": true,
-      "last_attempt": "2026-03-24T22:03:08.311737",
+      "last_attempt": "2026-03-24T22:03:46.912386",
       "notes": "所有其他 Feature 依赖此基础结构",
       "retry_count": 0
     },
