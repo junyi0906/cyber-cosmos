@@ -1,0 +1,24 @@
+export enum DiplomaticStatus {
+  ALLIED = 'allied',
+  FRIENDLY = 'friendly',
+  NEUTRAL = 'neutral',
+  HOSTILE = 'hostile',
+  WAR = 'war',
+}
+
+export interface DiplomaticRelation {
+  fromCivilizationId: string;
+  toCivilizationId: string;
+  status: DiplomaticStatus;
+  trust: number;
+}
+
+export interface Civilization {
+  id: string;
+  name: string;
+  coordinates: {
+    x: number;
+    y: number;
+    z?: number;
+  };
+}

@@ -1,0 +1,65 @@
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+
+export enum TradeRouteStatus {
+  ACTIVE = 'active',
+  SUSPENDED = 'suspended',
+  ENDED = 'ended',
+}
+
+export enum ResourceType {
+  ORE = 'ore',
+  ENERGY = 'energy',
+  TECHNOLOGY = 'technology',
+  FOOD = 'food',
+  MINERALS = 'minerals',
+}
+
+@Entity('trade_routes')
+export class TradeRoute {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ name: 'from_civilization_id' })
+  fromCivilizationId: string;
+
+  @Column({ name: 'to_civilization_id' })
+  toCivilizationId: string;
+
+  @Column({
+    type: 'enum',
+    enum: ResourceType,
+    name: 'resource_type',
+  })
+  resourceType: ResourceType;
+
+  @Column({ type: 'int' })
+  quantity: number;
+
+  @Column({ type: 'float' })
+  distance: number;
+
+  @Column({ type: 'float', name: 'transport_cost' })
+  transportCost: number;
+
+  @Column({ type: 'float', name: 'relation_bonus' })
+  relationBonus: number;
+
+  @Column({
+    type: 'enum',
+    enum: TradeRouteStatus,
+    default: TradeRouteStatus.ACTIVE,
+  })
+  status: TradeRouteStatus;
+
+  @Column({ name: 'suspended_at', type: 'timestamp', nullable: true })
+  suspendedAt: Date | null;
+
+  @Column({ name: 'ended_at', type: 'timestamp', nullable: true })
+  endedAt: Date | null;
+
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ name: 'updated_at' })
+  updatedAt: Date;
+}

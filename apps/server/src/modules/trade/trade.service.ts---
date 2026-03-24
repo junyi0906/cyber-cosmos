@@ -1,0 +1,155 @@
+import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { TradeRoute, TradeRouteStatus } from './entities/trade-route.entity';
+import { CreateTradeRouteDto } from './dto/create-trade-route.dto';
+import { DiplomaticStatus, DiplomaticRelation, Civilization } from './interfaces/diplomacy.interface';
+
+@Injectable()
+export class TradeService {
+  private readonly logger = new Logger(TradeService.name);
+  private readonly BASE_COST = 100;
+
+  // 模拟外交关系存储（实际项目中应注入 DiplomacyService）
+  private diplomaticRelations: Map<string, DiplomaticRelation> = new Map();
+  
+  // 模拟文明存储（实际项目中应注入 CivilizationService）
+  private civilizations: Map<string, Civilization> = new Map();
+
+  constructor(
+    @InjectRepository(TradeRoute)
+    private tradeRouteRepository: Repository<TradeRoute>,
+  ) {
+    this.initializeMockData();
+  }
+
+  /**
+   * 初始化模拟数据
+   */
+  private initializeMockData(): void {
+    // 模拟文明数据
+    this.civilizations.set('civ-001', {
+      id: 'civ-001',
+      name: '星际联邦',
+      coordinates: { x: 100, y: 200, z: 50 },
+    });
+    this.civilizations.set('civ-002', {
+      id: 'civ-002',
+      name: '机械帝国',
+      coordinates: { x: 300, y: 400, z: 100 },
+    });
+    this.civilizations.set('civ-003', {
+      id: 'civ-003',
+      name: '贸易联盟',
+      coordinates: { x: 500, y: 100, z: 75 },
+    });
+
+    // 模拟外交关系
+    this.diplomaticRelations.set('civ-001-civ-002', {
+      fromCivilizationId: 'civ-001',
+      toCivilizationId: 'civ-002',
+      status: DiplomaticStatus.FRIENDLY,
+      trust: 75,
+    });
+    this.diplomaticRelations.set('civ-002-civ-001', {
+      fromCivilizationId: 'civ-002',
+      toCivilizationId: 'civ-001',
+      status: DiplomaticStatus.FRIENDLY,
+      trust: 75,
+    });
+  }
+
+  /**
+   * 创建贸易路线
+   * 1. 验证两个文明是否存在
+   * 2. 验证外交关系（必须是友好或中立状态）
+   * 3. 计算运输成本
+   * 4. 创建贸易路线
+   */
+  async createTradeRoute(createDto: CreateTradeRouteDto): Promise<TradeRoute> {
+    const { fromCivilizationId, toCivilizationId, resourceType, quantity } = createDto;
+
+    this.logger.log(`创建贸易路线: ${fromCivilizationId} -> ${toCivilizationId}, 资源: ${resourceType}, 数量: ${quantity}`);
+
+    // 验证文明存在
+    const fromCiv = await this.getCivilization(fromCivilizationId);
+    const toCiv = await this.getCivilization(toCivilizationId);
+
+    if (!fromCiv) {
+      throw new NotFoundException(`出发文明不存在: ${fromCivilizationId}`);
+    }
+    if (!toCiv) {
+      throw new NotFoundException(`目标文明不存在: ${toCivilizationId}`);
+    }
+
+    // 不能与自己建立贸易路线
+    if (fromCivilizationId === toCivilizationId) {
+      throw new BadRequestException('不能与自己建立贸易路线');
+    }
+
+    // 验证外交关系
+    const diplomaticRelation = this.getDiplomaticRelation(fromCivilizationId, toCivilizationId);
+    
+    if (diplomaticRelation.status === DiplomaticStatus.WAR || 
+        diplomaticRelation.status === DiplomaticStatus.HOSTILE) {
+      throw new BadRequestException(
+        `外交关系不允许建立贸易路线: 当前状态为 ${diplomaticRelation.status}`
+      );
+    }
+
+    // 计算距离（使用坐标计算欧几里得距离）
+    const distance = this.calculateDistance(fromCiv.coordinates, toCiv.coordinates);
+
+    // 计算关系加成（友好关系获得折扣）
+    const relationBonus = this.calculateRelationBonus(diplomaticRelation.status);
+
+    // 计算运输成本
+    // 公式：cost = baseCost * distance * (1 - relationBonus)
+    const transportCost = this.calculateTransportCost(distance, relationBonus);
+
+    this.logger.log(`距离: ${distance.toFixed(2)}, 关系加成: ${(relationBonus * 100).toFixed(0)}%, 运输成本: ${transportCost.toFixed(2)}`);
+
+    // 创建贸易路线
+    const tradeRoute = this.tradeRouteRepository.create({
+      fromCivilizationId,
+      toCivilizationId,
+      resourceType,
+      quantity,
+      distance,
+      transportCost,
+      relationBonus,
+      status: TradeRouteStatus.ACTIVE,
+    });
+
+    const savedRoute = await this.tradeRouteRepository.save(tradeRoute);
+    this.logger.log(`贸易路线创建成功: ID=${savedRoute.id}`);
+    
+    return savedRoute;
+  }
+
+  /**
+   * 暂停贸易路线
+   */
+  async suspendTradeRoute(routeId: string): Promise<TradeRoute> {
+    this.logger.log(`暂停贸易路线: ${routeId}`);
+
+    const route = await this.tradeRouteRepository.findOne({ 
+      where: { id: routeId } 
+    });
+    
+    if (!route) {
+      throw new NotFoundException(`贸易路线不存在: ${routeId}`);
+    }
+
+    if (route.status === TradeRouteStatus.SUSPENDED) {
+      throw new BadRequestException('贸易路线已经处于暂停状态');
+    }
+
+    if (route.status === TradeRouteStatus.ENDED) {
+      throw new BadRequestException('已终止的贸易路线无法暂停');
+    }
+
+    route.status = TradeRouteStatus.SUSPENDED;
+    route.suspendedAt = new Date();
+    
+    const savedRoute = await this.tradeRouteRepository.save(route);
