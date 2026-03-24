@@ -304,9 +304,10 @@
         "feat-010",
         "feat-012"
       ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": ""
+      "passes": true,
+      "last_attempt": "2026-03-25T00:25:53.605006",
+      "notes": "",
+      "retry_count": 0
     },
     {
       "id": "feat-014",
