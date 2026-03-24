@@ -1,0 +1,505 @@
+"""
+联盟机制 - 文明联盟的组建、管理与决策
+Feature ID: feat-010
+"""
+
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Dict, List, Optional, Set, Any, Callable
+from datetime import datetime
+import uuid
+import random
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class AllianceRole(Enum):
+    """联盟角色"""
+    LEADER = "leader"          # 盟主
+    ELDER = "elder"           # 长老
+    MEMBER = "member"         # 普通成员
+
+
+class VoteType(Enum):
+    """投票类型"""
+    ACCEPT_MEMBER = "accept_member"           # 接纳新成员
+    EXPEL_MEMBER = "expel_member"             # 驱逐成员
+    DECLARE_WAR = "declare_war"               # 宣战
+    MAKE_PEACE = "make_peace"                 # 议和
+    DISSOLVE_ALLIANCE = "dissolve_alliance"   # 解散联盟
+    CHANGE_LEADER = "change_leader"           # 更换盟主
+    MISSION_PROPOSAL = "mission_proposal"     # 任务提案
+
+
+class VoteStatus(Enum):
+    """投票状态"""
+    PENDING = "pending"
+    PASSED = "passed"
+    REJECTED = "rejected"
+    CANCELLED = "cancelled"
+
+
+class MissionType(Enum):
+    """联盟任务类型"""
+    JOINT_DEFENSE = "joint_defense"      # 联合防御
+    JOINT_DEVELOPMENT = "joint_development"  # 共同开发
+    JOINT_EXPLORATION = "joint_exploration"  # 联合探索
+    TRADE_AGREEMENT = "trade_agreement"      # 贸易协定
+    MILITARY_EXERCISE = "military_exercise"  # 军事演习
+
+
+class MissionStatus(Enum):
+    """任务状态"""
+    PROPOSED = "proposed"
+    ACTIVE = "active"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+@dataclass
+class AllianceMember:
+    """联盟成员"""
+    civilization_id: str
+    role: AllianceRole
+    join_time: float
+    contribution: int = 0  # 贡献度
+    reputation: float = 0.0  # 在联盟内的声誉
+
+
+@dataclass
+class AllianceVote:
+    """联盟投票"""
+    vote_id: str
+    vote_type: VoteType
+    proposer_id: str
+    target_id: Optional[str]  # 投票目标（如被投票的文明ID）
+    description: str
+    start_time: float
+    duration: float  # 投票持续时间
+    votes: Dict[str, bool] = field(default_factory=dict)  # civilization_id -> approve
+    status: VoteStatus = VoteStatus.PENDING
+    required_majority: float = 0.51  # 需要的多数比例
+    extra_data: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "vote_id": self.vote_id,
+            "vote_type": self.vote_type.value,
+            "proposer_id": self.proposer_id,
+            "target_id": self.target_id,
+            "description": self.description,
+            "start_time": self.start_time,
+            "duration": self.duration,
+            "votes": self.votes,
+            "status": self.status.value,
+            "required_majority": self.required_majority,
+            "extra_data": self.extra_data
+        }
+
+
+@dataclass
+class AllianceMission:
+    """联盟任务"""
+    mission_id: str
+    mission_type: MissionType
+    proposer_id: str
+    participants: Set[str]
+    start_time: float
+    duration: float
+    status: MissionStatus
+    resources_committed: Dict[str, float] = field(default_factory=dict)  # 文明ID -> 资源量
+    progress: float = 0.0
+    rewards: Dict[str, float] = field(default_factory=dict)
+    target_location: Optional[str] = None
+    description: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "mission_id": self.mission_id,
+            "mission_type": self.mission_type.value,
+            "proposer_id": self.proposer_id,
+            "participants": list(self.participants),
+            "start_time": self.start_time,
+            "duration": self.duration,
+            "status": self.status.value,
+            "resources_committed": self.resources_committed,
+            "progress": self.progress,
+            "rewards": self.rewards,
+            "target_location": self.target_location,
+            "description": self.description
+        }
+
+
+@dataclass
+class Alliance:
+    """联盟"""
+    alliance_id: str
+    name: str
+    leader_id: str
+    members: Dict[str, AllianceMember]
+    created_time: float
+    ideology: Optional[str] = None  # 意识形态
+    description: str = ""
+    treasury: float = 0.0  # 联盟金库
+    reputation: float = 0.0  # 联盟声誉
+    active_votes: Dict[str, AllianceVote] = field(default_factory=dict)
+    active_missions: Dict[str, AllianceMission] = field(default_factory=dict)
+    history: List[Dict[str, Any]] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "alliance_id": self.alliance_id,
+            "name": self.name,
+            "leader_id": self.leader_id,
+            "members": {
+                civ_id: {
+                    "civilization_id": m.civilization_id,
+                    "role": m.role.value,
+                    "join_time": m.join_time,
+                    "contribution": m.contribution,
+                    "reputation": m.reputation
+                }
+                for civ_id, m in self.members.items()
+            },
+            "created_time": self.created_time,
+            "ideology": self.ideology,
+            "description": self.description,
+            "treasury": self.treasury,
+            "reputation": self.reputation,
+            "active_votes": {vid: v.to_dict() for vid, v in self.active_votes.items()},
+            "active_missions": {mid: m.to_dict() for mid, m in self.active_missions.items()},
+            "history": self.history
+        }
+
+
+class AllianceManager:
+    """联盟管理器"""
+
+    def __init__(self):
+        self.alliances: Dict[str, Alliance] = {}
+        self.civilization_alliance: Dict[str, str] = {}  # civilization_id -> alliance_id
+        self.vote_callbacks: Dict[VoteType, List[Callable]] = {}
+        self.mission_callbacks: Dict[MissionType, List[Callable]] = {}
+        self.current_time: float = 0.0
+
+    def set_time(self, time: float):
+        """设置当前时间"""
+        self.current_time = time
+
+    def update_time(self, delta: float):
+        """更新时间"""
+        self.current_time += delta
+        self._process_pending_votes()
+        self._process_active_missions()
+
+    # ==================== 联盟创建与管理 ====================
+
+    def create_alliance(
+        self,
+        name: str,
+        leader_id: str,
+        ideology: Optional[str] = None,
+        description: str = ""
+    ) -> Optional[Alliance]:
+        """
+        创建联盟
+        
+        Args:
+            name: 联盟名称
+            leader_id: 创建者（盟主）的文明ID
+            ideology: 意识形态
+            description: 联盟描述
+            
+        Returns:
+            创建的联盟对象，如果创建失败返回None
+        """
+        # 检查创建者是否已在其他联盟中
+        if leader_id in self.civilization_alliance:
+            logger.warning(f"Civilization {leader_id} is already in an alliance")
+            return None
+
+        # 生成联盟ID
+        alliance_id = f"alliance_{uuid.uuid4().hex[:8]}"
+
+        # 创建盟主成员记录
+        leader_member = AllianceMember(
+            civilization_id=leader_id,
+            role=AllianceRole.LEADER,
+            join_time=self.current_time,
+            contribution=0,
+            reputation=100.0
+        )
+
+        # 创建联盟
+        alliance = Alliance(
+            alliance_id=alliance_id,
+            name=name,
+            leader_id=leader_id,
+            members={leader_id: leader_member},
+            created_time=self.current_time,
+            ideology=ideology,
+            description=description
+        )
+
+        self.alliances[alliance_id] = alliance
+        self.civilization_alliance[leader_id] = alliance_id
+
+        # 记录历史
+        self._add_history(alliance, {
+            "event": "alliance_created",
+            "time": self.current_time,
+            "civilization_id": leader_id,
+            "details": f"Alliance '{name}' created by {leader_id}"
+        })
+
+        logger.info(f"Alliance '{name}' ({alliance_id}) created by {leader_id}")
+        return alliance
+
+    def join_alliance(
+        self,
+        alliance_id: str,
+        civilization_id: str,
+        requires_vote: bool = True
+    ) -> bool:
+        """
+        加入联盟
+        
+        Args:
+            alliance_id: 联盟ID
+            civilization_id: 申请加入的文明ID
+            requires_vote: 是否需要投票表决
+            
+        Returns:
+            是否成功发起加入流程
+        """
+        # 检查联盟是否存在
+        if alliance_id not in self.alliances:
+            logger.warning(f"Alliance {alliance_id} does not exist")
+            return False
+
+        # 检查文明是否已在联盟中
+        if civilization_id in self.civilization_alliance:
+            logger.warning(f"Civilization {civilization_id} is already in an alliance")
+            return False
+
+        alliance = self.alliances[alliance_id]
+
+        if requires_vote:
+            # 发起投票
+            vote = self.propose_vote(
+                alliance_id=alliance_id,
+                vote_type=VoteType.ACCEPT_MEMBER,
+                proposer_id=alliance.leader_id,
+                target_id=civilization_id,
+                description=f"Accept civilization {civilization_id} into the alliance",
+                extra_data={"civilization_id": civilization_id}
+            )
+            return vote is not None
+        else:
+            # 直接加入
+            new_member = AllianceMember(
+                civilization_id=civilization_id,
+                role=AllianceRole.MEMBER,
+                join_time=self.current_time,
+                contribution=0,
+                reputation=50.0
+            )
+
+            alliance.members[civilization_id] = new_member
+            self.civilization_alliance[civilization_id] = alliance_id
+
+            self._add_history(alliance, {
+                "event": "member_joined",
+                "time": self.current_time,
+                "civilization_id": civilization_id,
+                "details": f"Civilization {civilization_id} joined the alliance"
+            })
+
+            logger.info(f"Civilization {civilization_id} joined alliance {alliance_id}")
+            return True
+
+    def leave_alliance(
+        self,
+        alliance_id: str,
+        civilization_id: str,
+        reason: str = ""
+    ) -> bool:
+        """
+        退出联盟
+        
+        Args:
+            alliance_id: 联盟ID
+            civilization_id: 退出的文明ID
+            reason: 退出原因
+            
+        Returns:
+            是否成功退出
+        """
+        if alliance_id not in self.alliances:
+            logger.warning(f"Alliance {alliance_id} does not exist")
+            return False
+
+        alliance = self.alliances[alliance_id]
+
+        if civilization_id not in alliance.members:
+            logger.warning(f"Civilization {civilization_id} is not a member of alliance {alliance_id}")
+            return False
+
+        member = alliance.members[civilization_id]
+
+        # 盟主不能直接退出，需要先转让盟主位置或解散联盟
+        if member.role == AllianceRole.LEADER:
+            logger.warning(f"Leader {civilization_id} cannot leave alliance directly. Transfer leadership or dissolve alliance first.")
+            return False
+
+        # 移除成员
+        del alliance.members[civilization_id]
+        del self.civilization_alliance[civilization_id]
+
+        # 取消该成员参与的活跃任务
+        for mission in list(alliance.active_missions.values()):
+            if civilization_id in mission.participants:
+                mission.participants.discard(civilization_id)
+                if civilization_id in mission.resources_committed:
+                    del mission.resources_committed[civilization_id]
+
+        self._add_history(alliance, {
+            "event": "member_left",
+            "time": self.current_time,
+            "civilization_id": civilization_id,
+            "details": f"Civilization {civilization_id} left the alliance. Reason: {reason}"
+        })
+
+        logger.info(f"Civilization {civilization_id} left alliance {alliance_id}")
+        return True
+
+    def dissolve_alliance(
+        self,
+        alliance_id: str,
+        initiator_id: str,
+        requires_vote: bool = True
+    ) -> bool:
+        """
+        解散联盟
+        
+        Args:
+            alliance_id: 联盟ID
+            initiator_id: 发起解散的文明ID
+            requires_vote: 是否需要投票表决
+            
+        Returns:
+            是否成功发起解散流程
+        """
+        if alliance_id not in self.alliances:
+            logger.warning(f"Alliance {alliance_id} does not exist")
+            return False
+
+        alliance = self.alliances[alliance_id]
+
+        if initiator_id not in alliance.members:
+            logger.warning(f"Civilization {initiator_id} is not a member of alliance {alliance_id}")
+            return False
+
+        member = alliance.members[initiator_id]
+
+        # 只有盟主可以发起解散
+        if member.role != AllianceRole.LEADER:
+            logger.warning(f"Only leader can dissolve alliance. {initiator_id} is not the leader")
+            return False
+
+        if requires_vote and len(alliance.members) > 1:
+            # 发起投票
+            vote = self.propose_vote(
+                alliance_id=alliance_id,
+                vote_type=VoteType.DISSOLVE_ALLIANCE,
+                proposer_id=initiator_id,
+                description=f"Dissolve alliance '{alliance.name}'",
+                required_majority=0.67  # 解散需要更高比例同意
+            )
+            return vote is not None
+        else:
+            # 直接解散
+            self._execute_dissolve_alliance(alliance_id)
+            return True
+
+    def _execute_dissolve_alliance(self, alliance_id: str):
+        """执行解散联盟"""
+        if alliance_id not in self.alliances:
+            return
+
+        alliance = self.alliances[alliance_id]
+
+        # 清理所有成员的联盟归属
+        for civ_id in list(alliance.members.keys()):
+            if civ_id in self.civilization_alliance:
+                del self.civilization_alliance[civ_id]
+
+        # 记录历史
+        self._add_history(alliance, {
+            "event": "alliance_dissolved",
+            "time": self.current_time,
+            "details": f"Alliance '{alliance.name}' has been dissolved"
+        })
+
+        # 删除联盟
+        del self.alliances[alliance_id]
+
+        logger.info(f"Alliance {alliance_id} has been dissolved")
+
+    def get_alliance_members(
+        self,
+        alliance_id: str,
+        role_filter: Optional[AllianceRole] = None
+    ) -> List[AllianceMember]:
+        """
+        获取联盟成员列表
+        
+        Args:
+            alliance_id: 联盟ID
+            role_filter: 角色过滤（可选）
+            
+        Returns:
+            成员列表
+        """
+        if alliance_id not in self.alliances:
+            return []
+
+        alliance = self.alliances[alliance_id]
+        members = list(alliance.members.values())
+
+        if role_filter:
+            members = [m for m in members if m.role == role_filter]
+
+        # 按贡献度排序
+        members.sort(key=lambda m: m.contribution, reverse=True)
+        return members
+
+    def get_alliance_by_civilization(self, civilization_id: str) -> Optional[Alliance]:
+        """根据文明ID获取其所属联盟"""
+        if civilization_id not in self.civilization_alliance:
+            return None
+
+        alliance_id = self.civilization_alliance[civilization_id]
+        return self.alliances.get(alliance_id)
+
+    def get_all_alliances(self) -> List[Alliance]:
+        """获取所有联盟"""
+        return list(self.alliances.values())
+
+    # ==================== 投票系统 ====================
+
+    def propose_vote(
+        self,
+        alliance_id: str,
+        vote_type: VoteType,
+        proposer_id: str,
+        description: str,
+        target_id: Optional[str] = None,
+        duration: float = 100.0,
+        required_majority: float = 0.51,
+        extra_data: Optional[Dict[str, Any]] = None
+    ) -> Optional[AllianceVote]:
+        """
+        发
