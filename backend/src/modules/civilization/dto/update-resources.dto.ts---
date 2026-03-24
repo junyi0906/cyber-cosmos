@@ -1,0 +1,73 @@
+import { IsNumber, IsOptional, Min, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+import { ResourceAmount, ProductionRates, ConsumptionRates } from '../interfaces/civilization-resources.interface';
+
+/**
+ * 资源数量 DTO
+ */
+export class ResourceAmountDto implements ResourceAmount {
+  @IsNumber()
+  @Min(0)
+  ore: number;
+
+  @IsNumber()
+  @Min(0)
+  energy: number;
+
+  @IsNumber()
+  @Min(0)
+  techPoint: number;
+}
+
+/**
+ * 产出速率 DTO
+ */
+export class ProductionRatesDto implements ProductionRates {
+  @IsNumber()
+  @Min(0)
+  ore: number;
+
+  @IsNumber()
+  @Min(0)
+  energy: number;
+
+  @IsNumber()
+  @Min(0)
+  techPoint: number;
+}
+
+/**
+ * 消耗速率 DTO
+ */
+export class ConsumptionRatesDto implements ConsumptionRates {
+  @IsNumber()
+  @Min(0)
+  ore: number;
+
+  @IsNumber()
+  @Min(0)
+  energy: number;
+
+  @IsNumber()
+  @Min(0)
+  techPoint: number;
+}
+
+/**
+ * 更新资源 DTO
+ */
+export class UpdateResourcesDto {
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ResourceAmountDto)
+  storage?: ResourceAmountDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ProductionRatesDto)
+  productionRates?: ProductionRatesDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ConsumptionRatesDto)
+  consumptionRates?: ConsumptionRates

@@ -1,0 +1,113 @@
+// 文明资源系统接口定义
+
+/**
+ * 资源类型枚举
+ */
+export enum ResourceType {
+  ORE = 'ore',           // 矿石 - 基础建设资源
+  ENERGY = 'energy',     // 能源 - 运营消耗资源
+  TECH_POINT = 'techPoint', // 技术点 - 科技研发资源
+}
+
+/**
+ * 资源数量映射
+ */
+export interface ResourceAmount {
+  ore: number;
+  energy: number;
+  techPoint: number;
+}
+
+/**
+ * 资源产出速率
+ */
+export interface ProductionRates {
+  ore: number;        // 矿石产出/周期
+  energy: number;     // 能源产出/周期
+  techPoint: number;  // 技术点产出/周期
+}
+
+/**
+ * 资源消耗速率
+ */
+export interface ConsumptionRates {
+  ore: number;        // 矿石消耗/周期
+  energy: number;     // 能源消耗/周期
+  techPoint: number;  // 技术点消耗/周期
+}
+
+/**
+ * 文明资源完整接口
+ */
+export interface CivilizationResources {
+  /** 当前资源储量 */
+  storage: ResourceAmount;
+  
+  /** 资源产出速率 */
+  productionRates: ProductionRates;
+  
+  /** 资源消耗速率 */
+  consumptionRates: ConsumptionRates;
+  
+  /** 资源上限 */
+  storageLimit: ResourceAmount;
+  
+  /** 上次更新时间戳 */
+  lastUpdated: number;
+}
+
+/**
+ * 资源净增长
+ */
+export interface NetGrowth {
+  ore: number;
+  energy: number;
+  techPoint: number;
+}
+
+/**
+ * 资源计算结果
+ */
+export interface ResourceCalculationResult {
+  production: ProductionRates;
+  consumption: ConsumptionRates;
+  netGrowth: NetGrowth;
+  updatedStorage: ResourceAmount;
+}
+
+/**
+ * 文明规模等级
+ */
+export enum CivilizationScale {
+  OUTPOST = 1,      // 前哨站
+  COLONY = 2,       // 殖民地
+  SETTLEMENT = 3,   // 定居点
+  CITY = 4,         // 城市
+  METROPOLIS = 5,   // 大都市
+  EMPIRE = 6,       // 帝国
+  DOMINION = 7,     // 统治领
+  HEGEMONY = 8,     // 霸权
+}
+
+/**
+ * 文明属性（影响资源产出）
+ */
+export interface CivilizationAttributes {
+  /** 工业等级 - 影响矿石产出 */
+  industryLevel: number;
+  
+  /** 能源技术等级 - 影响能源产出 */
+  energyTechLevel: number;
+  
+  /** 科研等级 - 影响技术点产出 */
+  researchLevel: number;
+  
+  /** 人口数量 - 影响资源消耗 */
+  population: number;
+  
+  /** 文明规模 */
+  scale: CivilizationScale;
+  
+  /** 领土数量 */
+  territories: number;
+}

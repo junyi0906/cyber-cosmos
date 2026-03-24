@@ -1,0 +1,312 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { 
+  CivilizationResources, 
+  CivilizationAttributes, 
+  ResourceCalculationResult,
+  ProductionRates,
+  ConsumptionRates,
+  NetGrowth,
+  ResourceAmount,
+  CivilizationScale,
+} from '../interfaces/civilization-resources.interface';
+
+/**
+ * 资源计算服务
+ * 负责计算文明的资源产出、消耗和更新
+ */
+@Injectable()
+export class ResourceCalculatorService {
+  private readonly logger = new Logger(ResourceCalculatorService.name);
+
+  // 基础产出系数
+  private readonly BASE_PRODUCTION_MULTIPLIERS = {
+    ore: 10,        // 基础矿石产出
+    energy: 5,      // 基础能源产出
+    techPoint: 1,   // 基础技术点产出
+  };
+
+  // 基础消耗系数（每人每周期）
+  private readonly BASE_CONSUMPTION_PER_POPULATION = {
+    ore: 0.001,     // 人均矿石消耗
+    energy: 0.005,  // 人均能源消耗
+    techPoint: 0,   // 人均技术点消耗（无）
+  };
+
+  // 规模消耗系数
+  private readonly SCALE_CONSUMPTION_MULTIPLIER: Record<CivilizationScale, number> = {
+    [CivilizationScale.OUTPOST]: 1.0,
+    [CivilizationScale.COLONY]: 1.2,
+    [CivilizationScale.SETTLEMENT]: 1.5,
+    [CivilizationScale.CITY]: 2.0,
+    [CivilizationScale.METROPOLIS]: 2.5,
+    [CivilizationScale.EMPIRE]: 3.0,
+    [CivilizationScale.DOMINION]: 3.5,
+    [CivilizationScale.HEGEMONY]: 4.0,
+  };
+
+  /**
+   * 计算资源产出
+   * 根据文明属性计算各资源的产出速率
+   */
+  calculateProduction(attributes: CivilizationAttributes): ProductionRates {
+    const { industryLevel, energyTechLevel, researchLevel, territories } = attributes;
+
+    // 矿石产出 = 基础产出 * 工业等级 * 领土加成
+    const oreProduction = Math.floor(
+      this.BASE_PRODUCTION_MULTIPLIERS.ore * 
+      industryLevel * 
+      (1 + territories * 0.1)
+    );
+
+    // 能源产出 = 基础产出 * 能源技术等级 * 领土加成
+    const energyProduction = Math.floor(
+      this.BASE_PRODUCTION_MULTIPLIERS.energy * 
+      energyTechLevel * 
+      (1 + territories * 0.05)
+    );
+
+    // 技术点产出 = 基础产出 * 科研等级
+    const techPointProduction = Math.floor(
+      this.BASE_PRODUCTION_MULTIPLIERS.techPoint * 
+      researchLevel * 
+      (1 + territories * 0.02)
+    );
+
+    return {
+      ore: oreProduction,
+      energy: energyProduction,
+      techPoint: techPointProduction,
+    };
+  }
+
+  /**
+   * 计算资源消耗
+   * 根据文明规模和人口计算各资源的消耗速率
+   */
+  calculateConsumption(attributes: CivilizationAttributes): ConsumptionRates {
+    const { population, scale, territories } = attributes;
+
+    // 规模系数
+    const scaleMultiplier = this.SCALE_CONSUMPTION_MULTIPLIER[scale] || 1.0;
+
+    // 矿石消耗 = 人口 * 人均消耗 * 规模系数
+    const oreConsumption = Math.floor(
+      population * 
+      this.BASE_CONSUMPTION_PER_POPULATION.ore * 
+      scaleMultiplier
+    );
+
+    // 能源消耗 = 人口 * 人均消耗 * 规模系数 * 领土加成
+    const energyConsumption = Math.floor(
+      population * 
+      this.BASE_CONSUMPTION_PER_POPULATION.energy * 
+      scaleMultiplier * 
+      (1 + territories * 0.1)
+    );
+
+    // 技术点消耗 = 0（技术点不消耗）
+    const techPointConsumption = 0;
+
+    return {
+      ore: oreConsumption,
+      energy: energyConsumption,
+      techPoint: techPointConsumption,
+    };
+  }
+
+  /**
+   * 计算净增长
+   * 产出 - 消耗 = 净增长
+   */
+  calculateNetGrowth(
+    production: ProductionRates, 
+    consumption: ConsumptionRates
+  ): NetGrowth {
+    return {
+      ore: production.ore - consumption.ore,
+      energy: production.energy - consumption.energy,
+      techPoint: production.techPoint - consumption.techPoint,
+    };
+  }
+
+  /**
+   * 更新资源储量
+   * 根据净增长更新资源储量，考虑上限
+   */
+  updateResources(
+    currentResources: CivilizationResources,
+    attributes: CivilizationAttributes,
+    cycles: number = 1
+  ): ResourceCalculationResult {
+    // 计算产出和消耗
+    const production = this.calculateProduction(attributes);
+    const consumption = this.calculateConsumption(attributes);
+    
+    // 计算净增长
+    const netGrowth = this.calculateNetGrowth(production, consumption);
+
+    // 计算更新后的储量
+    const updatedStorage: ResourceAmount = {
+      ore: this.applyResourceChange(
+        currentResources.storage.ore,
+        netGrowth.ore * cycles,
+        currentResources.storageLimit.ore
+      ),
+      energy: this.applyResourceChange(
+        currentResources.storage.energy,
+        netGrowth.energy * cycles,
+        currentResources.storageLimit.energy
+      ),
+      techPoint: this.applyResourceChange(
+        currentResources.storage.techPoint,
+        netGrowth.techPoint * cycles,
+        currentResources.storageLimit.techPoint
+      ),
+    };
+
+    this.logger.debug(
+      `Resource update: Production=${JSON.stringify(production)}, ` +
+      `Consumption=${JSON.stringify(consumption)}, ` +
+      `NetGrowth=${JSON.stringify(netGrowth)}`
+    );
+
+    return {
+      production,
+      consumption,
+      netGrowth,
+      updatedStorage,
+    };
+  }
+
+  /**
+   * 应用资源变化
+   * 确保资源不低于0且不超过上限
+   */
+  private applyResourceChange(
+    current: number,
+    change: number,
+    limit: number
+  ): number {
+    const newValue = current + change;
+    
+    // 确保不低于0
+    if (newValue < 0) {
+      return 0;
+    }
+    
+    // 确保不超过上限
+    if (newValue > limit) {
+      return limit;
+    }
+    
+    return Math.floor(newValue);
+  }
+
+  /**
+   * 计算资源效率
+   * 返回产出/消耗比率
+   */
+  calculateResourceEfficiency(
+    production: ProductionRates,
+    consumption: ConsumptionRates
+  ): Record<string, number> {
+    return {
+      oreEfficiency: consumption.ore > 0 
+        ? production.ore / consumption.ore 
+        : production.ore > 0 ? Infinity : 1,
+      energyEfficiency: consumption.energy > 0 
+        ? production.energy / consumption.energy 
+        : production.energy > 0 ? Infinity : 1,
+      techPointEfficiency: consumption.techPoint > 0 
+        ? production.techPoint / consumption.techPoint 
+        : production.techPoint > 0 ? Infinity : 1,
+    };
+  }
+
+  /**
+   * 检查资源是否充足
+   */
+  hasSufficientResources(
+    resources: CivilizationResources,
+    required: Partial<ResourceAmount>
+  ): boolean {
+    const storage = resources.storage;
+    
+    if (required.ore !== undefined && storage.ore < required.ore) {
+      return false;
+    }
+    if (required.energy !== undefined && storage.energy < required.energy) {
+      return false;
+    }
+    if (required.techPoint !== undefined && storage.techPoint < required.techPoint) {
+      return false;
+    }
+    
+    return true;
+  }
+
+  /**
+   * 扣除资源
+   */
+  deductResources(
+    resources: CivilizationResources,
+    amount: Partial<ResourceAmount>
+  ): CivilizationResources {
+    const newStorage = { ...resources.storage };
+    
+    if (amount.ore !== undefined) {
+      newStorage.ore = Math.max(0, newStorage.ore - amount.ore);
+    }
+    if (amount.energy !== undefined) {
+      newStorage.energy = Math.max(0, newStorage.energy - amount.energy);
+    }
+    if (amount.techPoint !== undefined) {
+      newStorage.techPoint = Math.max(0, newStorage.techPoint - amount.techPoint);
+    }
+    
+    return {
+      ...resources,
+      storage: newStorage,
+      lastUpdated: Date.now(),
+    };
+  }
+
+  /**
+   * 增加资源
+   */
+  addResources(
+    resources: CivilizationResources,
+    amount: Partial<ResourceAmount>
+  ): CivilizationResources {
+    const newStorage = { ...resources.storage };
+    const limit = resources.storageLimit;
+    
+    if (amount.ore !== undefined) {
+      newStorage.ore = Math.min(limit.ore, newStorage.ore + amount.ore);
+    }
+    if (amount.energy !== undefined) {
+      newStorage.energy = Math.min(limit.energy, newStorage.energy + amount.energy);
+    }
+    if (amount.techPoint !== undefined) {
+      newStorage.techPoint = Math.min(limit.techPoint, newStorage.techPoint + amount.techPoint);
+    }
+    
+    return {
+      ...resources,
+      storage: newStorage,
+      lastUpdated: Date.now(),
+    };
+  }
+
+  /**
+   * 获取资源摘要
+   */
+  getResourceSummary(resources: CivilizationResources): string {
+    const { storage, productionRates, consumptionRates } = resources;
+    const netGrowth = this.calculateNetGrowth(productionRates, consumptionRates);
+    
+    return `矿石: ${storage.ore} (${netGrowth.ore >= 0 ? '+' : ''}${netGrowth.ore}/周期), ` +
+           `能源: ${storage.energy} (${netGrowth.energy >= 0 ? '+' : ''}${netGrowth.energy}/周期), ` +
+           `技术点: ${storage.techPoint} (${netGrowth.techPoint >= 0 ? '+' : ''}${netGrowth.techPoint}/周期)`;
+  }
+}

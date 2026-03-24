@@ -1,0 +1,98 @@
+import { 
+  Entity, 
+  PrimaryGeneratedColumn, 
+  Column, 
+  CreateDateColumn, 
+  UpdateDateColumn,
+  Index 
+} from 'typeorm';
+import { CivilizationResources, CivilizationAttributes, CivilizationScale } from '../interfaces/civilization-resources.interface';
+
+@Entity('civilizations')
+export class Civilization {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ length: 100 })
+  @Index()
+  name: string;
+
+  @Column({ length: 50 })
+  type: string;
+
+  @Column({ type: 'text', nullable: true })
+  description: string;
+
+  @Column({ type: 'jsonb', default: {} })
+  attributes: CivilizationAttributes;
+
+  @Column({ type: 'jsonb', default: () => `'{}'::jsonb` })
+  resources: CivilizationResources;
+
+  @Column({ type: 'decimal', precision: 12, scale: 6, default: 0 })
+  @Index()
+  x: number;
+
+  @Column({ type: 'decimal', precision: 12, scale: 6, default: 0 })
+  @Index()
+  y: number;
+
+  @Column({ type: 'decimal', precision: 12, scale: 6, default: 0 })
+  @Index()
+  z: number;
+
+  @Column({ default: true })
+  isActive: boolean;
+
+  @Column({ type: 'jsonb', nullable: true })
+  metadata: Record<string, any>;
+
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
+
+  /**
+   * 初始化文明资源
+   */
+  initializeResources(): void {
+    this.resources = {
+      storage: {
+        ore: 1000,
+        energy: 500,
+        techPoint: 100,
+      },
+      productionRates: {
+        ore: 10,
+        energy: 5,
+        techPoint: 1,
+      },
+      consumptionRates: {
+        ore: 2,
+        energy: 3,
+        techPoint: 0,
+      },
+      storageLimit: {
+        ore: 10000,
+        energy: 5000,
+        techPoint: 1000,
+      },
+      lastUpdated: Date.now(),
+    };
+  }
+
+  /**
+   * 初始化文明属性
+   */
+  initializeAttributes(): void {
+    this.attributes = {
+      industryLevel: 1,
+      energyTechLevel: 1,
+      researchLevel: 1,
+      population: 1000,
+      scale: CivilizationScale.OUTPOST,
+      territories: 1,
+    };
+  }
+}
