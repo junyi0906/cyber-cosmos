@@ -1,0 +1,112 @@
+import { IsUUID, IsEnum, IsNumber, IsOptional, IsArray, ValidateNested, Min, Max } from 'class-validator';
+import { Type } from 'class-transformer';
+import { ResourceType, TradeRouteStatus } from '../../../entities/trade-route.entity';
+
+export class CoordinateDto {
+  @IsNumber()
+  x: number;
+
+  @IsNumber()
+  y: number;
+}
+
+export class CreateTradeRouteDto {
+  @IsUUID()
+  sourceCivilizationId: string;
+
+  @IsUUID()
+  targetCivilizationId: string;
+
+  @IsEnum(ResourceType)
+  resourceType: ResourceType;
+
+  @IsNumber()
+  @Min(0)
+  quantityPerCycle: number;
+
+  @IsNumber()
+  @Min(0)
+  unitPrice: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(2)
+  efficiency?: number;
+
+  @IsOptional()
+  @IsEnum(TradeRouteStatus)
+  status?: TradeRouteStatus;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  accidentRate?: number;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CoordinateDto)
+  path?: CoordinateDto[];
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  distance?: number;
+
+  @IsOptional()
+  metadata?: Record<string, any>;
+}
+
+export class UpdateTradeRouteDto {
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  quantityPerCycle?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  unitPrice?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(2)
+  efficiency?: number;
+
+  @IsOptional()
+  @IsEnum(TradeRouteStatus)
+  status?: TradeRouteStatus;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  accidentRate?: number;
+
+  @IsOptional()
+  metadata?: Record<string, any>;
+}
+
+export class TradeRouteResponseDto {
+  id: string;
+  sourceCivilizationId: string;
+  targetCivilizationId: string;
+  sourceCivilizationName: string;
+  targetCivilizationName: string;
+  resourceType: ResourceType;
+  quantityPerCycle: number;
+  unitPrice: number;
+  efficiency: number;
+  status: TradeRouteStatus;
+  accidentRate: number;
+  totalTraded: number;
+  totalValue: number;
+  cyclesRun: number;
+  path: { x: number; y: number }[];
+  distance: number;
+  createdAt: Date;
+  updatedAt: Date;
+}

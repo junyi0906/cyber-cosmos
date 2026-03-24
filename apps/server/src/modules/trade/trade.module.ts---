@@ -1,0 +1,14 @@
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { TradeRoute } from '../../entities/trade-route.entity';
+import { MarketOrder } from '../../entities/market-order.entity';
+
+@Module({
+  imports: [
+    TypeOrmModule.forFeature([TradeRoute, MarketOrder]),
+  ],
+  controllers: [],
+  providers: [],
+  exports: [TypeOrmModule],
+})
+export class TradeModule {}

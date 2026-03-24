@@ -1,0 +1,83 @@
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, Index } from 'typeorm';
+import { ResourceType } from './trade-route.entity';
+
+export enum OrderType {
+  BUY = 'buy',
+  SELL = 'sell',
+}
+
+export enum OrderStatus {
+  PENDING = 'pending',
+  PARTIAL = 'partial',
+  FILLED = 'filled',
+  CANCELLED = 'cancelled',
+  EXPIRED = 'expired',
+}
+
+@Entity('market_orders')
+export class MarketOrder {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Index()
+  @Column({ type: 'uuid', comment: '发布者文明ID' })
+  civilizationId: string;
+
+  @Column({ type: 'varchar', length: 100, comment: '发布者文明名称' })
+  civilizationName: string;
+
+  @Column({
+    type: 'enum',
+    enum: OrderType,
+    comment: '订单类型：买入/卖出',
+  })
+  orderType: OrderType;
+
+  @Column({
+    type: 'enum',
+    enum: ResourceType,
+    comment: '资源类型',
+  })
+  resourceType: ResourceType;
+
+  @Column({ type: 'decimal', precision: 15, scale: 2, comment: '挂单数量' })
+  quantity: number;
+
+  @Column({ type: 'decimal', precision: 15, scale: 2, comment: '剩余数量' })
+  remainingQuantity: number;
+
+  @Column({ type: 'decimal', precision: 10, scale: 4, comment: '单价' })
+  price: number;
+
+  @Column({
+    type: 'enum',
+    enum: OrderStatus,
+    default: OrderStatus.PENDING,
+    comment: '订单状态',
+  })
+  status: OrderStatus;
+
+  @Column({ type: 'decimal', precision: 15, scale: 2, default: 0, comment: '已成交数量' })
+  filledQuantity: number;
+
+  @Column({ type: 'decimal', precision: 15, scale: 2, default: 0, comment: '已成交金额' })
+  filledValue: number;
+
+  @Column({ type: 'decimal', precision: 10, scale: 4, nullable: true, comment: '平均成交价' })
+  avgFillPrice: number;
+
+  @Column({ type: 'int', comment: '过期周期(相对于当前周期)' })
+  expireCycle: number;
+
+  @Column({ type: 'int', nullable: true, comment: '最小成交量' })
+  minFillQuantity: number;
+
+  @Column({ type: 'jsonb', nullable: true, comment: '扩展属性' })
+  metadata: Record<string, any>;
+
+  @CreateDateColumn({ comment: '创建时间' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ comment: '更新时间' })
+  updatedAt: Date;
+}

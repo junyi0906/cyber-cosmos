@@ -1,0 +1,87 @@
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, Index, ManyToOne, JoinColumn } from 'typeorm';
+
+export enum TradeRouteStatus {
+  ACTIVE = 'active',
+  SUSPENDED = 'suspended',
+  BLOCKED = 'blocked',
+  CLOSED = 'closed',
+}
+
+export enum ResourceType {
+  ORE = 'ore',
+  ENERGY = 'energy',
+  TECH_POINTS = 'tech_points',
+  ALLOYS = 'alloys',
+  DARK_MATTER = 'dark_matter',
+}
+
+@Entity('trade_routes')
+export class TradeRoute {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Index()
+  @Column({ type: 'uuid', comment: '发起方文明ID' })
+  sourceCivilizationId: string;
+
+  @Index()
+  @Column({ type: 'uuid', comment: '目标方文明ID' })
+  targetCivilizationId: string;
+
+  @Column({ type: 'varchar', length: 100, comment: '发起方文明名称' })
+  sourceCivilizationName: string;
+
+  @Column({ type: 'varchar', length: 100, comment: '目标方文明名称' })
+  targetCivilizationName: string;
+
+  @Column({
+    type: 'enum',
+    enum: ResourceType,
+    comment: '交易资源类型',
+  })
+  resourceType: ResourceType;
+
+  @Column({ type: 'decimal', precision: 15, scale: 2, comment: '每周期交易量' })
+  quantityPerCycle: number;
+
+  @Column({ type: 'decimal', precision: 10, scale: 4, comment: '单价' })
+  unitPrice: number;
+
+  @Column({ type: 'decimal', precision: 5, scale: 2, default: 1.0, comment: '航线效率系数(受距离、外交、天气影响)' })
+  efficiency: number;
+
+  @Column({
+    type: 'enum',
+    enum: TradeRouteStatus,
+    default: TradeRouteStatus.ACTIVE,
+    comment: '航线状态',
+  })
+  status: TradeRouteStatus;
+
+  @Column({ type: 'decimal', precision: 8, scale: 2, default: 0.05, comment: '事故概率(海盗/意外)' })
+  accidentRate: number;
+
+  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0, comment: '累计交易量' })
+  totalTraded: number;
+
+  @Column({ type: 'decimal', precision: 15, scale: 2, default: 0, comment: '累计交易额' })
+  totalValue: number;
+
+  @Column({ type: 'int', default: 0, comment: '已运行周期数' })
+  cyclesRun: number;
+
+  @Column({ type: 'jsonb', nullable: true, comment: '航线坐标路径' })
+  path: { x: number; y: number }[];
+
+  @Column({ type: 'decimal', precision: 10, scale: 2, comment: '航线距离' })
+  distance: number;
+
+  @Column({ type: 'jsonb', nullable: true, comment: '扩展属性' })
+  metadata: Record<string, any>;
+
+  @CreateDateColumn({ comment: '创建时间' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ comment: '更新时间' })
+  updatedAt: Date;
+}

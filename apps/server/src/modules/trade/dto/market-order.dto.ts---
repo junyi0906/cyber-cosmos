@@ -1,0 +1,141 @@
+import { IsUUID, IsEnum, IsNumber, IsOptional, Min, IsInt } from 'class-validator';
+import { ResourceType } from '../../../entities/trade-route.entity';
+import { OrderType, OrderStatus } from '../../../entities/market-order.entity';
+
+export class CreateMarketOrderDto {
+  @IsUUID()
+  civilizationId: string;
+
+  @IsEnum(OrderType)
+  orderType: OrderType;
+
+  @IsEnum(ResourceType)
+  resourceType: ResourceType;
+
+  @IsNumber()
+  @Min(0.01)
+  quantity: number;
+
+  @IsNumber()
+  @Min(0)
+  price: number;
+
+  @IsInt()
+  @Min(1)
+  expireCycle: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  minFillQuantity?: number;
+
+  @IsOptional()
+  metadata?: Record<string, any>;
+}
+
+export class UpdateMarketOrderDto {
+  @IsOptional()
+  @IsNumber()
+  @Min(0.01)
+  quantity?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  price?: number;
+
+  @IsOptional()
+  @IsEnum(OrderStatus)
+  status?: OrderStatus;
+}
+
+export class CancelMarketOrderDto {
+  @IsUUID()
+  orderId: string;
+
+  @IsUUID()
+  civilizationId: string;
+}
+
+export class MarketOrderQueryDto {
+  @IsOptional()
+  @IsEnum(ResourceType)
+  resourceType?: ResourceType;
+
+  @IsOptional()
+  @IsEnum(OrderType)
+  orderType?: OrderType;
+
+  @IsOptional()
+  @IsUUID()
+  civilizationId?: string;
+
+  @IsOptional()
+  @IsEnum(OrderStatus)
+  status?: OrderStatus;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  minPrice?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  maxPrice?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  limit?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  offset?: number;
+}
+
+export class MarketOrderResponseDto {
+  id: string;
+  civilizationId: string;
+  civilizationName: string;
+  orderType: OrderType;
+  resourceType: ResourceType;
+  quantity: number;
+  remainingQuantity: number;
+  price: number;
+  status: OrderStatus;
+  filledQuantity: number;
+  filledValue: number;
+  avgFillPrice: number | null;
+  expireCycle: number;
+  minFillQuantity: number | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export class MarketSummaryDto {
+  resourceType: ResourceType;
+  totalBuyOrders: number;
+  totalSellOrders: number;
+  totalBuyQuantity: number;
+  totalSellQuantity: number;
+  avgBuyPrice: number;
+  avgSellPrice: number;
+  highestBuyPrice: number;
+  lowestSellPrice: number;
+  supplyDemandIndex: number;
+  priceChange24h: number;
+}
+
+export class FillOrderDto {
+  @IsUUID()
+  orderId: string;
+
+  @IsUUID()
+  buyerCivilizationId: string;
+
+  @IsNumber()
+  @Min(0.01)
+  quantity: number;
+}
