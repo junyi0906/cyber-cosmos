@@ -1,145 +1,28 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
-import {
-  CosmicWeather,
-  WeatherType,
-  WeatherStatus,
-  WEATHER_EFFECTS,
-  WEATHER_DESCRIPTIONS,
-} from '../../entities/cosmic-weather.entity';
+import { ConfigService } from '@nestjs/config';
+import { WeatherService } from './weather.service';
+import { WeatherGateway } from './weather.gateway';
 
 @Injectable()
-export class WeatherScheduler {
+export class WeatherScheduler implements OnModuleInit {
   private readonly logger = new Logger(WeatherScheduler.name);
-  private isGenerating = false;
+  private weatherGateway: WeatherGateway | null = null;
 
   constructor(
-    @InjectRepository(CosmicWeather)
-    private weatherRepository: Repository<CosmicWeather>,
-    private dataSource: DataSource,
+    private readonly weatherService: WeatherService,
+    private readonly configService: ConfigService,
   ) {}
 
-  @Cron(CronExpression.EVERY_HOUR)
-  async handleHourlyWeatherGeneration() {
-    if (this.isGenerating) {
-      this.logger.warn('Weather generation already in progress, skipping...');
-      return;
-    }
-
-    this.isGenerating = true;
-    try {
-      await this.generateNewWeather();
-    } catch (error) {
-      this.logger.error('Failed to generate new weather', error.stack);
-    } finally {
-      this.isGenerating = false;
-    }
+  onModuleInit() {
+    this.logger.log('Weather Scheduler initialized');
   }
 
-  async generateNewWeather(): Promise<CosmicWeather> {
-    this.logger.log('Starting weather generation...');
-
-    const queryRunner = this.dataSource.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
-
-    try {
-      // End current active weather
-      await queryRunner.manager.update(
-        CosmicWeather,
-        { status: WeatherStatus.ACTIVE },
-        { status: WeatherStatus.ENDED },
-      );
-
-      // Generate new weather
-      const weatherType = this.getRandomWeatherType();
-      const intensity = this.getRandomIntensity();
-      const now = new Date();
-      const endTime = new Date(now.getTime() + 60 * 60 * 1000); // 1 hour duration
-
-      const effects = WEATHER_EFFECTS[weatherType](intensity);
-      const description = this.getRandomDescription(weatherType);
-
-      const newWeather = queryRunner.manager.create(CosmicWeather, {
-        type: weatherType,
-        status: WeatherStatus.ACTIVE,
-        intensity,
-        startTime: now,
-        endTime,
-        effects,
-        description,
-      });
-
-      const savedWeather = await queryRunner.manager.save(newWeather);
-      await queryRunner.commitTransaction();
-
-      this.logger.log(
-        `New weather generated: ${weatherType} (intensity: ${intensity.toFixed(2)})`,
-      );
-
-      return savedWeather;
-    } catch (error) {
-      await queryRunner.rollbackTransaction();
-      throw error;
-    } finally {
-      await queryRunner.release();
-    }
+  // Inject WebSocketGateway after module initialization to avoid circular dependency
+  setWeatherGateway(gateway: WeatherGateway) {
+    this.weatherGateway = gateway;
+    this.logger.log('WeatherGateway injected into WeatherScheduler');
   }
 
-  private getRandomWeatherType(): WeatherType {
-    const weights: Record<WeatherType, number> = {
-      [WeatherType.CALM]: 0.4,      // 40% chance
-      [WeatherType.STORM]: 0.2,     // 20% chance
-      [WeatherType.DARKNESS]: 0.2,  // 20% chance
-      [WeatherType.MATTER]: 0.2,    // 20% chance
-    };
-
-    const random = Math.random();
-    let cumulative = 0;
-
-    for (const [type, weight] of Object.entries(weights)) {
-      cumulative += weight;
-      if (random < cumulative) {
-        return type as WeatherType;
-      }
-    }
-
-    return WeatherType.CALM;
-  }
-
-  private getRandomIntensity(): number {
-    // Generate intensity between 0.3 and 1.0
-    // Using a weighted distribution favoring moderate intensity
-    const base = Math.random();
-    const intensity = 0.3 + base * 0.7;
-    return Math.round(intensity * 100) / 100; // Round to 2 decimal places
-  }
-
-  private getRandomDescription(type: WeatherType): string {
-    const descriptions = WEATHER_DESCRIPTIONS[type];
-    const index = Math.floor(Math.random() * descriptions.length);
-    return descriptions[index];
-  }
-
-  async getCurrentWeather(): Promise<CosmicWeather | null> {
-    return this.weatherRepository.findOne({
-      where: { status: WeatherStatus.ACTIVE },
-      order: { startTime: 'DESC' },
-    });
-  }
-
-  async getWeatherHistory(limit: number = 10): Promise<CosmicWeather[]> {
-    return this.weatherRepository.find({
-      order: { startTime: 'DESC' },
-      take: limit,
-    });
-  }
-
-  // Manual trigger for testing
-  async triggerWeatherGeneration(): Promise<CosmicWeather> {
-    this.logger.log('Manual weather generation triggered');
-    return this.generateNewWeather();
-  }
-}
+  @Cron(CronExpression.EVERY_5_MINUTES)
+  async handleWeatherCycle()

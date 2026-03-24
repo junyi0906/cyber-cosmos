@@ -1,71 +1,30 @@
-import { Controller, Get, Post, Body, Param, Query } from '@nestjs/common';
-import { EffectsService } from './effects.service';
-import { WeatherType } from './interfaces/weather.interface';
+import { Controller, Get } from '@nestjs/common';
+import { WeatherService } from './weather.service';
+import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 
-@Controller('weather')
+@ApiTags('weather')
+@Controller('api/weather')
 export class WeatherController {
-  constructor(private readonly effectsService: EffectsService) {}
+  constructor(private readonly weatherService: WeatherService) {}
 
-  @Get('effects')
-  getAllEffects() {
-    return this.effectsService.getAllWeatherEffects();
+  @Get('forecast')
+  @ApiOperation({ summary: '获取未来3个周期的天气预报' })
+  @ApiResponse({ status: 200, description: '返回天气预报数据' })
+  async getForecast() {
+    return this.weatherService.getForecast(3);
   }
 
-  @Get('effects/:type')
-  getEffect(@Param('type') type: WeatherType) {
-    return this.effectsService.getWeatherEffect(type);
+  @Get('current')
+  @ApiOperation({ summary: '获取当前天气状态' })
+  @ApiResponse({ status: 200, description: '返回当前天气数据' })
+  async getCurrentWeather() {
+    return this.weatherService.getCurrentWeather();
   }
 
-  @Get('status')
-  getStatus() {
-    return this.effectsService.getWeatherStatus();
+  @Get('history')
+  @ApiOperation({ summary: '获取历史天气记录' })
+  @ApiResponse({ status: 200, description: '返回历史天气数据' })
+  async getHistory() {
+    return this.weatherService.getWeatherHistory();
   }
-
-  @Get('civilization/:id/effects')
-  getCivilizationEffects(@Param('id') id: string) {
-    return {
-      civilizationId: id,
-      activeEffects: this.effectsService.getActiveEffectsForCivilization(id),
-      combinedModifiers: this.effectsService.calculateCombinedModifiers(id),
-    };
-  }
-
-  @Post('apply')
-  applyWeather(
-    @Body()
-    body: {
-      sectorId: string;
-      weatherType: WeatherType;
-      civilizationIds: string[];
-      tick?: number;
-    }
-  ) {
-    return this.effectsService.applyWeatherEffects(
-      body.sectorId,
-      body.weatherType,
-      body.civilizationIds,
-      body.tick
-    );
-  }
-
-  @Post('remove')
-  removeWeather(
-    @Body()
-    body: {
-      civilizationId: string;
-      weatherType: WeatherType;
-    }
-  ) {
-    return this.effectsService.removeWeatherEffects(
-      body.civilizationId,
-      body.weatherType
-    );
-  }
-
-  @Post('sector/:id/clear')
-  clearSectorWeather(@Param('id') sectorId: string) {
-    return this.effectsService.removeSectorWeather(sectorId);
-  }
-
-  @Post('update')
-  updateDurations(@Query('tick') tick
+}

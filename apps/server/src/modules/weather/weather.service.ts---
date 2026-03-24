@@ -1,97 +1,275 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import {
-  CosmicWeather,
-  WeatherType,
-  WeatherStatus,
-  WeatherEffects,
-  WEATHER_EFFECTS,
-} from '../../entities/cosmic-weather.entity';
-import { WeatherScheduler } from './weather.scheduler';
+import { Injectable, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { Cron, CronExpression } from '@nestjs/schedule';
+import { InjectRedis } from '@nestjs/redis';
+import Redis from 'ioredis';
+
+export enum WeatherType {
+  CALM = 'calm',                    // 平静期
+  RESOURCE_STORM = 'resource_storm', // 资源风暴
+  DARK_MATTER_WAVE = 'dark_matter_wave', // 暗物质浪潮
+  DARK_FLUCTUATION = 'dark_fluctuation', // 黑暗波动
+  SOLAR_FLARE = 'solar_flare',      // 恒星耀斑
+  NEBULA_FOG = 'nebula_fog',        // 星云迷雾
+}
+
+export interface WeatherState {
+  type: WeatherType;
+  name: string;
+  description: string;
+  effects: WeatherEffect[];
+  startTime: number;
+  endTime: number;
+  cycle: number;
+  intensity: number; // 0.1 - 1.0
+}
+
+export interface WeatherEffect {
+  type: string;
+  value: number;
+  description: string;
+}
+
+export interface WeatherForecast {
+  cycle: number;
+  weather: WeatherState;
+  probability: number;
+}
 
 @Injectable()
-export class WeatherService {
-  private readonly logger = new Logger(WeatherService.name);
+export class WeatherService implements OnModuleInit {
+  private currentWeather: WeatherState | null = null;
+  private weatherHistory: WeatherState[] = [];
+  private currentCycle: number = 0;
+
+  private readonly weatherConfigs: Record<WeatherType, Omit<WeatherState, 'startTime' | 'endTime' | 'cycle' | 'intensity'>> = {
+    [WeatherType.CALM]: {
+      type: WeatherType.CALM,
+      name: '平静期',
+      description: '宇宙处于稳定状态，各项活动正常进行',
+      effects: [
+        { type: 'trade_efficiency', value: 1.0, description: '贸易效率正常' },
+        { type: 'mining_efficiency', value: 1.0, description: '采矿效率正常' },
+        { type: 'research_speed', value: 1.0, description: '科研速度正常' },
+        { type: 'accident_rate', value: 0.05, description: '事故率低' },
+      ],
+    },
+    [WeatherType.RESOURCE_STORM]: {
+      type: WeatherType.RESOURCE_STORM,
+      name: '资源风暴',
+      description: '高能粒子风暴席卷星系，采矿效率大幅提升，但航行风险增加',
+      effects: [
+        { type: 'mining_efficiency', value: 1.5, description: '采矿效率 +50%' },
+        { type: 'trade_efficiency', value: 0.8, description: '贸易效率 -20%' },
+        { type: 'accident_rate', value: 0.35, description: '航线事故率 +30%' },
+        { type: 'energy_consumption', value: 1.2, description: '能量消耗 +20%' },
+      ],
+    },
+    [WeatherType.DARK_MATTER_WAVE]: {
+      type: WeatherType.DARK_MATTER_WAVE,
+      name: '暗物质浪潮',
+      description: '神秘的暗物质波动增强，科研突破概率提升，但能量消耗剧增',
+      effects: [
+        { type: 'research_speed', value: 1.5, description: '科研速度 +50%' },
+        { type: 'energy_consumption', value: 2.0, description: '能量消耗翻倍' },
+        { type: 'anomaly_discovery', value: 1.3, description: '异常发现率 +30%' },
+        { type: 'shield_strength', value: 0.8, description: '护盾强度 -20%' },
+      ],
+    },
+    [WeatherType.DARK_FLUCTUATION]: {
+      type: WeatherType.DARK_FLUCTUATION,
+      name: '黑暗波动',
+      description: '空间扭曲导致视野受限，外交信任度加速衰减',
+      effects: [
+        { type: 'vision_range', value: 0.6, description: '视野范围 -40%' },
+        { type: 'trust_decay', value: 1.5, description: '信任衰减加速 +50%' },
+        { type: 'stealth_bonus', value: 1.3, description: '隐匿效果 +30%' },
+        { type: 'communication_delay', value: 1.5, description: '通讯延迟 +50%' },
+      ],
+    },
+    [WeatherType.SOLAR_FLARE]: {
+      type: WeatherType.SOLAR_FLARE,
+      name: '恒星耀斑',
+      description: '剧烈的恒星活动干扰电子设备，能源产出波动',
+      effects: [
+        { type: 'energy_production', value: 1.3, description: '能源产出 +30%' },
+        { type: 'electronics_malfunction', value: 0.15, description: '设备故障率 15%' },
+        { type: 'communication_jam', value: 0.7, description: '通讯干扰 -30%' },
+        { type: 'sensor_accuracy', value: 0.7, description: '传感器精度 -30%' },
+      ],
+    },
+    [WeatherType.NEBULA_FOG]: {
+      type: WeatherType.NEBULA_FOG,
+      name: '星云迷雾',
+      description: '浓密的星云物质笼罩区域，隐藏了众多秘密',
+      effects: [
+        { type: 'discovery_rate', value: 1.4, description: '探索发现率 +40%' },
+        { type: 'travel_speed', value: 0.7, description: '航行速度 -30%' },
+        { type: 'trade_route_visibility', value: 0.5, description: '航线可见性 -50%' },
+        { type: 'relic_detection', value: 1.5, description: '遗迹探测率 +50%' },
+      ],
+    },
+  };
+
+  private readonly weatherWeights: Map<WeatherType, number> = new Map([
+    [WeatherType.CALM, 35],
+    [WeatherType.RESOURCE_STORM, 18],
+    [WeatherType.DARK_MATTER_WAVE, 15],
+    [WeatherType.DARK_FLUCTUATION, 12],
+    [WeatherType.SOLAR_FLARE, 10],
+    [WeatherType.NEBULA_FOG, 10],
+  ]);
 
   constructor(
-    @InjectRepository(CosmicWeather)
-    private weatherRepository: Repository<CosmicWeather>,
-    private weatherScheduler: WeatherScheduler,
+    private configService: ConfigService,
+    @InjectRedis() private readonly redis: Redis,
   ) {}
 
-  async getCurrentWeather(): Promise<CosmicWeather | null> {
-    return this.weatherScheduler.getCurrentWeather();
-  }
-
-  async getWeatherHistory(limit: number = 10): Promise<CosmicWeather[]> {
-    return this.weatherScheduler.getWeatherHistory(limit);
-  }
-
-  async triggerNewWeather(): Promise<CosmicWeather> {
-    return this.weatherScheduler.triggerWeatherGeneration();
-  }
-
-  async getWeatherEffects(): Promise<WeatherEffects | null> {
-    const currentWeather = await this.getCurrentWeather();
-    if (!currentWeather) {
-      return null;
+  async onModuleInit() {
+    await this.loadCurrentWeather();
+    if (!this.currentWeather) {
+      await this.generateNewWeather();
     }
-    return currentWeather.effects;
   }
 
-  calculateModifiedValue(
-    baseValue: number,
-    effectKey: keyof WeatherEffects,
-  ): number {
-    return this.weatherScheduler.getCurrentWeather().then((weather) => {
-      if (!weather || !weather.effects) {
-        return baseValue;
+  private async loadCurrentWeather(): Promise<void> {
+    const stored = await this.redis.get('weather:current');
+    if (stored) {
+      this.currentWeather = JSON.parse(stored);
+    }
+    
+    const history = await this.redis.get('weather:history');
+    if (history) {
+      this.weatherHistory = JSON.parse(history);
+    }
+    
+    const cycle = await this.redis.get('universe:cycle');
+    if (cycle) {
+      this.currentCycle = parseInt(cycle, 10);
+    }
+  }
+
+  async generateNewWeather(): Promise<WeatherState> {
+    const newType = this.selectWeatherType();
+    const config = this.weatherConfigs[newType];
+    const now = Date.now();
+    const duration = this.configService.get<number>('WEATHER_DURATION_MS', 300000); // 5 minutes default
+    
+    this.currentCycle++;
+    
+    this.currentWeather = {
+      ...config,
+      startTime: now,
+      endTime: now + duration,
+      cycle: this.currentCycle,
+      intensity: this.calculateIntensity(),
+    };
+
+    // Store in Redis
+    await this.redis.set('weather:current', JSON.stringify(this.currentWeather));
+    await this.redis.set('universe:cycle', this.currentCycle.toString());
+    
+    // Add to history
+    this.weatherHistory.unshift(this.currentWeather);
+    if (this.weatherHistory.length > 50) {
+      this.weatherHistory.pop();
+    }
+    await this.redis.set('weather:history', JSON.stringify(this.weatherHistory));
+
+    return this.currentWeather;
+  }
+
+  private selectWeatherType(): WeatherType {
+    const totalWeight = Array.from(this.weatherWeights.values()).reduce((a, b) => a + b, 0);
+    let random = Math.random() * totalWeight;
+    
+    for (const [type, weight] of this.weatherWeights) {
+      random -= weight;
+      if (random <= 0) {
+        return type;
       }
+    }
+    
+    return WeatherType.CALM;
+  }
 
-      const modifier = weather.effects[effectKey];
-      if (modifier === undefined || modifier === null) {
-        return baseValue;
+  private calculateIntensity(): number {
+    // Generate intensity between 0.3 and 1.0
+    return 0.3 + Math.random() * 0.7;
+  }
+
+  async getForecast(cycles: number): Promise<WeatherForecast[]> {
+    const forecasts: WeatherForecast[] = [];
+    
+    // Current weather is first in forecast
+    if (this.currentWeather) {
+      forecasts.push({
+        cycle: this.currentWeather.cycle,
+        weather: this.currentWeather,
+        probability: 1.0,
+      });
+    }
+
+    // Generate predictions for future cycles
+    for (let i = 1; i < cycles; i++) {
+      const predictedType = this.predictWeatherType();
+      const config = this.weatherConfigs[predictedType];
+      const futureCycle = (this.currentWeather?.cycle || 0) + i;
+      
+      forecasts.push({
+        cycle: futureCycle,
+        weather: {
+          ...config,
+          startTime: this.currentWeather?.endTime || Date.now(),
+          endTime: (this.currentWeather?.endTime || Date.now()) + 300000 * i,
+          cycle: futureCycle,
+          intensity: 0.5 + Math.random() * 0.5,
+        },
+        probability: this.calculateProbability(predictedType),
+      });
+    }
+
+    return forecasts;
+  }
+
+  private predictWeatherType(): WeatherType {
+    // Simple prediction based on current weather
+    if (this.currentWeather) {
+      // After extreme weather, calm is more likely
+      if (this.currentWeather.type !== WeatherType.CALM) {
+        if (Math.random() < 0.4) {
+          return WeatherType.CALM;
+        }
       }
-
-      // For rates like miningEfficiency, researchSpeed, multiply
-      // For rates like tradeAccidentRate, add
-      if (
-        effectKey === 'miningEfficiency' ||
-        effectKey === 'researchSpeed' ||
-        effectKey === 'visionRange'
-      ) {
-        return baseValue * modifier;
-      } else if (
-        effectKey === 'tradeAccidentRate' ||
-        effectKey === 'trustDecayRate'
-      ) {
-        return baseValue * modifier;
-      } else if (effectKey === 'energyConsumption') {
-        return baseValue * modifier;
-      }
-
-      return baseValue;
-    });
+    }
+    return this.selectWeatherType();
   }
 
-  async isStormActive(): Promise<boolean> {
-    const weather = await this.getCurrentWeather();
-    return weather?.type === WeatherType.STORM;
+  private calculateProbability(type: WeatherType): number {
+    const weight = this.weatherWeights.get(type) || 10;
+    const totalWeight = Array.from(this.weatherWeights.values()).reduce((a, b) => a + b, 0);
+    return Math.round((weight / totalWeight) * 100) / 100;
   }
 
-  async isDarknessActive(): Promise<boolean> {
-    const weather = await this.getCurrentWeather();
-    return weather?.type === WeatherType.DARKNESS;
+  async getCurrentWeather(): Promise<WeatherState | null> {
+    if (!this.currentWeather) {
+      await this.loadCurrentWeather();
+    }
+    return this.currentWeather;
   }
 
-  async isMatterWaveActive(): Promise<boolean> {
-    const weather = await this.getCurrentWeather();
-    return weather?.type === WeatherType.MATTER;
+  async getWeatherHistory(): Promise<WeatherState[]> {
+    return this.weatherHistory;
   }
 
-  async isCalmPeriod(): Promise<boolean> {
-    const weather = await this.getCurrentWeather();
-    return weather?.type === WeatherType.CALM || !weather;
+  isWeatherActive(): boolean {
+    if (!this.currentWeather) return false;
+    return Date.now() < this.currentWeather.endTime;
+  }
+
+  getEffectValue(effectType: string): number {
+    if (!this.currentWeather) return 1.0;
+    const effect = this.currentWeather.effects.find(e => e.type === effectType);
+    return effect?.value ?? 1.0;
   }
 }

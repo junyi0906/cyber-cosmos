@@ -1,0 +1,137 @@
+import { WebSocketGateway, WebSocketServer, SubscribeMessage, OnGatewayConnection, OnGatewayDisconnect } from '@nestjs/websockets';
+import { Server, Socket } from 'socket.io';
+import { Injectable, Logger } from '@nestjs/common';
+import { WeatherService, WeatherState } from './weather.service';
+
+export interface WeatherUpdateEvent {
+  event: 'weather_update';
+  data: {
+    weather: WeatherState;
+    timestamp: number;
+    alert?: WeatherAlert;
+  };
+}
+
+export interface WeatherAlert {
+  level: 'info' | 'warning' | 'danger';
+  title: string;
+  message: string;
+  effects: string[];
+}
+
+@Injectable()
+@WebSocketGateway({
+  namespace: '/universe',
+  cors: {
+    origin: '*',
+  },
+})
+export class WeatherGateway implements OnGatewayConnection, OnGatewayDisconnect {
+  @WebSocketServer()
+  server: Server;
+
+  private readonly logger = new Logger(WeatherGateway.name);
+  private connectedClients: Set<string> = new Set();
+
+  constructor(private readonly weatherService: WeatherService) {}
+
+  handleConnection(client: Socket) {
+    this.connectedClients.add(client.id);
+    this.logger.log(`Client connected: ${client.id}. Total clients: ${this.connectedClients.size}`);
+    
+    // Send current weather to newly connected client
+    this.sendCurrentWeather(client);
+  }
+
+  handleDisconnect(client: Socket) {
+    this.connectedClients.delete(client.id);
+    this.logger.log(`Client disconnected: ${client.id}. Total clients: ${this.connectedClients.size}`);
+  }
+
+  private async sendCurrentWeather(client: Socket) {
+    const currentWeather = await this.weatherService.getCurrentWeather();
+    if (currentWeather) {
+      client.emit('weather_update', {
+        event: 'weather_update',
+        data: {
+          weather: currentWeather,
+          timestamp: Date.now(),
+        },
+      });
+    }
+  }
+
+  @SubscribeMessage('subscribe_weather')
+  handleSubscribeWeather(client: Socket) {
+    client.join('weather_alert');
+    this.logger.log(`Client ${client.id} subscribed to weather_alert channel`);
+    return { success: true, message: 'Subscribed to weather alerts' };
+  }
+
+  @SubscribeMessage('unsubscribe_weather')
+  handleUnsubscribeWeather(client: Socket) {
+    client.leave('weather_alert');
+    this.logger.log(`Client ${client.id} unsubscribed from weather_alert channel`);
+    return { success: true, message: 'Unsubscribed from weather alerts' };
+  }
+
+  broadcastWeatherUpdate(weather: WeatherState) {
+    const alert = this.generateWeatherAlert(weather);
+    
+    const event: WeatherUpdateEvent = {
+      event: 'weather_update',
+      data: {
+        weather,
+        timestamp: Date.now(),
+        alert,
+      },
+    };
+
+    // Broadcast to all connected clients
+    this.server.emit('weather_update', event);
+    
+    // Also emit to weather_alert channel for specific listeners
+    if (alert) {
+      this.server.to('weather_alert').emit('weather_alert', {
+        event: 'weather_alert',
+        data: alert,
+      });
+    }
+
+    this.logger.log(`Broadcasted weather update: ${weather.name} (Cycle ${weather.cycle})`);
+  }
+
+  private generateWeatherAlert(weather: WeatherState): WeatherAlert | undefined {
+    const dangerousWeather = [
+      'resource_storm',
+      'dark_matter_wave',
+      'dark_fluctuation',
+      'solar_flare',
+    ];
+
+    if (!dangerousWeather.includes(weather.type)) {
+      return undefined;
+    }
+
+    let level: 'info' | 'warning' | 'danger' = 'info';
+    
+    if (weather.intensity > 0.7) {
+      level = 'danger';
+    } else if (weather.intensity > 0.4) {
+      level = 'warning';
+    }
+
+    const effectDescriptions = weather.effects.map(e => e.description);
+
+    return {
+      level,
+      title: `天气预警：${weather.name}`,
+      message: weather.description,
+      effects: effectDescriptions,
+    };
+  }
+
+  getConnectedClientsCount(): number {
+    return this.connectedClients.size;
+  }
+}
