@@ -3,18 +3,26 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Event } from '../events/entities/event.entity';
 
+export interface TimelineEvent {
+  id: string;
+  type: string;
+  timestamp: number;
+  cycle: number;
+  data: Record<string, any>;
+  description?: string;
+}
+
 export interface ResourceFlowNode {
   name: string;
-  sectorId: string;
-  totalIn: number;
-  totalOut: number;
+  sector?: string;
+  civilization?: string;
 }
 
 export interface ResourceFlowLink {
   source: string;
   target: string;
   value: number;
-  resourceType: string;
+  resourceType?: string;
 }
 
 export interface ResourceFlowData {
@@ -25,161 +33,233 @@ export interface ResourceFlowData {
     topRoutes: Array<{
       from: string;
       to: string;
-      value: number;
+      volume: number;
     }>;
-    resourceBreakdown: Record<string, number>;
+    resourceTypes: Record<string, number>;
   };
 }
 
 @Injectable()
 export class TimelineService {
-  private tradeRoutes: Map<string, TradeRoute> = new Map();
-  private sectorResources: Map<string, SectorResource> = new Map();
+  private events: TimelineEvent[] = [];
+  private tradeRoutes: Map<string, {
+    from: string;
+    to: string;
+    resourceType: string;
+    volume: number;
+    efficiency: number;
+    sectorFrom: string;
+    sectorTo: string;
+  }[]> = new Map();
 
   constructor(
     @InjectRepository(Event)
     private eventRepository: Repository<Event>,
   ) {
-    this.initializeMockData();
+    this.initializeMockTradeData();
   }
 
-  private initializeMockData() {
-    // 初始化模拟贸易路线数据
-    const mockRoutes: TradeRoute[] = [
-      { id: 'tr-001', sourceSector: 'Alpha', targetSector: 'Beta', resourceType: 'minerals', flow: 1500, active: true },
-      { id: 'tr-002', sourceSector: 'Alpha', targetSector: 'Gamma', resourceType: 'energy', flow: 800, active: true },
-      { id: 'tr-003', sourceSector: 'Beta', targetSector: 'Gamma', resourceType: 'technology', flow: 600, active: true },
-      { id: 'tr-004', sourceSector: 'Gamma', targetSector: 'Delta', resourceType: 'minerals', flow: 1200, active: true },
-      { id: 'tr-005', sourceSector: 'Delta', targetSector: 'Alpha', resourceType: 'energy', flow: 900, active: true },
-      { id: 'tr-006', sourceSector: 'Beta', targetSector: 'Delta', resourceType: 'energy', flow: 700, active: true },
-      { id: 'tr-007', sourceSector: 'Alpha', targetSector: 'Delta', resourceType: 'technology', flow: 400, active: true },
-      { id: 'tr-008', sourceSector: 'Epsilon', targetSector: 'Alpha', resourceType: 'minerals', flow: 1100, active: true },
-      { id: 'tr-009', sourceSector: 'Epsilon', targetSector: 'Beta', resourceType: 'energy', flow: 650, active: true },
-      { id: 'tr-010', sourceSector: 'Gamma', targetSector: 'Epsilon', resourceType: 'technology', flow: 550, active: true },
-      { id: 'tr-011', sourceSector: 'Zeta', targetSector: 'Alpha', resourceType: 'minerals', flow: 950, active: true },
-      { id: 'tr-012', sourceSector: 'Zeta', targetSector: 'Gamma', resourceType: 'energy', flow: 480, active: true },
-      { id: 'tr-013', sourceSector: 'Delta', targetSector: 'Zeta', resourceType: 'technology', flow: 380, active: true },
-      { id: 'tr-014', sourceSector: 'Epsilon', targetSector: 'Zeta', resourceType: 'minerals', flow: 720, active: true },
-      { id: 'tr-015', sourceSector: 'Beta', targetSector: 'Epsilon', resourceType: 'technology', flow: 520, active: false },
-    ];
+  private initializeMockTradeData(): void {
+    // Initialize with mock trade route data for demonstration
+    const sectors = ['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon', 'Zeta'];
+    const resourceTypes = ['minerals', 'energy', 'technology', 'food', 'artifacts'];
+    const civilizations = ['Empire A', 'Empire B', 'Federation C', 'Alliance D', 'Collective E'];
 
-    mockRoutes.forEach(route => {
-      this.tradeRoutes.set(route.id, route);
-    });
-  }
-
-  async getTimelineEvents(options: { limit?: number; offset?: number } = {}) {
-    const { limit = 50, offset = 0 } = options;
-    return this.eventRepository.find({
-      order: { timestamp: 'DESC' },
-      take: limit,
-      skip: offset,
-    });
-  }
-
-  async getResourceFlowData(): Promise<ResourceFlowData> {
-    // 聚合贸易路线数据
-    const activeRoutes = Array.from(this.tradeRoutes.values()).filter(r => r.active);
-
-    // 计算节点数据
-    const nodeMap = new Map<string, ResourceFlowNode>();
-
-    activeRoutes.forEach(route => {
-      // 处理源节点
-      if (!nodeMap.has(route.sourceSector)) {
-        nodeMap.set(route.sourceSector, {
-          name: route.sourceSector,
-          sectorId: route.sourceSector,
-          totalIn: 0,
-          totalOut: 0,
-        });
+    // Generate mock trade routes
+    for (let i = 0; i < 50; i++) {
+      const cycle = Math.floor(i / 5) + 1;
+      if (!this.tradeRoutes.has(cycle.toString())) {
+        this.tradeRoutes.set(cycle.toString(), []);
       }
-      nodeMap.get(route.sourceSector)!.totalOut += route.flow;
 
-      // 处理目标节点
-      if (!nodeMap.has(route.targetSector)) {
-        nodeMap.set(route.targetSector, {
-          name: route.targetSector,
-          sectorId: route.targetSector,
-          totalIn: 0,
-          totalOut: 0,
-        });
+      const fromSector = sectors[Math.floor(Math.random() * sectors.length)];
+      let toSector = sectors[Math.floor(Math.random() * sectors.length)];
+      while (toSector === fromSector) {
+        toSector = sectors[Math.floor(Math.random() * sectors.length)];
       }
-      nodeMap.get(route.targetSector)!.totalIn += route.flow;
-    });
 
-    // 构建链接数据
-    const links: ResourceFlowLink[] = activeRoutes.map(route => ({
-      source: route.sourceSector,
-      target: route.targetSector,
-      value: route.flow,
-      resourceType: route.resourceType,
+      const route = {
+        from: civilizations[Math.floor(Math.random() * civilizations.length)],
+        to: civilizations[Math.floor(Math.random() * civilizations.length)],
+        resourceType: resourceTypes[Math.floor(Math.random() * resourceTypes.length)],
+        volume: Math.floor(Math.random() * 1000) + 100,
+        efficiency: Math.random() * 0.5 + 0.5,
+        sectorFrom: fromSector,
+        sectorTo: toSector,
+      };
+
+      this.tradeRoutes.get(cycle.toString())!.push(route);
+    }
+  }
+
+  async getTimelineEvents(filters?: {
+    type?: string;
+    startCycle?: number;
+    endCycle?: number;
+  }): Promise<TimelineEvent[]> {
+    let filteredEvents = [...this.events];
+
+    if (filters?.type) {
+      filteredEvents = filteredEvents.filter(e => e.type === filters.type);
+    }
+
+    if (filters?.startCycle !== undefined) {
+      filteredEvents = filteredEvents.filter(e => e.cycle >= filters.startCycle!);
+    }
+
+    if (filters?.endCycle !== undefined) {
+      filteredEvents = filteredEvents.filter(e => e.cycle <= filters.endCycle!);
+    }
+
+    return filteredEvents.sort((a, b) => b.cycle - a.cycle);
+  }
+
+  async addEvent(event: TimelineEvent): Promise<void> {
+    this.events.push(event);
+  }
+
+  async getResourceFlowData(filters?: {
+    startCycle?: number;
+    endCycle?: number;
+    groupBy?: 'sector' | 'civilization';
+  }): Promise<ResourceFlowData> {
+    const groupBy = filters?.groupBy || 'sector';
+    const startCycle = filters?.startCycle || 1;
+    const endCycle = filters?.endCycle || 10;
+
+    // Aggregate trade routes
+    const flowMap = new Map<string, {
+      volume: number;
+      resourceTypes: Map<string, number>;
+    }>();
+
+    const nodeSet = new Set<string>();
+
+    // Process trade routes within the cycle range
+    for (let cycle = startCycle; cycle <= endCycle; cycle++) {
+      const routes = this.tradeRoutes.get(cycle.toString()) || [];
+      
+      for (const route of routes) {
+        const fromKey = groupBy === 'sector' ? route.sectorFrom : route.from;
+        const toKey = groupBy === 'sector' ? route.sectorTo : route.to;
+        const flowKey = `${fromKey}->${toKey}`;
+
+        nodeSet.add(fromKey);
+        nodeSet.add(toKey);
+
+        if (!flowMap.has(flowKey)) {
+          flowMap.set(flowKey, {
+            volume: 0,
+            resourceTypes: new Map(),
+          });
+        }
+
+        const flow = flowMap.get(flowKey)!;
+        flow.volume += route.volume * route.efficiency;
+        
+        const currentResourceVolume = flow.resourceTypes.get(route.resourceType) || 0;
+        flow.resourceTypes.set(route.resourceType, currentResourceVolume + route.volume);
+      }
+    }
+
+    // Build nodes array
+    const nodes: ResourceFlowNode[] = Array.from(nodeSet).map(name => ({
+      name,
+      sector: groupBy === 'sector' ? name : undefined,
+      civilization: groupBy === 'civilization' ? name : undefined,
     }));
 
-    // 计算汇总数据
-    const totalFlow = activeRoutes.reduce((sum, r) => sum + r.flow, 0);
+    // Build links array
+    const links: ResourceFlowLink[] = [];
+    const resourceTypeTotals: Record<string, number> = {};
 
-    // 排序获取顶级路线
-    const topRoutes = [...activeRoutes]
-      .sort((a, b) => b.flow - a.flow)
-      .slice(0, 5)
-      .map(r => ({
-        from: r.sourceSector,
-        to: r.targetSector,
-        value: r.flow,
-      }));
+    flowMap.forEach((flow, key) => {
+      const [source, target] = key.split('->');
+      
+      // Find dominant resource type for this flow
+      let dominantResource = '';
+      let maxVolume = 0;
+      flow.resourceTypes.forEach((vol, type) => {
+        if (vol > maxVolume) {
+          maxVolume = vol;
+          dominantResource = type;
+        }
+        resourceTypeTotals[type] = (resourceTypeTotals[type] || 0) + vol;
+      });
 
-    // 按资源类型分组
-    const resourceBreakdown: Record<string, number> = {};
-    activeRoutes.forEach(route => {
-      if (!resourceBreakdown[route.resourceType]) {
-        resourceBreakdown[route.resourceType] = 0;
-      }
-      resourceBreakdown[route.resourceType] += route.flow;
+      links.push({
+        source,
+        target,
+        value: Math.round(flow.volume),
+        resourceType: dominantResource,
+      });
     });
 
+    // Calculate summary
+    const totalFlow = links.reduce((sum, link) => sum + link.value, 0);
+    
+    const topRoutes = links
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 5)
+      .map(link => ({
+        from: link.source,
+        to: link.target,
+        volume: link.value,
+      }));
+
     return {
-      nodes: Array.from(nodeMap.values()),
+      nodes,
       links,
       summary: {
-        totalFlow,
+        totalFlow: Math.round(totalFlow),
         topRoutes,
-        resourceBreakdown,
+        resourceTypes: resourceTypeTotals,
       },
     };
   }
 
-  // 添加贸易路线
-  addTradeRoute(route: TradeRoute): void {
-    this.tradeRoutes.set(route.id, route);
+  async getTradeRoutesByCycle(cycle: number): Promise<{
+    from: string;
+    to: string;
+    resourceType: string;
+    volume: number;
+    efficiency: number;
+  }[]> {
+    return this.tradeRoutes.get(cycle.toString()) || [];
   }
 
-  // 更新贸易路线状态
-  updateRouteStatus(routeId: string, active: boolean): boolean {
-    const route = this.tradeRoutes.get(routeId);
-    if (route) {
-      route.active = active;
-      return true;
+  async addTradeRoute(route: {
+    from: string;
+    to: string;
+    resourceType: string;
+    volume: number;
+    efficiency: number;
+    sectorFrom: string;
+    sectorTo: string;
+  }, cycle: number): Promise<void> {
+    if (!this.tradeRoutes.has(cycle.toString())) {
+      this.tradeRoutes.set(cycle.toString(), []);
     }
-    return false;
+    this.tradeRoutes.get(cycle.toString())!.push(route);
   }
 
-  // 获取所有贸易路线
-  getAllTradeRoutes(): TradeRoute[] {
-    return Array.from(this.tradeRoutes.values());
+  async getEventStats(): Promise<{
+    totalEvents: number;
+    eventsByType: Record<string, number>;
+    eventsByCycle: Record<number, number>;
+  }> {
+    const eventsByType: Record<string, number> = {};
+    const eventsByCycle: Record<number, number> = {};
+
+    for (const event of this.events) {
+      eventsByType[event.type] = (eventsByType[event.type] || 0) + 1;
+      eventsByCycle[event.cycle] = (eventsByCycle[event.cycle] || 0) + 1;
+    }
+
+    return {
+      totalEvents: this.events.length,
+      eventsByType,
+      eventsByCycle,
+    };
   }
-}
-
-interface TradeRoute {
-  id: string;
-  sourceSector: string;
-  targetSector: string;
-  resourceType: string;
-  flow: number;
-  active: boolean;
-}
-
-interface SectorResource {
-  sectorId: string;
-  resources: Record<string, number>;
 }

@@ -5,19 +5,51 @@ import { TimelineService } from './timeline.service';
 export class TimelineController {
   constructor(private readonly timelineService: TimelineService) {}
 
-  @Get('events')
-  async getEvents(
-    @Query('limit') limit?: string,
-    @Query('offset') offset?: string,
+  @Get('timeline')
+  async getTimeline(
+    @Query('type') type?: string,
+    @Query('startCycle') startCycle?: string,
+    @Query('endCycle') endCycle?: string,
   ) {
-    return this.timelineService.getTimelineEvents({
-      limit: limit ? parseInt(limit, 10) : undefined,
-      offset: offset ? parseInt(offset, 10) : undefined,
-    });
+    const filters: {
+      type?: string;
+      startCycle?: number;
+      endCycle?: number;
+    } = {};
+
+    if (type) filters.type = type;
+    if (startCycle) filters.startCycle = parseInt(startCycle, 10);
+    if (endCycle) filters.endCycle = parseInt(endCycle, 10);
+
+    return this.timelineService.getTimelineEvents(filters);
   }
 
   @Get('resource-flow')
-  async getResourceFlow() {
-    return this.timelineService.getResourceFlowData();
+  async getResourceFlow(
+    @Query('startCycle') startCycle?: string,
+    @Query('endCycle') endCycle?: string,
+    @Query('groupBy') groupBy?: 'sector' | 'civilization',
+  ) {
+    const filters: {
+      startCycle?: number;
+      endCycle?: number;
+      groupBy?: 'sector' | 'civilization';
+    } = {};
+
+    if (startCycle) filters.startCycle = parseInt(startCycle, 10);
+    if (endCycle) filters.endCycle = parseInt(endCycle, 10);
+    if (groupBy) filters.groupBy = groupBy;
+
+    return this.timelineService.getResourceFlowData(filters);
+  }
+
+  @Get('event-stats')
+  async getEventStats() {
+    return this.timelineService.getEventStats();
+  }
+
+  @Get('trade-routes/:cycle')
+  async getTradeRoutesByCycle(cycle: string) {
+    return this.timelineService.getTradeRoutesByCycle(parseInt(cycle, 10));
   }
 }
