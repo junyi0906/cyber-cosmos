@@ -1,0 +1,252 @@
+import mongoose, { Schema, Document, Model } from 'mongoose';
+
+// 变结构事件日志接口 - 支持灵活的事件数据结构
+export interface IEventLog extends Document {
+  eventId: string;
+  eventType: 'macro' | 'micro' | 'diplomacy' | 'war' | 'disaster' | 'discovery' | 'trade' | 'alliance';
+  eventSubType: string;
+  timestamp: Date;
+  universeTick: number;
+  
+  // 事件来源
+  source: {
+    type: 'system' | 'agent' | 'nature' | 'user';
+    id?: string;
+    name?: string;
+  };
+  
+  // 事件目标
+  targets: Array<{
+    type: 'civilization' | 'planet' | 'star' | 'region' | 'alliance';
+    id: string;
+    name?: string;
+  }>;
+  
+  // 事件位置
+  location: {
+    galaxyId?: string;
+    starSystemId?: string;
+    planetId?: string;
+    coordinates?: {
+      x: number;
+      y: number;
+      z: number;
+    };
+  };
+  
+  // 灵活的事件数据 - 核心变结构部分
+  data: Record<string, any>;
+  
+  // 事件影响
+  impacts: Array<{
+    targetId: string;
+    targetType: string;
+    attribute: string;
+    change: number;
+    description: string;
+  }>;
+  
+  // 事件元数据
+  metadata: {
+    severity: 'info' | 'warning' | 'critical' | 'catastrophic';
+    visibility: 'public' | 'private' | 'faction' | 'alliance';
+    tags: string[];
+    relatedEventIds: string[];
+  };
+  
+  // LLM 生成的叙事描述
+  narrative?: {
+    title: string;
+    description: string;
+    generatedBy: string;
+    generatedAt: Date;
+  };
+  
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const EventLogSchema: Schema<IEventLog> = new Schema(
+  {
+    eventId: {
+      type: String,
+      required: true,
+      unique: true,
+      index: true,
+    },
+    eventType: {
+      type: String,
+      enum: ['macro', 'micro', 'diplomacy', 'war', 'disaster', 'discovery', 'trade', 'alliance'],
+      required: true,
+      index: true,
+    },
+    eventSubType: {
+      type: String,
+      required: true,
+      index: true,
+    },
+    timestamp: {
+      type: Date,
+      default: Date.now,
+      index: true,
+    },
+    universeTick: {
+      type: Number,
+      required: true,
+      index: true,
+    },
+    source: {
+      type: {
+        type: String,
+        enum: ['system', 'agent', 'nature', 'user'],
+        required: true,
+      },
+      id: String,
+      name: String,
+    },
+    targets: [
+      {
+        type: {
+          type: String,
+          enum: ['civilization', 'planet', 'star', 'region', 'alliance'],
+        },
+        id: String,
+        name: String,
+      },
+    ],
+    location: {
+      galaxyId: String,
+      starSystemId: String,
+      planetId: String,
+      coordinates: {
+        x: Number,
+        y: Number,
+        z: Number,
+      },
+    },
+    // 变结构数据核心 - 使用严格: false 允许任意字段
+    data: {
+      type: Schema.Types.Mixed,
+      required: true,
+    },
+    impacts: [
+      {
+        targetId: String,
+        targetType: String,
+        attribute: String,
+        change: Number,
+        description: String,
+      },
+    ],
+    metadata: {
+      severity: {
+        type: String,
+        enum: ['info', 'warning', 'critical', 'catastrophic'],
+        default: 'info',
+      },
+      visibility: {
+        type: String,
+        enum: ['public', 'private', 'faction', 'alliance'],
+        default: 'public',
+      },
+      tags: [String],
+      relatedEventIds: [String],
+    },
+    narrative: {
+      title: String,
+      description: String,
+      generatedBy: String,
+      generatedAt: Date,
+    },
+  },
+  {
+    timestamps: true,
+    // 允许变结构
+    strict: false,
+    minimize: false,
+  }
+);
+
+// 复合索引优化查询
+EventLogSchema.index({ eventType: 1, timestamp: -1 });
+EventLogSchema.index({ universeTick: 1, eventType: 1 });
+EventLogSchema.index({ 'source.id': 1, timestamp: -1 });
+EventLogSchema.index({ 'targets.id': 1, timestamp: -1 });
+EventLogSchema.index({ 'metadata.severity': 1, timestamp: -1 });
+EventLogSchema.index({ 'metadata.tags': 1 });
+
+// 文本索引支持搜索
+EventLogSchema.index({ 
+  'narrative.title': 'text', 
+  'narrative.description': 'text',
+  eventSubType: 'text' 
+});
+
+// 静态方法：按时间范围查询
+EventLogSchema.statics.findByTimeRange = function(
+  startTime: Date, 
+  endTime: Date, 
+  options: { eventType?: string; limit?: number } = {}
+) {
+  const query: any = {
+    timestamp: { $gte: startTime, $lte: endTime }
+  };
+  if (options.eventType) {
+    query.eventType = options.eventType;
+  }
+  return this.find(query)
+    .sort({ timestamp: -1 })
+    .limit(options.limit || 100);
+};
+
+// 静态方法：按宇宙刻度查询
+EventLogSchema.statics.findByUniverseTick = function(tick: number, options: { eventType?: string } = {}) {
+  const query: any = { universeTick: tick };
+  if (options.eventType) {
+    query.eventType = options.eventType;
+  }
+  return this.find(query).sort({ timestamp: 1 });
+};
+
+// 静态方法：获取事件统计
+EventLogSchema.statics.getEventStats = async function(tickStart: number, tickEnd: number) {
+  return this.aggregate([
+    {
+      $match: {
+        universeTick: { $gte: tickStart, $lte: tickEnd }
+      }
+    },
+    {
+      $group: {
+        _id: '$eventType',
+        count: { $sum: 1 },
+        avgSeverity: { $avg: { $switch: {
+          branches: [
+            { case: { $eq: ['$metadata.severity', 'info'] }, then: 1 },
+            { case: { $eq: ['$metadata.severity', 'warning'] }, then: 2 },
+            { case: { $eq: ['$metadata.severity', 'critical'] }, then: 3 },
+            { case: { $eq: ['$metadata.severity', 'catastrophic'] }, then: 4 },
+          ],
+          default: 0
+        }}}
+      }
+    },
+    {
+      $sort: { count: -1 }
+    }
+  ]);
+};
+
+export interface IEventLogModel extends Model<IEventLog> {
+  findByTimeRange(
+    startTime: Date, 
+    endTime: Date, 
+    options?: { eventType?: string; limit?: number }
+  ): Promise<IEventLog[]>;
+  findByUniverseTick(tick: number, options?: { eventType?: string }): Promise<IEventLog[]>;
+  getEventStats(tickStart: number, tickEnd: number): Promise<any[]>;
+}
+
+export const EventLog = mongoose.model<IEventLog, IEventLogModel>('EventLog', EventLogSchema);
+
+export default EventLog;

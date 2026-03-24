@@ -1,0 +1,258 @@
+import mongoose, { Schema, Document, Model } from 'mongoose';
+
+// 编年史叙事接口 - 存储宇宙历史叙事
+export interface INarrative extends Document {
+  narrativeId: string;
+  title: string;
+  
+  // 叙事类型
+  type: 'chronicle' | 'civilization' | 'war' | 'discovery' | 'disaster' | 'alliance' | 'era';
+  
+  // 时间范围
+  timeRange: {
+    startTick: number;
+    endTick: number;
+    startDate: Date;
+    endDate?: Date;
+  };
+  
+  // 关联实体
+  entities: Array<{
+    type: 'civilization' | 'star' | 'planet' | 'alliance' | 'region';
+    id: string;
+    name: string;
+    role: 'protagonist' | 'antagonist' | 'witness' | 'victim' | 'beneficiary';
+  }>;
+  
+  // 叙事章节
+  chapters: Array<{
+    chapterId: string;
+    order: number;
+    title: string;
+    content: string;
+    tick: number;
+    timestamp: Date;
+    relatedEventIds: string[];
+    keyFigures: string[];
+  }>;
+  
+  // 叙事摘要
+  summary: {
+    brief: string;
+    detailed: string;
+    themes: string[];
+    significance: 'minor' | 'moderate' | 'major' | 'epochal';
+  };
+  
+  // 影响评估
+  consequences: Array<{
+    type: 'demographic' | 'technological' | 'political' | 'cultural' | 'economic';
+    description: string;
+    magnitude: number;
+    affectedEntities: string[];
+  }>;
+  
+  // LLM 生成元数据
+  generation: {
+    model: string;
+    prompt: string;
+    generatedAt: Date;
+    version: number;
+    quality: 'draft' | 'refined' | 'final';
+  };
+  
+  // 叙事状态
+  status: 'ongoing' | 'concluded' | 'archived';
+  
+  // 父叙事（用于叙事嵌套）
+  parentNarrativeId?: string;
+  
+  // 子叙事
+  childNarrativeIds: string[];
+  
+  // 元数据
+  metadata: {
+    tags: string[];
+    era: string;
+    region: string;
+    viewCount: number;
+    lastAccessedAt?: Date;
+  };
+  
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const NarrativeSchema: Schema<INarrative> = new Schema(
+  {
+    narrativeId: {
+      type: String,
+      required: true,
+      unique: true,
+      index: true,
+    },
+    title: {
+      type: String,
+      required: true,
+      index: 'text',
+    },
+    type: {
+      type: String,
+      enum: ['chronicle', 'civilization', 'war', 'discovery', 'disaster', 'alliance', 'era'],
+      required: true,
+      index: true,
+    },
+    timeRange: {
+      startTick: { type: Number, required: true },
+      endTick: { type: Number, required: true },
+      startDate: { type: Date, required: true },
+      endDate: Date,
+    },
+    entities: [
+      {
+        type: {
+          type: String,
+          enum: ['civilization', 'star', 'planet', 'alliance', 'region'],
+        },
+        id: String,
+        name: String,
+        role: {
+          type: String,
+          enum: ['protagonist', 'antagonist', 'witness', 'victim', 'beneficiary'],
+        },
+      },
+    ],
+    chapters: [
+      {
+        chapterId: { type: String, required: true },
+        order: { type: Number, required: true },
+        title: String,
+        content: { type: String, required: true },
+        tick: { type: Number, required: true },
+        timestamp: { type: Date, default: Date.now },
+        relatedEventIds: [String],
+        keyFigures: [String],
+      },
+    ],
+    summary: {
+      brief: { type: String, required: true },
+      detailed: String,
+      themes: [String],
+      significance: {
+        type: String,
+        enum: ['minor', 'moderate', 'major', 'epochal'],
+        default: 'moderate',
+      },
+    },
+    consequences: [
+      {
+        type: {
+          type: String,
+          enum: ['demographic', 'technological', 'political', 'cultural', 'economic'],
+        },
+        description: String,
+        magnitude: { type: Number, min: 0, max: 100 },
+        affectedEntities: [String],
+      },
+    ],
+    generation: {
+      model: String,
+      prompt: String,
+      generatedAt: { type: Date, default: Date.now },
+      version: { type: Number, default: 1 },
+      quality: {
+        type: String,
+        enum: ['draft', 'refined', 'final'],
+        default: 'draft',
+      },
+    },
+    status: {
+      type: String,
+      enum: ['ongoing', 'concluded', 'archived'],
+      default: 'ongoing',
+      index: true,
+    },
+    parentNarrativeId: {
+      type: String,
+      index: true,
+    },
+    childNarrativeIds: [String],
+    metadata: {
+      tags: [String],
+      era: String,
+      region: String,
+      viewCount: { type: Number, default: 0 },
+      lastAccessedAt: Date,
+    },
+  },
+  {
+    timestamps: true,
+    minimize: false,
+  }
+);
+
+// 复合索引
+NarrativeSchema.index({ type: 1, 'timeRange.startTick': -1 });
+NarrativeSchema.index({ 'entities.id': 1, 'timeRange.startTick': -1 });
+NarrativeSchema.index({ status: 1, 'summary.significance': -1 });
+NarrativeSchema.index({ 'metadata.tags': 1 });
+
+// 文本索引
+NarrativeSchema.index({
+  title: 'text',
+  'summary.brief': 'text',
+  'chapters.content': 'text',
+});
+
+// 静态方法：按时间范围查询叙事
+NarrativeSchema.statics.findByTickRange = function(startTick: number, endTick: number) {
+  return this.find({
+    'timeRange.startTick': { $lte: endTick },
+    'timeRange.endTick': { $gte: startTick },
+  }).sort({ 'timeRange.startTick': 1 });
+};
+
+// 静态方法：按实体查询相关叙事
+NarrativeSchema.statics.findByEntity = function(entityId: string, options: { limit?: number } = {}) {
+  return this.find({
+    'entities.id': entityId,
+  })
+    .sort({ 'timeRange.startTick': -1 })
+    .limit(options.limit || 20);
+};
+
+// 静态方法：获取重大叙事
+NarrativeSchema.statics.findSignificant = function(significance: string[] = ['major', 'epochal']) {
+  return this.find({
+    'summary.significance': { $in: significance },
+    status: { $ne: 'archived' },
+  }).sort({ 'timeRange.startTick': -1 });
+};
+
+// 静态方法：生成编年史摘要
+NarrativeSchema.statics.generateChronicleSummary = async function(tickStart: number, tickEnd: number) {
+  return this.aggregate([
+    {
+      $match: {
+        'timeRange.startTick': { $gte: tickStart },
+        'timeRange.endTick': { $lte: tickEnd },
+      }
+    },
+    {
+      $group: {
+        _id: '$type',
+        count: { $sum: 1 },
+        narratives: { $push: { id: '$narrativeId', title: '$title', significance: '$summary.significance' } },
+      }
+    },
+    {
+      $sort: { count: -1 }
+    }
+  ]);
+};
+
+// 实例方法：添加章节
+NarrativeSchema.methods.addChapter = function(chapter: Partial<INarrative['chapters'][0]>) {
+  const newChapter = {
+    chapterId: `chapter_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    order: this
