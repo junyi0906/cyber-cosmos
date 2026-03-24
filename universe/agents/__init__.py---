@@ -1,13 +1,6 @@
 """
 Universe Agents Module
 """
+from .decision_logger import DecisionLogger, Decision, DecisionOption, ThoughtNode
 
-from .decision_logger import DecisionLogger, DecisionOption, ThoughtNode, Decision, Consequence
-
-__all__ = [
-    "DecisionLogger",
-    "DecisionOption",
-    "ThoughtNode",
-    "Decision",
-    "Consequence"
-]
+__all__ = ['DecisionLogger', 'Decision', 'DecisionOption', 'ThoughtNode']
