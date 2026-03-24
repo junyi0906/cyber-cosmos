@@ -1,0 +1,203 @@
+import { useState, useEffect, useCallback, useRef } from 'react';
+
+export interface HeatmapPoint {
+  x: number;
+  y: number;
+  z: number;
+  power: number;
+  civilizationId: string;
+}
+
+export interface CivilizationHeatmap {
+  id: string;
+  name: string;
+  color: string;
+  points: HeatmapPoint[];
+  totalPower: number;
+}
+
+export interface HeatmapData {
+  civilizations: CivilizationHeatmap[];
+  lastUpdated: string;
+  gridSize: number;
+  maxPower: number;
+}
+
+interface UseHeatmapDataOptions {
+  refreshInterval?: number;
+  autoRefresh?: boolean;
+}
+
+interface UseHeatmapDataReturn {
+  data: HeatmapData | null;
+  loading: boolean;
+  error: Error | null;
+  refetch: () => Promise<void>;
+  calculateHeatValue: (x: number, y: number, z: number, radius?: number) => number;
+}
+
+const DEFAULT_REFRESH_INTERVAL = 60000; // 1 minute
+
+export function useHeatmapData(options: UseHeatmapDataOptions = {}): UseHeatmapDataReturn {
+  const { refreshInterval = DEFAULT_REFRESH_INTERVAL, autoRefresh = true } = options;
+  
+  const [data, setData] = useState<HeatmapData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+  
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const fetchData = useCallback(async () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    
+    abortControllerRef.current = new AbortController();
+    
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const response = await fetch('/api/observatory/heatmap', {
+        signal: abortControllerRef.current.signal,
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const result: HeatmapData = await response.json();
+      setData(result);
+    } catch (err) {
+      if (err instanceof Error && err.name !== 'AbortError') {
+        setError(err);
+        console.error('Failed to fetch heatmap data:', err);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const calculateHeatValue = useCallback(
+    (targetX: number, targetY: number, targetZ: number, radius: number = 50): number => {
+      if (!data) return 0;
+      
+      let totalHeat = 0;
+      const radiusSquared = radius * radius;
+      
+      for (const civ of data.civilizations) {
+        for (const point of civ.points) {
+          const dx = point.x - targetX;
+          const dy = point.y - targetY;
+          const dz = point.z - targetZ;
+          const distanceSquared = dx * dx + dy * dy + dz * dz;
+          
+          if (distanceSquared < radiusSquared) {
+            const distance = Math.sqrt(distanceSquared);
+            const influence = 1 - distance / radius;
+            const gaussianInfluence = Math.exp(-distanceSquared / (2 * (radius / 3) ** 2));
+            totalHeat += point.power * gaussianInfluence * influence;
+          }
+        }
+      }
+      
+      return totalHeat;
+    },
+    [data]
+  );
+
+  useEffect(() => {
+    fetchData();
+    
+    if (autoRefresh) {
+      intervalRef.current = setInterval(fetchData, refreshInterval);
+    }
+    
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, [fetchData, refreshInterval, autoRefresh]);
+
+  return {
+    data,
+    loading,
+    error,
+    refetch: fetchData,
+    calculateHeatValue,
+  };
+}
+
+export function generateMockHeatmapData(): HeatmapData {
+  const civilizations: CivilizationHeatmap[] = [
+    {
+      id: 'civ-001',
+      name: '星际联邦',
+      color: '#00ff88',
+      points: [],
+      totalPower: 0,
+    },
+    {
+      id: 'civ-002',
+      name: '暗影帝国',
+      color: '#ff4488',
+      points: [],
+      totalPower: 0,
+    },
+    {
+      id: 'civ-003',
+      name: '机械联盟',
+      color: '#4488ff',
+      points: [],
+      totalPower: 0,
+    },
+    {
+      id: 'civ-004',
+      name: '虚空行者',
+      color: '#aa44ff',
+      points: [],
+      totalPower: 0,
+    },
+  ];
+
+  const gridSize = 500;
+  
+  civilizations.forEach((civ) => {
+    const pointCount = Math.floor(Math.random() * 30) + 20;
+    let totalPower = 0;
+    
+    const centerX = (Math.random() - 0.5) * gridSize * 0.6;
+    const centerY = (Math.random() - 0.5) * gridSize * 0.6;
+    const centerZ = (Math.random() - 0.5) * gridSize * 0.6;
+    
+    for (let i = 0; i < pointCount; i++) {
+      const spread = 100 + Math.random() * 100;
+      const power = Math.floor(Math.random() * 1000) + 100;
+      
+      const point: HeatmapPoint = {
+        x: centerX + (Math.random() - 0.5) * spread,
+        y: centerY + (Math.random() - 0.5) * spread,
+        z: centerZ + (Math.random() - 0.5) * spread,
+        power,
+        civilizationId: civ.id,
+      };
+      
+      civ.points.push(point);
+      totalPower += power;
+    }
+    
+    civ.totalPower = totalPower;
+  });
+
+  return {
+    civilizations,
+    lastUpdated: new Date().toISOString(),
+    gridSize,
+    maxPower: Math.max(...civilizations.map(c => c.totalPower)),
+  };
+}

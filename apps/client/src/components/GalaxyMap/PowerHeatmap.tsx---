@@ -1,0 +1,272 @@
+import React, { useRef, useMemo, useEffect, useCallback } from 'react';
+import { useFrame, useThree } from '@react-three/fiber';
+import * as THREE from 'three';
+import { HeatmapData, HeatmapPoint, CivilizationHeatmap } from './useHeatmapData';
+
+interface PowerHeatmapProps {
+  data: HeatmapData | null;
+  visible?: boolean;
+  opacity?: number;
+  pointRadius?: number;
+  glowIntensity?: number;
+  animationSpeed?: number;
+}
+
+interface HeatmapPointData {
+  position: THREE.Vector3;
+  color: THREE.Color;
+  power: number;
+  radius: number;
+  phase: number;
+}
+
+const HEATMAP_VERTEX_SHADER = `
+  attribute float aSize;
+  attribute float aPower;
+  attribute vec3 aColor;
+  attribute float aPhase;
+  
+  uniform float uTime;
+  uniform float uOpacity;
+  uniform float uPointSize;
+  uniform float uMaxPower;
+  
+  varying vec3 vColor;
+  varying float vPower;
+  varying float vAlpha;
+  
+  void main() {
+    vColor = aColor;
+    vPower = aPower / uMaxPower;
+    
+    float pulse = sin(uTime * 2.0 + aPhase) * 0.1 + 1.0;
+    float size = aSize * uPointSize * pulse;
+    
+    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    gl_PointSize = size * (300.0 / -mvPosition.z);
+    gl_Position = projectionMatrix * mvPosition;
+    
+    vAlpha = uOpacity * (0.5 + vPower * 0.5);
+  }
+`;
+
+const HEATMAP_FRAGMENT_SHADER = `
+  varying vec3 vColor;
+  varying float vPower;
+  varying float vAlpha;
+  
+  void main() {
+    vec2 center = gl_PointCoord - vec2(0.5);
+    float dist = length(center);
+    
+    if (dist > 0.5) discard;
+    
+    float core = 1.0 - smoothstep(0.0, 0.15, dist);
+    float glow = 1.0 - smoothstep(0.0, 0.5, dist);
+    glow = pow(glow, 2.0);
+    
+    vec3 finalColor = vColor * (core * 2.0 + glow);
+    float alpha = vAlpha * glow * (0.3 + vPower * 0.7);
+    
+    gl_FragColor = vec4(finalColor, alpha);
+  }
+`;
+
+const HEATMAP_FIELD_VERTEX_SHADER = `
+  varying vec2 vUv;
+  
+  void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const HEATMAP_FIELD_FRAGMENT_SHADER = `
+  uniform sampler2D uHeatmapTexture;
+  uniform float uTime;
+  uniform float uOpacity;
+  
+  varying vec2 vUv;
+  
+  void main() {
+    vec4 texColor = texture2D(uHeatmapTexture, vUv);
+    float pulse = sin(uTime * 0.5) * 0.1 + 0.9;
+    
+    gl_FragColor = vec4(texColor.rgb, texColor.a * uOpacity * pulse);
+  }
+`;
+
+function createHeatmapTexture(
+  points: HeatmapPointData[],
+  width: number,
+  height: number,
+  gridSize: number
+): THREE.DataTexture {
+  const data = new Float32Array(width * height * 4);
+  const halfGrid = gridSize / 2;
+  
+  for (let i = 0; i < width * height; i++) {
+    data[i * 4] = 0;
+    data[i * 4 + 1] = 0;
+    data[i * 4 + 2] = 0;
+    data[i * 4 + 3] = 0;
+  }
+  
+  for (const point of points) {
+    const px = Math.floor(((point.position.x + halfGrid) / gridSize) * width);
+    const py = Math.floor(((point.position.z + halfGrid) / gridSize) * height);
+    
+    if (px >= 0 && px < width && py >= 0 && py < height) {
+      const idx = (py * width + px) * 4;
+      const intensity = point.power / 1000;
+      
+      data[idx] = Math.min(1, data[idx] + point.color.r * intensity);
+      data[idx + 1] = Math.min(1, data[idx + 1] + point.color.g * intensity);
+      data[idx + 2] = Math.min(1, data[idx + 2] + point.color.b * intensity);
+      data[idx + 3] = Math.min(1, data[idx + 3] + intensity * 0.5);
+    }
+  }
+  
+  const texture = new THREE.DataTexture(data, width, height, THREE.RGBAFormat, THREE.FloatType);
+  texture.needsUpdate = true;
+  
+  return texture;
+}
+
+export const PowerHeatmap: React.FC<PowerHeatmapProps> = ({
+  data,
+  visible = true,
+  opacity = 0.6,
+  pointRadius = 15,
+  glowIntensity = 1.0,
+  animationSpeed = 1.0,
+}) => {
+  const meshRef = useRef<THREE.Points>(null);
+  const materialRef = useRef<THREE.ShaderMaterial>(null);
+  const fieldMeshRef = useRef<THREE.Mesh>(null);
+  const fieldMaterialRef = useRef<THREE.ShaderMaterial>(null);
+  
+  const { size } = useThree();
+  
+  const pointData = useMemo((): HeatmapPointData[] => {
+    if (!data) return [];
+    
+    const points: HeatmapPointData[] = [];
+    
+    for (const civ of data.civilizations) {
+      const color = new THREE.Color(civ.color);
+      
+      for (const point of civ.points) {
+        points.push({
+          position: new THREE.Vector3(point.x, point.y, point.z),
+          color,
+          power: point.power,
+          radius: pointRadius,
+          phase: Math.random() * Math.PI * 2,
+        });
+      }
+    }
+    
+    return points;
+  }, [data, pointRadius]);
+
+  const geometry = useMemo(() => {
+    if (pointData.length === 0) return null;
+    
+    const geo = new THREE.BufferGeometry();
+    
+    const positions = new Float32Array(pointData.length * 3);
+    const sizes = new Float32Array(pointData.length);
+    const powers = new Float32Array(pointData.length);
+    const colors = new Float32Array(pointData.length * 3);
+    const phases = new Float32Array(pointData.length);
+    
+    pointData.forEach((point, i) => {
+      positions[i * 3] = point.position.x;
+      positions[i * 3 + 1] = point.position.y;
+      positions[i * 3 + 2] = point.position.z;
+      
+      sizes[i] = point.radius * (0.5 + (point.power / 1000) * 0.5);
+      powers[i] = point.power;
+      
+      colors[i * 3] = point.color.r;
+      colors[i * 3 + 1] = point.color.g;
+      colors[i * 3 + 2] = point.color.b;
+      
+      phases[i] = point.phase;
+    });
+    
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
+    geo.setAttribute('aPower', new THREE.BufferAttribute(powers, 1));
+    geo.setAttribute('aColor', new THREE.BufferAttribute(colors, 3));
+    geo.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
+    
+    return geo;
+  }, [pointData]);
+
+  const uniforms = useMemo(() => ({
+    uTime: { value: 0 },
+    uOpacity: { value: opacity },
+    uPointSize: { value: pointRadius * glowIntensity },
+    uMaxPower: { value: data?.maxPower || 1000 },
+  }), [opacity, pointRadius, glowIntensity, data?.maxPower]);
+
+  const heatmapTexture = useMemo(() => {
+    if (!data || pointData.length === 0) return null;
+    return createHeatmapTexture(pointData, 256, 256, data.gridSize);
+  }, [data, pointData]);
+
+  const fieldUniforms = useMemo(() => ({
+    uHeatmapTexture: { value: heatmapTexture },
+    uTime: { value: 0 },
+    uOpacity: { value: opacity * 0.3 },
+  }), [heatmapTexture, opacity]);
+
+  useEffect(() => {
+    if (materialRef.current) {
+      materialRef.current.uniforms.uOpacity.value = opacity;
+      materialRef.current.uniforms.uPointSize.value = pointRadius * glowIntensity;
+      if (data) {
+        materialRef.current.uniforms.uMaxPower.value = data.maxPower;
+      }
+    }
+  }, [opacity, pointRadius, glowIntensity, data]);
+
+  useEffect(() => {
+    if (fieldMaterialRef.current) {
+      fieldMaterialRef.current.uniforms.uHeatmapTexture.value = heatmapTexture;
+      fieldMaterialRef.current.uniforms.uOpacity.value = opacity * 0.3;
+    }
+  }, [heatmapTexture, opacity]);
+
+  useFrame((state) => {
+    const time = state.clock.elapsedTime * animationSpeed;
+    
+    if (materialRef.current) {
+      materialRef.current.uniforms.uTime.value = time;
+    }
+    
+    if (fieldMaterialRef.current) {
+      fieldMaterialRef.current.uniforms.uTime.value = time;
+    }
+  });
+
+  if (!visible || !geometry) return null;
+
+  return (
+    <group>
+      <points ref={meshRef} geometry={geometry}>
+        <shaderMaterial
+          ref={materialRef}
+          vertexShader={HEATMAP_VERTEX_SHADER}
+          fragmentShader={HEATMAP_FRAGMENT_SHADER}
+          uniforms={uniforms}
+          transparent
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </points>
+      
+      {heatmapTexture && data && (
+        <mesh
