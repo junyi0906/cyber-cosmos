@@ -1,37 +1,55 @@
 export type RelationType = 
-  | 'neutral'
-  | 'friendly'
-  | 'allied'
-  | 'hostile'
-  | 'at_war'
-  | 'truce'
-  | 'trade_agreement'
-  | 'non_aggression_pact';
+  | 'war' 
+  | 'hostile' 
+  | 'neutral' 
+  | 'friendly' 
+  | 'allied' 
+  | 'vassal'
+  | 'overlord';
+
+export type TreatyType = 
+  | 'peace' 
+  | 'non_aggression' 
+  | 'trade' 
+  | 'alliance' 
+  | 'defensive_pact'
+  | 'vassalage';
+
+export type VoteType = 'for' | 'against' | 'abstain';
 
 export interface DiplomacyRelation {
   id: string;
   sourceCivId: string;
+  sourceCivName: string;
   targetCivId: string;
+  targetCivName: string;
   relationType: RelationType;
   trust: number;
   threat: number;
-  tradeValue: number;
-  warScore?: number;
-  truceEndDate?: number;
-  createdAt: number;
-  updatedAt: number;
+  opinion: number;
+  treaties: TreatyType[];
+  warExhaustion?: number;
+  lastInteraction: number;
 }
 
 export interface Alliance {
   id: string;
   name: string;
   leaderId: string;
-  memberIds: string[];
-  ideology: 'cooperative' | 'aggressive' | 'neutral' | 'trade';
+  leaderName: string;
+  members: AllianceMember[];
   foundedAt: number;
+  ideology: string;
   strength: number;
-  description?: string;
-  color: string;
+  isActive: boolean;
+}
+
+export interface AllianceMember {
+  civId: string;
+  civName: string;
+  joinDate: number;
+  contribution: number;
+  status: 'leader' | 'member' | 'applicant';
 }
 
 export interface Broadcast {
@@ -39,51 +57,66 @@ export interface Broadcast {
   civId: string;
   civName: string;
   content: string;
-  type: 'warning' | 'invitation' | 'declaration' | 'trade' | 'general';
-  range: number;
+  type: 'warning' | 'greeting' | 'trade' | 'threat' | 'announcement';
   timestamp: number;
-  expiresAt?: number;
+  range: number;
+  responses: BroadcastResponse[];
+}
+
+export interface BroadcastResponse {
+  civId: string;
+  civName: string;
+  content: string;
+  timestamp: number;
 }
 
 export interface Treaty {
   id: string;
-  type: 'peace' | 'trade' | 'alliance' | 'non_aggression' | 'mutual_defense';
-  parties: string[];
-  terms: string;
-  signedAt: number;
-  expiresAt?: number;
+  type: TreatyType;
+  parties: {
+    civId: string;
+    civName: string;
+  }[];
+  startDate: number;
+  endDate?: number;
   status: 'active' | 'broken' | 'expired' | 'pending';
+  terms?: string;
 }
 
 export interface Vote {
   id: string;
   allianceId: string;
-  proposal: string;
+  allianceName: string;
+  title: string;
+  description: string;
   proposerId: string;
-  votes: { civId: string; support: boolean }[];
-  requiredVotes: number;
-  deadline: number;
-  status: 'pending' | 'passed' | 'rejected';
+  proposerName: string;
+  type: 'admit_member' | 'expel_member' | 'war_declaration' | 'policy_change' | 'leadership_transfer';
+  options: VoteOption[];
+  votes: VoteRecord[];
+  startTime: number;
+  endTime: number;
+  status: 'pending' | 'passed' | 'rejected' | 'cancelled';
+  quorum: number;
 }
 
-export interface Civilization {
+export interface VoteOption {
   id: string;
-  name: string;
-  color: string;
-  population: number;
-  technology: number;
-  military: number;
-  economy: number;
-  culture: number;
-  ideology: string;
-  isAlive: boolean;
+  label: string;
+  description?: string;
 }
 
-export interface SocialState {
-  relations: DiplomacyRelation[];
-  alliances: Alliance[];
-  broadcasts: Broadcast[];
-  treaties: Treaty[];
-  votes: Vote[];
-  civilizations: Civilization[];
+export interface VoteRecord {
+  civId: string;
+  civName: string;
+  optionId: string;
+  timestamp: number;
+}
+
+export interface SocialStats {
+  totalRelations: number;
+  activeAlliances: number;
+  pendingTreaties: number;
+  activeWars: number;
+  broadcastCount: number;
 }
