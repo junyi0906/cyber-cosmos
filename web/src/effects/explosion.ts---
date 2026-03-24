@@ -1,0 +1,10 @@
+import * as THREE from 'three';
+import { EffectConfig, EffectRenderer } from './index';
+
+interface ExplosionDebris {
+  position: THREE.Vector3;
+  velocity: THREE.Vector3;
+  rotation: THREE.Euler;
+  rotationSpeed: THREE.Vector3;
+  scale: number;
+  life: number

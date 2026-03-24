@@ -1,173 +1,213 @@
-import { EffectRenderer, EffectConfig } from './types';
-
-export class SupernovaEffect implements EffectRenderer {
-  private canvas: HTMLCanvasElement | null = null;
-  private particles: SupernovaParticle[] = [];
-  private config: EffectConfig;
-  private coreRadius: number = 0;
-  private flashIntensity: number = 1;
-
-  constructor(config: EffectConfig) {
-    this.config = config;
-  }
-
-  init(canvas: HTMLCanvasElement): void {
-    this.canvas = canvas;
-    this.createParticles();
-  }
-
-  private createParticles(): void {
-    const count = Math.floor(150 * this.config.intensity);
-    for (let i = 0; i < count; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const speed = 2 + Math.random() * 8;
-      this.particles.push({
-        x: this.config.position.x,
-        y: this.config.position.y,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed,
-        size: 1 + Math.random() * 3,
-        life: 1,
-        decay: 0.005 + Math.random() * 0.01,
-        color: this.getSupernovaColor(),
-        trail: [],
-      });
-    }
-  }
-
-  private getSupernovaColor(): string {
-    const colors = [
-      '#ffffff', '#fff4e6', '#ffcc00', '#ff6600', 
-      '#ff3300', '#cc00ff', '#6666ff', '#00ccff'
-    ];
-    return colors[Math.floor(Math.random() * colors.length)];
-  }
-
-  render(ctx: CanvasRenderingContext2D, progress: number): void {
-    if (!this.canvas) return;
-
-    const { position, intensity } = this.config;
-
-    // Initial flash
-    if (progress < 0.1) {
-      this.flashIntensity = 1 - progress * 10;
-      ctx.save();
-      ctx.fillStyle = `rgba(255, 255, 255, ${this.flashIntensity * 0.8})`;
-      ctx.beginPath();
-      ctx.arc(position.x, position.y, 200 * intensity * (1 + progress * 5), 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-    }
-
-    // Core expansion and collapse
-    if (progress < 0.5) {
-      this.coreRadius = progress * 2 * 80 * intensity;
-    } else {
-      this.coreRadius = 80 * intensity * (1 - (progress - 0.5) * 2);
-    }
-
-    // Draw core
-    const coreGradient = ctx.createRadialGradient(
-      position.x, position.y, 0,
-      position.x, position.y, this.coreRadius
-    );
-    coreGradient.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
-    coreGradient.addColorStop(0.3, 'rgba(255, 200, 100, 0.7)');
-    coreGradient.addColorStop(0.6, 'rgba(255, 100, 50, 0.5)');
-    coreGradient.addColorStop(1, 'rgba(200, 50, 0, 0)');
-
-    ctx.beginPath();
-    ctx.arc(position.x, position.y, this.coreRadius, 0, Math.PI * 2);
-    ctx.fillStyle = coreGradient;
-    ctx.fill();
-
-    // Draw shockwave rings
-    const ringCount = 3;
-    for (let i = 0; i < ringCount; i++) {
-      const ringProgress = Math.max(0, progress - i * 0.1);
-      const ringRadius = ringProgress * 300 * intensity;
-      const ringAlpha = Math.max(0, 0.5 - ringProgress * 0.5);
-      
-      ctx.beginPath();
-      ctx.arc(position.x, position.y, ringRadius, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(255, 150, 50, ${ringAlpha})`;
-      ctx.lineWidth = 3 - i;
-      ctx.stroke();
-    }
-
-    // Update and draw particles
-    this.particles = this.particles.filter(p => {
-      p.x += p.vx;
-      p.y += p.vy;
-      p.life -= p.decay;
-      p.vx *= 0.99;
-      p.vy *= 0.99;
-
-      // Add to trail
-      p.trail.push({ x: p.x, y: p.y });
-      if (p.trail.length > 10) p.trail.shift();
-
-      if (p.life <= 0) return false;
-
-      // Draw trail
-      if (p.trail.length > 1) {
-        ctx.beginPath();
-        ctx.moveTo(p.trail[0].x, p.trail[0].y);
-        for (let i = 1; i < p.trail.length; i++) {
-          ctx.lineTo(p.trail[i].x, p.trail[i].y);
-        }
-        ctx.strokeStyle = `rgba(255, 200, 100, ${p.life * 0.3})`;
-        ctx.lineWidth = p.size * 0.5;
-        ctx.stroke();
-      }
-
-      // Draw particle
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
-      ctx.fillStyle = p.color;
-      ctx.globalAlpha = p.life;
-      ctx.fill();
-      ctx.globalAlpha = 1;
-
-      return true;
-    });
-
-    // Draw nebula remnants in later stages
-    if (progress > 0.6) {
-      const nebulaAlpha = (progress - 0.6) * 2;
-      const nebulaGradient = ctx.createRadialGradient(
-        position.x, position.y, 20,
-        position.x, position.y, 150 * intensity
-      );
-      nebulaGradient.addColorStop(0, `rgba(100, 50, 150, ${nebulaAlpha * 0.3})`);
-      nebulaGradient.addColorStop(0.5, `rgba(50, 100, 200, ${nebulaAlpha * 0.2})`);
-      nebulaGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
-
-      ctx.beginPath();
-      ctx.arc(position.x, position.y, 150 * intensity, 0, Math.PI * 2);
-      ctx.fillStyle = nebulaGradient;
-      ctx.fill();
-    }
-  }
-
-  destroy(): void {
-    this.particles = [];
-    this.canvas = null;
-  }
-}
+import * as THREE from 'three';
+import { EffectConfig, EffectRenderer } from './index';
 
 interface SupernovaParticle {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  size: number;
+  position: THREE.Vector3;
+  velocity: THREE.Vector3;
   life: number;
-  decay: number;
-  color: string;
-  trail: { x: number; y: number }[];
+  maxLife: number;
+  size: number;
+  color: THREE.Color;
 }
 
-export function createSupernovaEffect(config: EffectConfig): SupernovaEffect {
-  return new SupernovaEffect(config);
+export class SupernovaEffect implements EffectRenderer {
+  private config: EffectConfig | null = null;
+  private group: THREE.Group | null = null;
+  private particles: SupernovaParticle[] = [];
+  private particleSystem: THREE.Points | null = null;
+  private coreMesh: THREE.Mesh | null = null;
+  private time: number = 0;
+  private isActive: boolean = false;
+  private coreLight: THREE.PointLight | null = null;
+  private ringMeshes: THREE.Mesh[] = [];
+
+  init(config: EffectConfig): void {
+    this.config = config;
+    this.time = 0;
+    this.isActive = true;
+    this.particles = [];
+
+    this.group = new THREE.Group();
+    this.group.position.set(config.position.x, config.position.y, config.position.z);
+
+    const intensity = config.intensity || 1.0;
+    const baseColor = new THREE.Color(config.color || '#ffffff');
+
+    // Core explosion sphere
+    const coreGeometry = new THREE.SphereGeometry(0.5 * intensity, 32, 32);
+    const coreMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 1,
+    });
+    this.coreMesh = new THREE.Mesh(coreGeometry, coreMaterial);
+    this.group.add(this.coreMesh);
+
+    // Point light for illumination
+    this.coreLight = new THREE.PointLight(0xffffff, 5 * intensity, 50 * intensity);
+    this.group.add(this.coreLight);
+
+    // Shockwave rings
+    for (let i = 0; i < 3; i++) {
+      const ringGeometry = new THREE.RingGeometry(0.1, 0.3, 64);
+      const ringMaterial = new THREE.MeshBasicMaterial({
+        color: baseColor,
+        transparent: true,
+        opacity: 0.8,
+        side: THREE.DoubleSide,
+      });
+      const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+      ring.rotation.x = Math.PI / 2;
+      ring.userData.delay = i * 0.2;
+      ring.userData.active = false;
+      this.ringMeshes.push(ring);
+      this.group.add(ring);
+    }
+
+    // Particle system for debris
+    const particleCount = 500 * intensity;
+    const positions = new Float32Array(particleCount * 3);
+    const colors = new Float32Array(particleCount * 3);
+    const sizes = new Float32Array(particleCount);
+
+    for (let i = 0; i < particleCount; i++) {
+      const particle: SupernovaParticle = {
+        position: new THREE.Vector3(0, 0, 0),
+        velocity: new THREE.Vector3(
+          (Math.random() - 0.5) * 2,
+          (Math.random() - 0.5) * 2,
+          (Math.random() - 0.5) * 2
+        ).normalize().multiplyScalar(Math.random() * 5 + 2),
+        life: 0,
+        maxLife: config.duration * (0.5 + Math.random() * 0.5),
+        size: Math.random() * 0.3 + 0.1,
+        color: new THREE.Color().setHSL(
+          Math.random() * 0.1 + 0.05, // Orange-yellow range
+          1,
+          0.5 + Math.random() * 0.5
+        ),
+      };
+      this.particles.push(particle);
+
+      positions[i * 3] = 0;
+      positions[i * 3 + 1] = 0;
+      positions[i * 3 + 2] = 0;
+
+      colors[i * 3] = particle.color.r;
+      colors[i * 3 + 1] = particle.color.g;
+      colors[i * 3 + 2] = particle.color.b;
+
+      sizes[i] = particle.size;
+    }
+
+    const particleGeometry = new THREE.BufferGeometry();
+    particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    particleGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    particleGeometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+    const particleMaterial = new THREE.PointsMaterial({
+      size: 0.2,
+      vertexColors: true,
+      transparent: true,
+      opacity: 1,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+
+    this.particleSystem = new THREE.Points(particleGeometry, particleMaterial);
+    this.group.add(this.particleSystem);
+  }
+
+  update(deltaTime: number): boolean {
+    if (!this.isActive || !this.config || !this.group) return false;
+
+    this.time += deltaTime;
+    const progress = this.time / this.config.duration;
+
+    if (progress >= 1) {
+      this.isActive = false;
+      return false;
+    }
+
+    const intensity = this.config.intensity || 1.0;
+
+    // Update core
+    if (this.coreMesh) {
+      const coreScale = Math.sin(progress * Math.PI) * 3 * intensity;
+      this.coreMesh.scale.setScalar(coreScale);
+      (this.coreMesh.material as THREE.MeshBasicMaterial).opacity = 1 - progress;
+    }
+
+    // Update light
+    if (this.coreLight) {
+      this.coreLight.intensity = Math.sin(progress * Math.PI) * 10 * intensity;
+    }
+
+    // Update rings
+    this.ringMeshes.forEach((ring, index) => {
+      const ringProgress = Math.max(0, (this.time - ring.userData.delay) / (this.config!.duration * 0.8));
+      if (ringProgress > 0 && ringProgress < 1) {
+        ring.userData.active = true;
+        const scale = ringProgress * 20 * intensity;
+        ring.scale.setScalar(scale);
+        (ring.material as THREE.MeshBasicMaterial).opacity = (1 - ringProgress) * 0.6;
+      }
+    });
+
+    // Update particles
+    if (this.particleSystem) {
+      const positions = this.particleSystem.geometry.attributes.position.array as Float32Array;
+
+      this.particles.forEach((particle, i) => {
+        particle.life += deltaTime;
+
+        if (particle.life < particle.maxLife) {
+          const lifeProgress = particle.life / particle.maxLife;
+          particle.position.add(particle.velocity.clone().multiplyScalar(deltaTime));
+
+          // Slow down over time
+          particle.velocity.multiplyScalar(0.99);
+
+          positions[i * 3] = particle.position.x;
+          positions[i * 3 + 1] = particle.position.y;
+          positions[i * 3 + 2] = particle.position.z;
+        }
+      });
+
+      this.particleSystem.geometry.attributes.position.needsUpdate = true;
+      (this.particleSystem.material as THREE.PointsMaterial).opacity = 1 - progress * 0.5;
+    }
+
+    return true;
+  }
+
+  dispose(): void {
+    if (this.group) {
+      this.group.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          child.geometry.dispose();
+          if (child.material instanceof THREE.Material) {
+            child.material.dispose();
+          }
+        }
+        if (child instanceof THREE.Points) {
+          child.geometry.dispose();
+          if (child.material instanceof THREE.Material) {
+            child.material.dispose();
+          }
+        }
+      });
+    }
+    this.particles = [];
+    this.ringMeshes = [];
+    this.coreMesh = null;
+    this.coreLight = null;
+    this.particleSystem = null;
+    this.group = null;
+    this.isActive = false;
+  }
+
+  getObject3D(): THREE.Object3D | null {
+    return this.group;
+  }
 }

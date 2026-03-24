@@ -1,5 +1,21 @@
+export interface EffectConfig {
+  id: string;
+  type: 'supernova' | 'blackhole' | 'explosion' | 'wave';
+  position: { x: number; y: number; z: number };
+  duration: number;
+  intensity?: number;
+  color?: string;
+  data?: Record<string, unknown>;
+}
+
+export interface EffectRenderer {
+  init(config: EffectConfig): void;
+  update(deltaTime: number): boolean;
+  dispose(): void;
+  getObject3D(): THREE.Object3D | null;
+}
+
 export * from './supernova';
 export * from './blackhole';
 export * from './explosion';
 export * from './wave';
-export * from './types';
