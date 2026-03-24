@@ -234,9 +234,10 @@
       "depends_on": [
         "feat-002"
       ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "依赖 Redis 存储状态"
+      "passes": true,
+      "last_attempt": "2026-03-25T00:22:42.402588",
+      "notes": "依赖 Redis 存储状态",
+      "retry_count": 0
     },
     {
       "id": "feat-011",
