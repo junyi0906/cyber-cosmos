@@ -1,18 +1,19 @@
 -- Cyber-Cosmos Database Initialization
--- This script runs when the PostgreSQL container starts for the first time
+-- This script runs on first container startup
 
--- Create TimescaleDB extension if available
-CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;
+-- Enable required extensions
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
--- Create schemas
-CREATE SCHEMA IF NOT EXISTS universe;
-CREATE SCHEMA IF NOT EXISTS trade;
-CREATE SCHEMA IF NOT EXISTS relics;
+-- Create schema for game data
+CREATE SCHEMA IF NOT EXISTS game;
+
+-- Create schema for audit logs
+CREATE SCHEMA IF NOT EXISTS audit;
 
 -- Grant permissions
-GRANT ALL PRIVILEGES ON SCHEMA universe TO cyber;
-GRANT ALL PRIVILEGES ON SCHEMA trade TO cyber;
-GRANT ALL PRIVILEGES ON SCHEMA relics TO cyber;
+GRANT ALL ON SCHEMA game TO cyber;
+GRANT ALL ON SCHEMA audit TO cyber;
 
 -- Log initialization
 DO $$

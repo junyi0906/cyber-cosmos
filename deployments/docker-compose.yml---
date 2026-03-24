@@ -8,7 +8,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-cyber}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cosmos123}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cyber123}
       POSTGRES_DB: ${POSTGRES_DB:-cyber_cosmos}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
@@ -28,13 +28,13 @@ services:
     image: redis:7-alpine
     container_name: cyber-cosmos-redis
     restart: unless-stopped
-    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-cosmos123}
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis123}
     ports:
       - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-cosmos123}", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis123}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -47,19 +47,17 @@ services:
     container_name: cyber-cosmos-neo4j
     restart: unless-stopped
     environment:
-      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-cosmos123}
-      NEO4J_server_memory_heap_initial__size: "512m"
-      NEO4J_server_memory_heap_max__size: "1G"
-      NEO4J_server_memory_pagecache_size: "512m"
-      NEO4J_dbms_security_procedures_unrestricted: "apoc.*"
-      NEO4J_dbms_security_allow__csv__import__from__file__urls: "true"
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-neo4j123}
+      NEO4J_server_memory_pagecache_size: 256M
+      NEO4J_server_memory_heap_initial__size: 512M
+      NEO4J_server_memory_heap_max__size: 512M
+      NEO4J_dbms_security_procedures_unrestricted: apf.*
     ports:
       - "${NEO4J_HTTP_PORT:-7474}:7474"
       - "${NEO4J_BOLT_PORT:-7687}:7687"
     volumes:
       - neo4j_data:/data
       - neo4j_logs:/logs
-      - neo4j_import:/var/lib/neo4j/import
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:7474 || exit 1"]
       interval: 15s
@@ -68,16 +66,16 @@ services:
     networks:
       - cyber-cosmos-network
 
-  # Milvus - 向量数据库（AI/嵌入存储）
+  # Milvus - 向量数据库（AI嵌入存储）
   etcd:
     image: quay.io/coreos/etcd:v3.5.5
     container_name: cyber-cosmos-etcd
     restart: unless-stopped
     environment:
       ETCD_AUTO_COMPACTION_MODE: revision
-      ETCD_AUTO_COMPACTION_RETENTION: "1000"
-      ETCD_QUOTA_BACKEND_BYTES: "4294967296"
-      ETCD_SNAPSHOT_COUNT: "50000"
+      ETCD_AUTO_COMPACTION_RETENTION: '1000'
+      ETCD_QUOTA_BACKEND_BYTES: '4294967296'
+      ETCD_SNAPSHOT_COUNT: '50000'
     volumes:
       - etcd_data:/etcd
     command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
@@ -90,7 +88,7 @@ services:
       - cyber-cosmos-network
 
   minio:
-    image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+    image: minio/minio:RELEASE2023-03-20T20-16-18Z
     container_name: cyber-cosmos-minio
     restart: unless-stopped
     environment:
@@ -123,6 +121,7 @@ services:
       - "${MILVUS_PORT:-19530}:19530"
     volumes:
       - milvus_data:/var/lib/milvus
+    command: ["milvus", "run", "standalone"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
       interval: 30s
@@ -134,24 +133,23 @@ services:
     networks:
       - cyber-cosmos-network
 
-volumes:
-  postgres_data:
-    driver: local
-  redis_data:
-    driver: local
-  neo4j_data:
-    driver: local
-  neo4j_logs:
-    driver: local
-  neo4j_import:
-    driver: local
-  etcd_data:
-    driver: local
-  minio_data:
-    driver: local
-  milvus_data:
-    driver: local
-
 networks:
   cyber-cosmos-network:
     driver: bridge
+    name: cyber-cosmos-network
+
+volumes:
+  postgres_data:
+    name: cyber-cosmos-postgres-data
+  redis_data:
+    name: cyber-cosmos-redis-data
+  neo4j_data:
+    name: cyber-cosmos-neo4j-data
+  neo4j_logs:
+    name: cyber-cosmos-neo4j-logs
+  etcd_data:
+    name: cyber-cosmos-etcd-data
+  minio_data:
+    name: cyber-cosmos-minio-data
+  milvus_data:
+    name: cyber-cosmos-milvus-data
