@@ -1,0 +1,382 @@
+import React, { useState, useCallback } from 'react';
+import { GodPanelProps, AgentInfo } from './types';
+import { AgentSelector } from './AgentSelector';
+
+const ORACLE_TEMPLATES = [
+  { id: 'warning', label: '警告', template: '吾乃宇宙意志，警告汝：{warning}' },
+  { id: 'blessing', label: '祝福', template: '星辰庇佑汝，{blessing}' },
+  { id: 'prophecy', label: '预言', template: '吾见未来：{prophecy}' },
+  { id: 'command', label: '命令', template: '宇宙意志命令汝：{command}' },
+  { id: 'guidance', label: '指引', template: '迷途者，{guidance}' },
+];
+
+export const GodPanel: React.FC<GodPanelProps> = ({
+  agents,
+  onSendOracle,
+  isConnected,
+}) => {
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const [oracleMessage, setOracleMessage] = useState('');
+  const [selectedTemplate, setSelectedTemplate] = useState<string>('');
+  const [isSending, setIsSending] = useState(false);
+  const [sendResult, setSendResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  const selectedAgent = agents.find(a => a.id === selectedAgentId);
+
+  const handleTemplateSelect = useCallback((templateId: string) => {
+    const template = ORACLE_TEMPLATES.find(t => t.id === templateId);
+    if (template) {
+      setSelectedTemplate(templateId);
+      setOracleMessage(template.template);
+    }
+  }, []);
+
+  const handleSendOracle = useCallback(async () => {
+    if (!selectedAgentId || !oracleMessage.trim()) return;
+
+    setIsSending(true);
+    setSendResult(null);
+
+    try {
+      await onSendOracle(selectedAgentId, oracleMessage.trim());
+      setSendResult({ success: true, message: '神谕已传达' });
+      setOracleMessage('');
+      setSelectedTemplate('');
+    } catch (error) {
+      setSendResult({ 
+        success: false, 
+        message: error instanceof Error ? error.message : '传达失败' 
+      });
+    } finally {
+      setIsSending(false);
+      setTimeout(() => setSendResult(null), 3000);
+    }
+  }, [selectedAgentId, oracleMessage, onSendOracle]);
+
+  return (
+    <div className="god-panel">
+      <div className="panel-header">
+        <h2>⚡ 神谕系统</h2>
+        <span className={`connection-status ${isConnected ? 'connected' : 'disconnected'}`}>
+          {isConnected ? '已连接' : '未连接'}
+        </span>
+      </div>
+
+      <div className="panel-content">
+        <div className="section">
+          <h3>选择目标文明</h3>
+          <AgentSelector
+            agents={agents}
+            selectedAgentId={selectedAgentId}
+            onSelect={setSelectedAgentId}
+          />
+        </div>
+
+        {selectedAgent && (
+          <div className="section target-info">
+            <h3>目标信息</h3>
+            <div className="agent-card">
+              <div className="agent-header">
+                <div 
+                  className="agent-color" 
+                  style={{ backgroundColor: selectedAgent.color }}
+                />
+                <span className="agent-name">{selectedAgent.name}</span>
+                <span className={`agent-status ${selectedAgent.status}`}>
+                  {selectedAgent.status === 'active' ? '活跃' : 
+                   selectedAgent.status === 'idle' ? '休眠' : '已毁灭'}
+                </span>
+              </div>
+              <div className="agent-stats">
+                <div className="stat">
+                  <span className="stat-label">人口</span>
+                  <span className="stat-value">{selectedAgent.population.toLocaleString()}</span>
+                </div>
+                <div className="stat">
+                  <span className="stat-label">科技</span>
+                  <span className="stat-value">{selectedAgent.technology}</span>
+                </div>
+                <div className="stat">
+                  <span className="stat-label">军事</span>
+                  <span className="stat-value">{selectedAgent.military}</span>
+                </div>
+                <div className="stat">
+                  <span className="stat-label">经济</span>
+                  <span className="stat-value">{selectedAgent.economy}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="section">
+          <h3>神谕模板</h3>
+          <div className="template-grid">
+            {ORACLE_TEMPLATES.map(template => (
+              <button
+                key={template.id}
+                className={`template-btn ${selectedTemplate === template.id ? 'selected' : ''}`}
+                onClick={() => handleTemplateSelect(template.id)}
+                disabled={!isConnected}
+              >
+                {template.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="section">
+          <h3>神谕内容</h3>
+          <textarea
+            className="oracle-input"
+            value={oracleMessage}
+            onChange={(e) => setOracleMessage(e.target.value)}
+            placeholder="输入神谕内容，或选择模板..."
+            rows={4}
+            disabled={!isConnected}
+          />
+        </div>
+
+        {sendResult && (
+          <div className={`result-message ${sendResult.success ? 'success' : 'error'}`}>
+            {sendResult.message}
+          </div>
+        )}
+
+        <button
+          className="send-oracle-btn"
+          onClick={handleSendOracle}
+          disabled={!isConnected || !selectedAgentId || !oracleMessage.trim() || isSending}
+        >
+          {isSending ? '传达中...' : '⚡ 传达神谕'}
+        </button>
+      </div>
+
+      <style>{`
+        .god-panel {
+          background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+          border-radius: 12px;
+          padding: 20px;
+          color: #e0e0e0;
+          height: 100%;
+          overflow-y: auto;
+        }
+
+        .panel-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 20px;
+          padding-bottom: 15px;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .panel-header h2 {
+          margin: 0;
+          font-size: 1.5rem;
+          background: linear-gradient(90deg, #ffd700, #ff8c00);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+        }
+
+        .connection-status {
+          padding: 4px 12px;
+          border-radius: 12px;
+          font-size: 0.75rem;
+          font-weight: 600;
+        }
+
+        .connection-status.connected {
+          background: rgba(0, 255, 136, 0.2);
+          color: #00ff88;
+        }
+
+        .connection-status.disconnected {
+          background: rgba(255, 68, 68, 0.2);
+          color: #ff4444;
+        }
+
+        .section {
+          margin-bottom: 20px;
+        }
+
+        .section h3 {
+          margin: 0 0 10px 0;
+          font-size: 0.9rem;
+          color: #888;
+          text-transform: uppercase;
+          letter-spacing: 1px;
+        }
+
+        .target-info .agent-card {
+          background: rgba(255, 255, 255, 0.05);
+          border-radius: 8px;
+          padding: 15px;
+        }
+
+        .agent-header {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          margin-bottom: 12px;
+        }
+
+        .agent-color {
+          width: 12px;
+          height: 12px;
+          border-radius: 50%;
+        }
+
+        .agent-name {
+          font-weight: 600;
+          flex: 1;
+        }
+
+        .agent-status {
+          padding: 2px 8px;
+          border-radius: 8px;
+          font-size: 0.7rem;
+        }
+
+        .agent-status.active {
+          background: rgba(0, 255, 136, 0.2);
+          color: #00ff88;
+        }
+
+        .agent-status.idle {
+          background: rgba(255, 200, 0, 0.2);
+          color: #ffc800;
+        }
+
+        .agent-status.destroyed {
+          background: rgba(255, 68, 68, 0.2);
+          color: #ff4444;
+        }
+
+        .agent-stats {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 8px;
+        }
+
+        .stat {
+          display: flex;
+          justify-content: space-between;
+          padding: 6px 10px;
+          background: rgba(0, 0, 0, 0.2);
+          border-radius: 4px;
+        }
+
+        .stat-label {
+          color: #888;
+          font-size: 0.8rem;
+        }
+
+        .stat-value {
+          font-weight: 600;
+          color: #fff;
+        }
+
+        .template-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 8px;
+        }
+
+        .template-btn {
+          padding: 10px;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          background: rgba(255, 255, 255, 0.05);
+          color: #e0e0e0;
+          border-radius: 6px;
+          cursor: pointer;
+          transition: all 0.2s;
+          font-size: 0.85rem;
+        }
+
+        .template-btn:hover:not(:disabled) {
+          background: rgba(255, 255, 255, 0.1);
+          border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .template-btn.selected {
+          background: rgba(255, 215, 0, 0.2);
+          border-color: #ffd700;
+          color: #ffd700;
+        }
+
+        .template-btn:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        .oracle-input {
+          width: 100%;
+          padding: 12px;
+          background: rgba(0, 0, 0, 0.3);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 8px;
+          color: #e0e0e0;
+          font-size: 0.9rem;
+          resize: vertical;
+          font-family: inherit;
+        }
+
+        .oracle-input:focus {
+          outline: none;
+          border-color: rgba(255, 215, 0, 0.5);
+        }
+
+        .oracle-input::placeholder {
+          color: #666;
+        }
+
+        .result-message {
+          padding: 10px 15px;
+          border-radius: 6px;
+          margin-bottom: 15px;
+          font-size: 0.9rem;
+        }
+
+        .result-message.success {
+          background: rgba(0, 255, 136, 0.2);
+          color: #00ff88;
+          border: 1px solid rgba(0, 255, 136, 0.3);
+        }
+
+        .result-message.error {
+          background: rgba(255, 68, 68, 0.2);
+          color: #ff4444;
+          border: 1px solid rgba(255, 68, 68, 0.3);
+        }
+
+        .send-oracle-btn {
+          width: 100%;
+          padding: 14px;
+          background: linear-gradient(135deg, #ffd700 0%, #ff8c00 100%);
+          border: none;
+          border-radius: 8px;
+          color: #1a1a2e;
+          font-size: 1rem;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .send-oracle-btn:hover:not(:disabled) {
+          transform: translateY(-2px);
+          box-shadow: 0 4px 15px rgba(255, 215, 0, 0.3);
+        }
+
+        .send-oracle-btn:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+          transform: none;
+        }
+      `}</style>
+    </div>
+  );
+};
+
+export default GodPanel;

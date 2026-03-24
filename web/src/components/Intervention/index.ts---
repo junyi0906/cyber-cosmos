@@ -3,4 +3,4 @@ export { ScenarioTrigger } from './ScenarioTrigger';
 export { ParameterEditor } from './ParameterEditor';
 export { AgentSelector } from './AgentSelector';
 export { InterventionHistory } from './InterventionHistory';
-export * from './types';
+export type { InterventionProps, InterventionRecord, Scenario, AgentInfo, DecisionParams } from './types';

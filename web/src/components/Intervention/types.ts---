@@ -1,32 +1,24 @@
-// 干预系统类型定义
-
-export interface Agent {
+export interface AgentInfo {
   id: string;
   name: string;
-  type: 'civilization' | 'fleet' | 'station';
+  type: string;
   status: 'active' | 'idle' | 'destroyed';
-  attributes: {
-    military: number;
-    economy: number;
-    technology: number;
-    culture: number;
-  };
-  position: {
-    x: number;
-    y: number;
-    z: number;
-  };
+  population: number;
+  technology: number;
+  military: number;
+  economy: number;
+  culture: number;
+  position: { x: number; y: number; z: number };
+  color: string;
 }
 
-export interface DecisionParameter {
-  key: string;
-  label: string;
-  type: 'number' | 'string' | 'boolean' | 'select';
-  value: string | number | boolean;
-  options?: string[];
-  min?: number;
-  max?: number;
-  description?: string;
+export interface DecisionParams {
+  aggression: number;
+  cooperation: number;
+  expansion: number;
+  research: number;
+  trust: number;
+  threatAwareness: number;
 }
 
 export interface Scenario {
@@ -35,171 +27,65 @@ export interface Scenario {
   description: string;
   category: 'disaster' | 'blessing' | 'neutral' | 'special';
   icon: string;
-  parameters: DecisionParameter[];
-  severity: 'low' | 'medium' | 'high' | 'critical';
-  cooldown: number; // 冷却时间（秒）
+  severity: 'low' | 'medium' | 'high' | 'catastrophic';
+  effects: ScenarioEffect[];
+  cooldown: number;
 }
 
-export interface Intervention {
+export interface ScenarioEffect {
+  type: 'population' | 'technology' | 'military' | 'economy' | 'culture' | 'resource' | 'diplomacy';
+  value: number;
+  duration?: number;
+  target?: 'self' | 'all' | 'nearby';
+}
+
+export interface InterventionRecord {
   id: string;
   timestamp: Date;
-  type: 'oracle' | 'scenario' | 'parameter';
+  type: 'scenario' | 'parameter' | 'oracle';
   scenarioId?: string;
   scenarioName?: string;
-  targetAgentIds: string[];
-  parameters: Record<string, string | number | boolean>;
-  status: 'pending' | 'executing' | 'completed' | 'failed';
-  result?: string;
+  targetAgentId?: string;
+  targetAgentName?: string;
+  params?: DecisionParams;
+  description: string;
+  status: 'pending' | 'executed' | 'failed';
+  effects?: string[];
 }
 
-export interface InterventionHistory {
-  interventions: Intervention[];
-  totalCount: number;
+export interface InterventionProps {
+  agents: AgentInfo[];
+  onTriggerScenario: (scenarioId: string, targetAgentId?: string, params?: Record<string, any>) => Promise<void>;
+  onUpdateParams: (agentId: string, params: DecisionParams) => Promise<void>;
+  onSendOracle: (agentId: string, message: string) => Promise<void>;
+  interventionHistory: InterventionRecord[];
+  isConnected: boolean;
 }
 
-export interface GodPanelState {
-  selectedAgents: Agent[];
-  selectedScenario: Scenario | null;
-  parameters: Record<string, string | number | boolean>;
-  isExecuting: boolean;
-  lastIntervention: Intervention | null;
+export interface GodPanelProps {
+  agents: AgentInfo[];
+  onSendOracle: (agentId: string, message: string) => Promise<void>;
+  isConnected: boolean;
 }
 
-// 预设场景定义
-export const PRESET_SCENARIOS: Scenario[] = [
-  {
-    id: 'resource_boom',
-    name: '资源爆发',
-    description: '在目标区域触发大量资源矿脉的发现，显著提升经济产出',
-    category: 'blessing',
-    icon: '💎',
-    severity: 'medium',
-    cooldown: 300,
-    parameters: [
-      { key: 'resource_type', label: '资源类型', type: 'select', value: 'minerals', options: ['minerals', 'energy', 'rare_elements', 'all'] },
-      { key: 'multiplier', label: '产出倍率', type: 'number', value: 2, min: 1, max: 10, description: '资源产出倍数' },
-      { key: 'duration', label: '持续时间', type: 'number', value: 100, min: 10, max: 1000, description: '效果持续的宇宙周期' }
-    ]
-  },
-  {
-    id: 'alien_invasion',
-    name: '外星入侵',
-    description: '触发一支外星舰队的入侵事件，测试文明的防御能力',
-    category: 'disaster',
-    icon: '👾',
-    severity: 'high',
-    cooldown: 600,
-    parameters: [
-      { key: 'fleet_size', label: '舰队规模', type: 'select', value: 'medium', options: ['small', 'medium', 'large', 'massive'] },
-      { key: 'tech_level', label: '科技等级', type: 'number', value: 5, min: 1, max: 10 },
-      { key: 'hostility', label: '敌意程度', type: 'number', value: 80, min: 0, max: 100 }
-    ]
-  },
-  {
-    id: 'supernova',
-    name: '超新星爆发',
-    description: '在指定位置触发超新星爆发，对周围区域造成毁灭性影响',
-    category: 'disaster',
-    icon: '💥',
-    severity: 'critical',
-    cooldown: 1200,
-    parameters: [
-      { key: 'radius', label: '影响半径', type: 'number', value: 50, min: 10, max: 200, description: '光年' },
-      { key: 'intensity', label: '爆发强度', type: 'number', value: 100, min: 1, max: 100 },
-      { key: 'warning_time', label: '预警时间', type: 'number', value: 50, min: 0, max: 200, description: '宇宙周期' }
-    ]
-  },
-  {
-    id: 'tech_breakthrough',
-    name: '科技突破',
-    description: '赐予目标文明一次重大科技突破，大幅提升科技值',
-    category: 'blessing',
-    icon: '🔬',
-    severity: 'medium',
-    cooldown: 400,
-    parameters: [
-      { key: 'field', label: '科技领域', type: 'select', value: 'random', options: ['random', 'physics', 'biology', 'engineering', 'social'] },
-      { key: 'magnitude', label: '突破程度', type: 'number', value: 50, min: 10, max: 100 }
-    ]
-  },
-  {
-    id: 'plague',
-    name: '瘟疫蔓延',
-    description: '在目标文明中传播一种神秘瘟疫，考验其医疗和应对能力',
-    category: 'disaster',
-    icon: '🦠',
-    severity: 'high',
-    cooldown: 500,
-    parameters: [
-      { key: 'transmission_rate', label: '传播率', type: 'number', value: 30, min: 1, max: 100 },
-      { key: 'mortality_rate', label: '致死率', type: 'number', value: 10, min: 1, max: 50 },
-      { key: 'duration', label: '持续时间', type: 'number', value: 200, min: 50, max: 500 }
-    ]
-  },
-  {
-    id: 'diplomatic_crisis',
-    name: '外交危机',
-    description: '在两个文明之间制造外交摩擦，可能引发战争',
-    category: 'neutral',
-    icon: '⚔️',
-    severity: 'medium',
-    cooldown: 300,
-    parameters: [
-      { key: 'crisis_type', label: '危机类型', type: 'select', value: 'border', options: ['border', 'trade', 'espionage', 'ideology'] },
-      { key: 'tension_level', label: '紧张程度', type: 'number', value: 60, min: 10, max: 100 }
-    ]
-  },
-  {
-    id: 'ancient_artifact',
-    name: '远古遗迹',
-    description: '在目标星球发现远古文明遗迹，可能带来科技或危险',
-    category: 'special',
-    icon: '🏛️',
-    severity: 'medium',
-    cooldown: 400,
-    parameters: [
-      { key: 'artifact_type', label: '遗迹类型', type: 'select', value: 'random', options: ['random', 'library', 'weapon', 'portal', 'mystery'] },
-      { key: 'danger_level', label: '危险等级', type: 'number', value: 30, min: 0, max: 100 }
-    ]
-  },
-  {
-    id: 'cosmic_storm',
-    name: '宇宙风暴',
-    description: '在指定区域引发宇宙风暴，影响航行和通讯',
-    category: 'disaster',
-    icon: '🌀',
-    severity: 'medium',
-    cooldown: 250,
-    parameters: [
-      { key: 'storm_type', label: '风暴类型', type: 'select', value: 'ion', options: ['ion', 'gravity', 'temporal', 'psychic'] },
-      { key: 'coverage', label: '覆盖范围', type: 'number', value: 100, min: 20, max: 500, description: '立方光年' },
-      { key: 'duration', label: '持续时间', type: 'number', value: 150, min: 50, max: 500 }
-    ]
-  },
-  {
-    id: 'peace_summit',
-    name: '和平峰会',
-    description: '促成多个文明之间的和平峰会，改善外交关系',
-    category: 'blessing',
-    icon: '🕊️',
-    severity: 'low',
-    cooldown: 200,
-    parameters: [
-      { key: 'participant_count', label: '参与方数量', type: 'number', value: 3, min: 2, max: 10 },
-      { key: 'success_chance', label: '成功概率', type: 'number', value: 70, min: 10, max: 100 }
-    ]
-  },
-  {
-    id: 'black_hole',
-    name: '黑洞形成',
-    description: '在指定位置形成黑洞，对周围时空产生深远影响',
-    category: 'disaster',
-    icon: '🕳️',
-    severity: 'critical',
-    cooldown: 1500,
-    parameters: [
-      { key: 'mass', label: '黑洞质量', type: 'select', value: 'stellar', options: ['stellar', 'intermediate', 'supermassive'] },
-      { key: 'stability', label: '稳定性', type: 'number', value: 80, min: 1, max: 100, description: '越高越稳定，低则可能蒸发' }
-    ]
-  }
-];
+export interface ScenarioTriggerProps {
+  agents: AgentInfo[];
+  onTriggerScenario: (scenarioId: string, targetAgentId?: string, params?: Record<string, any>) => Promise<void>;
+  isConnected: boolean;
+}
+
+export interface ParameterEditorProps {
+  agent: AgentInfo | null;
+  onUpdateParams: (agentId: string, params: DecisionParams) => Promise<void>;
+  isConnected: boolean;
+}
+
+export interface AgentSelectorProps {
+  agents: AgentInfo[];
+  selectedAgentId: string | null;
+  onSelect: (agentId: string) => void;
+}
+
+export interface InterventionHistoryProps {
+  records: InterventionRecord[];
+}

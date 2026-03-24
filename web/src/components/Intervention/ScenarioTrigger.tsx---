@@ -1,0 +1,37 @@
+import React, { useState, useCallback } from 'react';
+import { ScenarioTriggerProps, Scenario } from './types';
+import { AgentSelector } from './AgentSelector';
+
+const PRESET_SCENARIOS: Scenario[] = [
+  {
+    id: 'resource_boom',
+    name: '资源爆发',
+    description: '目标星球发现丰富矿脉，资源产量大幅提升',
+    category: 'blessing',
+    icon: '💎',
+    severity: 'medium',
+    effects: [
+      { type: 'economy', value: 50 },
+      { type: 'resource', value: 100 },
+    ],
+    cooldown: 100,
+  },
+  {
+    id: 'alien_invasion',
+    name: '外星入侵',
+    description: '未知外星舰队入侵目标星域，威胁文明生存',
+    category: 'disaster',
+    icon: '👾',
+    severity: 'high',
+    effects: [
+      { type: 'military', value: -30 },
+      { type: 'population', value: -20 },
+    ],
+    cooldown: 200,
+  },
+  {
+    id: 'tech_breakthrough',
+    name: '科技奇点',
+    description: '重大科技突破，文明科技水平跃升',
+    category: 'blessing',
+    icon
