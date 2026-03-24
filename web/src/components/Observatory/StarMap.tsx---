@@ -1,21 +1,55 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Heatmap from './Heatmap';
 
-interface StarSystem {
+interface Star {
   id: string;
   name: string;
   x: number;
   y: number;
   z: number;
-  resources: number;
+  color: string;
+  size: number;
+  type: string;
+  resources?: {
+    minerals: number;
+    energy: number;
+    water: number;
+  };
+  population?: number;
+  civilizationId?: string;
+  civilizationName?: string;
+}
+
+interface Civilization {
+  id: string;
+  name: string;
+  color: string;
   population: number;
-  civilization_id: string | null;
-  civilization_name?: string;
-  tech_level?: number;
-  color?: string;
+  techLevel: number;
 }
 
 interface StarMapProps {
-  starSystems?: StarSystem[];
-  onStarSelect?: (star: StarSystem) => void;
-  showHeatmap?: boolean
+  stars?: Star[];
+  civilizations?: Civilization[];
+  width?: number;
+  height?: number;
+  onStarSelect?: (star: Star) => void;
+  showHeatmap?: boolean;
+}
+
+const StarMap: React.FC<StarMapProps> = ({
+  stars = [],
+  civilizations = [],
+  width = 1200,
+  height = 800,
+  onStarSelect,
+  showHeatmap = true,
+}) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [selectedStar, setSelectedStar] = useState<Star | null>(null);
+  const [viewMode, setViewMode] = useState<'2d' | 'heatmap'>('2d');
+  const [zoom, setZoom] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [hoveredStar, setHoveredStar] = useState<Star | null>(null

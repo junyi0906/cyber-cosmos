@@ -1,39 +1,36 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import h337 from 'heatmap.js';
 
-interface StarSystem {
+interface GalaxyData {
   id: string;
   name: string;
   x: number;
   y: number;
   z: number;
-  resources?: number;
+  resources?: {
+    minerals: number;
+    energy: number;
+    water: number;
+  };
   population?: number;
-  civilization_id?: string;
+  civilizations?: string[];
 }
 
 interface HeatmapProps {
-  data: StarSystem[];
+  data: GalaxyData[];
   width?: number;
   height?: number;
-  onPointClick?: (star: StarSystem) => void;
+  onPointClick?: (data: GalaxyData) => void;
 }
 
 type HeatmapType = 'resources' | 'population' | 'none';
 
 interface HeatmapConfig {
+  type: HeatmapType;
+  opacity: number;
   radius: number;
-  maxOpacity: number;
-  minOpacity: number;
   blur: number;
 }
-
-const defaultConfig: HeatmapConfig = {
-  radius: 40,
-  maxOpacity: 0.8,
-  minOpacity: 0.1,
-  blur: 0.85,
-};
 
 const Heatmap: React.FC<HeatmapProps> = ({
   data,
@@ -43,440 +40,408 @@ const Heatmap: React.FC<HeatmapProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const heatmapInstanceRef = useRef<h337.Heatmap<'value', 'x' | 'y' | 'value'> | null>(null);
-  const [heatmapType, setHeatmapType] = useState<HeatmapType>('none');
-  const [opacity, setOpacity] = useState(0.6);
-  const [radius, setRadius] = useState(40);
-  const [blur, setBlur] = useState(0.85);
-  const [isInitialized, setIsInitialized] = useState(false);
+  const overlayRef = useRef<HTMLDivElement>(null);
 
-  // Initialize heatmap instance
+  const [config, setConfig] = useState<HeatmapConfig>({
+    type: 'none',
+    opacity: 0.6,
+    radius: 40,
+    blur: 0.85,
+  });
+
+  const [showControls, setShowControls] = useState(true);
+
+  // 初始化热力图实例
   useEffect(() => {
-    if (!containerRef.current || heatmapInstanceRef.current) return;
+    if (!containerRef.current) return;
 
-    const instance = h337.create({
+    heatmapInstanceRef.current = h337.create({
       container: containerRef.current,
-      radius: radius,
-      maxOpacity: opacity,
-      minOpacity: 0.1,
-      blur: blur,
+      radius: config.radius,
+      maxOpacity: config.opacity,
+      minOpacity: 0,
+      blur: config.blur,
     });
-
-    heatmapInstanceRef.current = instance;
-    setIsInitialized(true);
 
     return () => {
       heatmapInstanceRef.current = null;
-      setIsInitialized(false);
     };
   }, []);
 
-  // Update heatmap configuration
+  // 更新热力图配置
   useEffect(() => {
     if (!heatmapInstanceRef.current) return;
 
     heatmapInstanceRef.current.configure({
-      radius: radius,
-      maxOpacity: opacity,
-      minOpacity: 0.1,
-      blur: blur,
+      radius: config.radius,
+      maxOpacity: config.opacity,
+      blur: config.blur,
     });
-  }, [opacity, radius, blur]);
+  }, [config.opacity, config.radius, config.blur]);
 
-  // Transform star data to heatmap data
-  const transformData = useCallback((type: HeatmapType) => {
-    if (type === 'none' || !data.length) {
-      return { max: 0, data: [] };
+  // 计算数据范围
+  const getDataBounds = useCallback((galaxyData: GalaxyData[]) => {
+    if (galaxyData.length === 0) {
+      return { minX: 0, maxX: 100, minY: 0, maxY: 100 };
     }
 
-    const maxValue = Math.max(
-      ...data.map(star => type === 'resources' ? (star.resources || 0) : (star.population || 0))
-    );
+    let minX = Infinity, maxX = -Infinity;
+    let minY = Infinity, maxY = -Infinity;
 
-    const heatmapData = data.map(star => {
-      const value = type === 'resources' 
-        ? (star.resources || 0) 
-        : (star.population || 0);
-      
-      // Map 3D coordinates to 2D (using x and y, ignoring z for 2D heatmap)
-      const screenX = Math.max(0, Math.min(width, (star.x + 100) * (width / 200)));
-      const screenY = Math.max(0, Math.min(height, (star.y + 100) * (height / 200)));
-
-      return {
-        x: Math.floor(screenX),
-        y: Math.floor(screenY),
-        value: value,
-      };
+    galaxyData.forEach(galaxy => {
+      minX = Math.min(minX, galaxy.x);
+      maxX = Math.max(maxX, galaxy.x);
+      minY = Math.min(minY, galaxy.y);
+      maxY = Math.max(maxY, galaxy.y);
     });
 
+    // 添加边距
+    const paddingX = (maxX - minX) * 0.1 || 10;
+    const paddingY = (maxY - minY) * 0.1 || 10;
+
     return {
-      max: maxValue > 0 ? maxValue : 1,
-      data: heatmapData,
+      minX: minX - paddingX,
+      maxX: maxX + paddingX,
+      minY: minY - paddingY,
+      maxY: maxY + paddingY,
     };
-  }, [data, width, height]);
+  }, []);
 
-  // Render heatmap when type changes
-  useEffect(() => {
-    if (!heatmapInstanceRef.current || !isInitialized) return;
+  // 坐标转换
+  const transformCoordinates = useCallback((
+    x: number,
+    y: number,
+    bounds: { minX: number; maxX: number; minY: number; maxY: number }
+  ) => {
+    const scaleX = width / (bounds.maxX - bounds.minX);
+    const scaleY = height / (bounds.maxY - bounds.minY);
 
-    const heatmapData = transformData(heatmapType);
-    heatmapInstanceRef.current.setData(heatmapData);
-  }, [heatmapType, transformData, isInitialized]);
+    return {
+      x: Math.round((x - bounds.minX) * scaleX),
+      y: Math.round(height - (y - bounds.minY) * scaleY), // 翻转Y轴
+    };
+  }, [width, height]);
 
-  // Handle click on heatmap
-  const handleContainerClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
-    if (!onPointClick || !data.length) return;
+  // 生成资源热力图数据
+  const generateResourceData = useCallback((galaxyData: GalaxyData[]) => {
+    const bounds = getDataBounds(galaxyData);
+    const points: Array<{ x: number; y: number; value: number }> = [];
+    let maxValue = 0;
 
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (!rect) return;
+    galaxyData.forEach(galaxy => {
+      const totalResources = (galaxy.resources?.minerals || 0) +
+        (galaxy.resources?.energy || 0) +
+        (galaxy.resources?.water || 0);
 
-    const clickX = event.clientX - rect.left;
-    const clickY = event.clientY - rect.top;
-
-    // Find nearest star to click position
-    let nearestStar: StarSystem | null = null;
-    let minDistance = Infinity;
-
-    data.forEach(star => {
-      const screenX = (star.x + 100) * (width / 200);
-      const screenY = (star.y + 100) * (height / 200);
-      const distance = Math.sqrt(
-        Math.pow(clickX - screenX, 2) + Math.pow(clickY - screenY, 2)
-      );
-
-      if (distance < minDistance && distance < radius) {
-        minDistance = distance;
-        nearestStar = star;
+      if (totalResources > 0) {
+        const coords = transformCoordinates(galaxy.x, galaxy.y, bounds);
+        points.push({
+          x: coords.x,
+          y: coords.y,
+          value: totalResources,
+        });
+        maxValue = Math.max(maxValue, totalResources);
       }
     });
 
-    if (nearestStar) {
-      onPointClick(nearestStar);
-    }
-  }, [data, width, height, radius, onPointClick]);
+    return { points, maxValue };
+  }, [getDataBounds, transformCoordinates]);
 
-  // Legend component
-  const Legend: React.FC = () => (
-    <div className="heatmap-legend">
-      <div className="legend-title">
-        {heatmapType === 'resources' ? '资源分布' : 
-         heatmapType === 'population' ? '人口密度' : '热力图'}
-      </div>
-      <div className="legend-scale">
-        <div className="scale-gradient"></div>
-        <div className="scale-labels">
-          <span>低</span>
-          <span>中</span>
-          <span>高</span>
-        </div>
-      </div>
-    </div>
-  );
+  // 生成人口热力图数据
+  const generatePopulationData = useCallback((galaxyData: GalaxyData[]) => {
+    const bounds = getDataBounds(galaxyData);
+    const points: Array<{ x: number; y: number; value: number }> = [];
+    let maxValue = 0;
+
+    galaxyData.forEach(galaxy => {
+      const population = galaxy.population || 0;
+      if (population > 0) {
+        const coords = transformCoordinates(galaxy.x, galaxy.y, bounds);
+        points.push({
+          x: coords.x,
+          y: coords.y,
+          value: population,
+        });
+        maxValue = Math.max(maxValue, population);
+      }
+    });
+
+    return { points, maxValue };
+  }, [getDataBounds, transformCoordinates]);
+
+  // 更新热力图数据
+  useEffect(() => {
+    if (!heatmapInstanceRef.current || config.type === 'none') {
+      if (heatmapInstanceRef.current) {
+        heatmapInstanceRef.current.setData({ max: 0, data: [] });
+      }
+      return;
+    }
+
+    let heatmapData: { points: Array<{ x: number; y: number; value: number }>; maxValue: number };
+
+    switch (config.type) {
+      case 'resources':
+        heatmapData = generateResourceData(data);
+        break;
+      case 'population':
+        heatmapData = generatePopulationData(data);
+        break;
+      default:
+        return;
+    }
+
+    if (heatmapData.points.length === 0) return;
+
+    heatmapInstanceRef.current.setData({
+      max: heatmapData.maxValue,
+      data: heatmapData.points,
+    });
+  }, [data, config.type, generateResourceData, generatePopulationData]);
+
+  // 处理点击事件
+  const handleContainerClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (!onPointClick || !overlayRef.current) return;
+
+    const rect = overlayRef.current.getBoundingClientRect();
+    const clickX = event.clientX - rect.left;
+    const clickY = event.clientY - rect.top;
+
+    const bounds = getDataBounds(data);
+    const scaleX = (bounds.maxX - bounds.minX) / width;
+    const scaleY = (bounds.maxY - bounds.minY) / height;
+
+    const worldX = bounds.minX + clickX * scaleX;
+    const worldY = bounds.maxY - clickY * scaleY;
+
+    // 找到最近的星系
+    let closestGalaxy: GalaxyData | null = null;
+    let minDistance = Infinity;
+
+    data.forEach(galaxy => {
+      const distance = Math.sqrt(
+        Math.pow(galaxy.x - worldX, 2) + Math.pow(galaxy.y - worldY, 2)
+      );
+      if (distance < minDistance && distance < 20) {
+        minDistance = distance;
+        closestGalaxy = galaxy;
+      }
+    });
+
+    if (closestGalaxy) {
+      onPointClick(closestGalaxy);
+    }
+  }, [data, width, height, getDataBounds, onPointClick]);
+
+  // 图层类型切换
+  const handleTypeChange = (type: HeatmapType) => {
+    setConfig(prev => ({ ...prev, type }));
+  };
+
+  // 透明度调节
+  const handleOpacityChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setConfig(prev => ({ ...prev, opacity: parseFloat(event.target.value) }));
+  };
+
+  // 半径调节
+  const handleRadiusChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setConfig(prev => ({ ...prev, radius: parseInt(event.target.value, 10) }));
+  };
+
+  // 模糊度调节
+  const handleBlurChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setConfig(prev => ({ ...prev, blur: parseFloat(event.target.value) }));
+  };
 
   return (
-    <div className="heatmap-container">
-      {/* Control Panel */}
-      <div className="heatmap-controls">
-        <div className="control-group">
-          <label className="control-label">热力图类型</label>
-          <div className="button-group">
-            <button
-              className={`control-btn ${heatmapType === 'none' ? 'active' : ''}`}
-              onClick={() => setHeatmapType('none')}
-            >
-              关闭
-            </button>
-            <button
-              className={`control-btn ${heatmapType === 'resources' ? 'active' : ''}`}
-              onClick={() => setHeatmapType('resources')}
-            >
-              资源分布
-            </button>
-            <button
-              className={`control-btn ${heatmapType === 'population' ? 'active' : ''}`}
-              onClick={() => setHeatmapType('population')}
-            >
-              人口密度
-            </button>
-          </div>
-        </div>
+    <div className="heatmap-container" style={{ position: 'relative', width, height }}>
+      {/* 热力图层 */}
+      <div
+        ref={containerRef}
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          pointerEvents: 'none',
+          zIndex: 10,
+        }}
+      />
 
-        <div className="control-group">
-          <label className="control-label">
-            透明度: {(opacity * 100).toFixed(0)}%
-          </label>
-          <input
-            type="range"
-            min="0.1"
-            max="1"
-            step="0.05"
-            value={opacity}
-            onChange={(e) => setOpacity(parseFloat(e.target.value))}
-            className="slider"
-          />
-        </div>
+      {/* 交互覆盖层 */}
+      <div
+        ref={overlayRef}
+        onClick={handleContainerClick}
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          zIndex: 20,
+          cursor: 'crosshair',
+        }}
+      />
 
-        <div className="control-group">
-          <label className="control-label">
-            半径: {radius}px
-          </label>
-          <input
-            type="range"
-            min="10"
-            max="100"
-            step="5"
-            value={radius}
-            onChange={(e) => setRadius(parseInt(e.target.value))}
-            className="slider"
-          />
-        </div>
-
-        <div className="control-group">
-          <label className="control-label">
-            模糊度: {(blur * 100).toFixed(0)}%
-          </label>
-          <input
-            type="range"
-            min="0.1"
-            max="1"
-            step="0.05"
-            value={blur}
-            onChange={(e) => setBlur(parseFloat(e.target.value))}
-            className="slider"
-          />
-        </div>
-      </div>
-
-      {/* Heatmap Canvas */}
-      <div 
-        className="heatmap-canvas-wrapper"
-        style={{ width, height }}
+      {/* 控制面板 */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 10,
+          right: 10,
+          zIndex: 30,
+          background: 'rgba(0, 0, 0, 0.8)',
+          padding: '15px',
+          borderRadius: '8px',
+          color: '#fff',
+          minWidth: '200px',
+        }}
       >
         <div
-          ref={containerRef}
-          className="heatmap-canvas"
-          onClick={handleContainerClick}
-          style={{ width, height }}
-        />
-        {heatmapType !== 'none' && <Legend />}
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '10px',
+            cursor: 'pointer',
+          }}
+          onClick={() => setShowControls(!showControls)}
+        >
+          <span style={{ fontWeight: 'bold' }}>热力图控制</span>
+          <span>{showControls ? '▼' : '▲'}</span>
+        </div>
+
+        {showControls && (
+          <>
+            {/* 图层类型选择 */}
+            <div style={{ marginBottom: '15px' }}>
+              <label style={{ display: 'block', marginBottom: '5px', fontSize: '12px' }}>
+                图层类型
+              </label>
+              <div style={{ display: 'flex', gap: '5px' }}>
+                {(['none', 'resources', 'population'] as HeatmapType[]).map(type => (
+                  <button
+                    key={type}
+                    onClick={() => handleTypeChange(type)}
+                    style={{
+                      flex: 1,
+                      padding: '6px 8px',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '11px',
+                      background: config.type === type ? '#4a9eff' : '#333',
+                      color: '#fff',
+                      transition: 'background 0.2s',
+                    }}
+                  >
+                    {type === 'none' ? '关闭' : type === 'resources' ? '资源' : '人口'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 透明度滑块 */}
+            <div style={{ marginBottom: '12px' }}>
+              <label style={{ display: 'block', marginBottom: '5px', fontSize: '12px' }}>
+                透明度: {Math.round(config.opacity * 100)}%
+              </label>
+              <input
+                type="range"
+                min="0.1"
+                max="1"
+                step="0.05"
+                value={config.opacity}
+                onChange={handleOpacityChange}
+                style={{ width: '100%', cursor: 'pointer' }}
+              />
+            </div>
+
+            {/* 半径滑块 */}
+            <div style={{ marginBottom: '12px' }}>
+              <label style={{ display: 'block', marginBottom: '5px', fontSize: '12px' }}>
+                影响半径: {config.radius}px
+              </label>
+              <input
+                type="range"
+                min="10"
+                max="100"
+                step="5"
+                value={config.radius}
+                onChange={handleRadiusChange}
+                style={{ width: '100%', cursor: 'pointer' }}
+              />
+            </div>
+
+            {/* 模糊度滑块 */}
+            <div style={{ marginBottom: '5px' }}>
+              <label style={{ display: 'block', marginBottom: '5px', fontSize: '12px' }}>
+                模糊度: {Math.round(config.blur * 100)}%
+              </label>
+              <input
+                type="range"
+                min="0.3"
+                max="1"
+                step="0.05"
+                value={config.blur}
+                onChange={handleBlurChange}
+                style={{ width: '100%', cursor: 'pointer' }}
+              />
+            </div>
+
+            {/* 图例 */}
+            {config.type !== 'none' && (
+              <div style={{ marginTop: '15px', paddingTop: '10px', borderTop: '1px solid #444' }}>
+                <div style={{ fontSize: '11px', marginBottom: '5px' }}>图例</div>
+                <div
+                  style={{
+                    height: '15px',
+                    borderRadius: '3px',
+                    background: 'linear-gradient(to right, rgba(0,0,255,0.5), rgba(0,255,0,0.8), rgba(255,255,0,0.9), rgba(255,0,0,1))',
+                  }}
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', marginTop: '3px' }}>
+                  <span>低</span>
+                  <span>{config.type === 'resources' ? '资源密度' : '人口密度'}</span>
+                  <span>高</span>
+                </div>
+              </div>
+            )}
+          </>
+        )}
       </div>
 
-      {/* Stats Panel */}
-      {heatmapType !== 'none' && data.length > 0 && (
-        <div className="heatmap-stats">
-          <div className="stat-item">
-            <span className="stat-label">星系总数:</span>
-            <span className="stat-value">{data.length}</span>
+      {/* 数据统计 */}
+      <div
+        style={{
+          position: 'absolute',
+          bottom: 10,
+          left: 10,
+          zIndex: 30,
+          background: 'rgba(0, 0, 0, 0.7)',
+          padding: '10px',
+          borderRadius: '6px',
+          color: '#fff',
+          fontSize: '11px',
+        }}
+      >
+        <div>星系总数: {data.length}</div>
+        {config.type === 'resources' && (
+          <div>
+            总资源:{' '}
+            {data.reduce((sum, g) =>
+              sum + (g.resources?.minerals || 0) + (g.resources?.energy || 0) + (g.resources?.water || 0), 0
+            ).toLocaleString()}
           </div>
-          {heatmapType === 'resources' && (
-            <>
-              <div className="stat-item">
-                <span className="stat-label">总资源:</span>
-                <span className="stat-value">
-                  {data.reduce((sum, s) => sum + (s.resources || 0), 0).toLocaleString()}
-                </span>
-              </div>
-              <div className="stat-item">
-                <span className="stat-label">平均资源:</span>
-                <span className="stat-value">
-                  {(data.reduce((sum, s) => sum + (s.resources || 0), 0) / data.length).toFixed(1)}
-                </span>
-              </div>
-            </>
-          )}
-          {heatmapType === 'population' && (
-            <>
-              <div className="stat-item">
-                <span className="stat-label">总人口:</span>
-                <span className="stat-value">
-                  {data.reduce((sum, s) => sum + (s.population || 0), 0).toLocaleString()}
-                </span>
-              </div>
-              <div className="stat-item">
-                <span className="stat-label">平均人口:</span>
-                <span className="stat-value">
-                  {(data.reduce((sum, s) => sum + (s.population || 0), 0) / data.length).toFixed(0)}
-                </span>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      <style>{`
-        .heatmap-container {
-          display: flex;
-          flex-direction: column;
-          gap: 16px;
-          padding: 16px;
-          background: rgba(10, 15, 30, 0.9);
-          border-radius: 12px;
-          border: 1px solid rgba(100, 150, 255, 0.2);
-        }
-
-        .heatmap-controls {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 20px;
-          padding: 16px;
-          background: rgba(20, 30, 50, 0.8);
-          border-radius: 8px;
-          border: 1px solid rgba(100, 150, 255, 0.15);
-        }
-
-        .control-group {
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-          min-width: 150px;
-        }
-
-        .control-label {
-          font-size: 12px;
-          color: rgba(180, 200, 255, 0.8);
-          font-weight: 500;
-        }
-
-        .button-group {
-          display: flex;
-          gap: 4px;
-        }
-
-        .control-btn {
-          padding: 6px 12px;
-          font-size: 12px;
-          background: rgba(40, 60, 100, 0.6);
-          border: 1px solid rgba(100, 150, 255, 0.3);
-          color: rgba(180, 200, 255, 0.8);
-          border-radius: 4px;
-          cursor: pointer;
-          transition: all 0.2s ease;
-        }
-
-        .control-btn:hover {
-          background: rgba(60, 90, 140, 0.7);
-          border-color: rgba(100, 150, 255, 0.5);
-        }
-
-        .control-btn.active {
-          background: rgba(80, 120, 200, 0.8);
-          border-color: rgba(100, 180, 255, 0.8);
-          color: #fff;
-          box-shadow: 0 0 10px rgba(100, 150, 255, 0.4);
-        }
-
-        .slider {
-          width: 100%;
-          height: 6px;
-          border-radius: 3px;
-          background: rgba(40, 60, 100, 0.6);
-          outline: none;
-          -webkit-appearance: none;
-        }
-
-        .slider::-webkit-slider-thumb {
-          -webkit-appearance: none;
-          width: 16px;
-          height: 16px;
-          border-radius: 50%;
-          background: rgba(100, 180, 255, 0.9);
-          cursor: pointer;
-          box-shadow: 0 0 8px rgba(100, 150, 255, 0.6);
-        }
-
-        .slider::-moz-range-thumb {
-          width: 16px;
-          height: 16px;
-          border-radius: 50%;
-          background: rgba(100, 180, 255, 0.9);
-          cursor: pointer;
-          border: none;
-          box-shadow: 0 0 8px rgba(100, 150, 255, 0.6);
-        }
-
-        .heatmap-canvas-wrapper {
-          position: relative;
-          border-radius: 8px;
-          overflow: hidden;
-          border: 1px solid rgba(100, 150, 255, 0.2);
-          background: radial-gradient(ellipse at center, #0a0a1a 0%, #000005 100%);
-        }
-
-        .heatmap-canvas {
-          cursor: crosshair;
-        }
-
-        .heatmap-legend {
-          position: absolute;
-          bottom: 16px;
-          right: 16px;
-          padding: 12px;
-          background: rgba(10, 15, 30, 0.85);
-          border-radius: 8px;
-          border: 1px solid rgba(100, 150, 255, 0.2);
-        }
-
-        .legend-title {
-          font-size: 12px;
-          color: rgba(180, 200, 255, 0.9);
-          margin-bottom: 8px;
-          font-weight: 500;
-        }
-
-        .legend-scale {
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-        }
-
-        .scale-gradient {
-          width: 120px;
-          height: 12px;
-          border-radius: 2px;
-          background: linear-gradient(to right, 
-            rgba(0, 0, 100, 0.8),
-            rgba(0, 100, 200, 0.8),
-            rgba(0, 200, 150, 0.8),
-            rgba(150, 255, 0, 0.8),
-            rgba(255, 200, 0, 0.8),
-            rgba(255, 100, 0, 0.8),
-            rgba(255, 0, 0, 0.8)
-          );
-        }
-
-        .scale-labels {
-          display: flex;
-          justify-content: space-between;
-          font-size: 10px;
-          color: rgba(150, 170, 200, 0.7);
-        }
-
-        .heatmap-stats {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 16px;
-          padding: 12px 16px;
-          background: rgba(20, 30, 50, 0.6);
-          border-radius: 8px;
-          border: 1px solid rgba(100, 150, 255, 0.1);
-        }
-
-        .stat-item {
-          display: flex;
-          gap: 8px;
-          align-items: center;
-        }
-
-        .stat-label {
-          font-size: 12px;
-          color: rgba(150, 170, 200, 0.7);
-        }
-
-        .stat-value {
-          font-size: 14px;
-          color: rgba(100, 200, 255, 0.9);
-          font-weight: 600;
-        }
-      `}</style>
+        )}
+        {config.type === 'population' && (
+          <div>
+            总人口:{' '}
+            {data.reduce((sum, g) => sum + (g.population || 0), 0).toLocaleString()}
+          </div>
+        )}
+      </div>
     </div>
   );
 };
