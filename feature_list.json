@@ -555,9 +555,10 @@
         "feat-014",
         "feat-013"
       ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "依赖 REST API 和决策日志"
+      "passes": true,
+      "last_attempt": "2026-03-24T19:20:32.684181",
+      "notes": "依赖 REST API 和决策日志",
+      "retry_count": 0
     },
     {
       "id": "feat-024",
