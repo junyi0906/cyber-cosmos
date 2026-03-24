@@ -1,31 +1,69 @@
-import {
-  Controller,
-  Get,
-  Param,
-  Post,
-  Body,
-  Query,
-  UseInterceptors,
-  CacheInterceptor,
-} from '@nestjs/common';
-import { WeatherService } from './weather.service';
-import { WeatherType } from './weather.entity';
+import { Controller, Get, Param, Post, Body, Query } from '@nestjs/common';
+import { WeatherService, WeatherType, SectorWeather, WeatherForecast } from './weather.service';
+import { EffectsService } from './effects.service';
 
 @Controller('weather')
-@UseInterceptors(CacheInterceptor)
 export class WeatherController {
-  constructor(private readonly weatherService: WeatherService) {}
+  constructor(
+    private readonly weatherService: WeatherService,
+    private readonly effectsService: EffectsService,
+  ) {}
 
-  @Get('sector/:sectorId')
-  async getSectorWeather(@Param('sectorId') sectorId: string) {
-    const weather = await this.weatherService.getSectorWeather(sectorId);
-    const effects = this.weatherService.getWeatherEffects(weather);
+  @Get('forecast')
+  async getForecast(): Promise<WeatherForecast[]> {
+    return this.weatherService.getForecast();
+  }
+
+  @Get('sector/:id')
+  async getSectorWeather(@Param('id') id: string): Promise<SectorWeather> {
+    return this.weatherService.getSectorWeather(id);
+  }
+
+  @Get('all')
+  async getAllSectorWeathers(): Promise<SectorWeather[]> {
+    return this.weatherService.getAllSectorWeathers();
+  }
+
+  @Post('sector/:id/trigger')
+  async triggerWeatherChange(
+    @Param('id') id: string,
+    @Body('weatherType') weatherType?: WeatherType,
+  ): Promise<{ message: string; newWeather: SectorWeather }> {
+    const newWeather = await this.weatherService.triggerWeatherChange(id, weatherType);
     return {
-      weather,
+      message: `Weather change triggered for ${id}. New weather will be effective in 5 minutes.`,
+      newWeather,
+    };
+  }
+
+  @Get('effects/:sectorId')
+  async getWeatherEffects(
+    @Param('sectorId') sectorId: string,
+    @Query('type') effectType?: string,
+  ): Promise<{ sectorId: string; effects: Record<string, number> }> {
+    const weather = await this.weatherService.getSectorWeather(sectorId);
+    const effects = this.effectsService.calculateAllEffects(weather, effectType);
+    
+    return {
+      sectorId,
       effects,
     };
   }
 
-  @Get('all')
-  async getAllSectorWeather() {
-    const weathers = await this.weather
+  @Get('types')
+  async getWeatherTypes(): Promise<{ types: string[]; descriptions: Record<string, string> }> {
+    const descriptions: Record<string, string> = {
+      [WeatherType.NORMAL]: '正常状态，无特殊效果',
+      [WeatherType.RESOURCE_STORM]: '资源风暴：矿石产出翻倍，能源消耗增加',
+      [WeatherType.DARK_WAVE]: '黑暗波动：传感器范围降低，外交视野受限',
+      [WeatherType.DARK_MATTER_SURGE]: '暗物质浪潮：科研速度提升，可能引发文明变异',
+      [WeatherType.ION_STORM]: '离子风暴：贸易效率降低，护盾效率降低',
+      [WeatherType.NEBULA_FOG]: '星云迷雾：隐蔽加成，航行速度降低',
+    };
+
+    return {
+      types: Object.values(WeatherType),
+      descriptions,
+    };
+  }
+}

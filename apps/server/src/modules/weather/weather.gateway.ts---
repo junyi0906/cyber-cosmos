@@ -1,66 +1,159 @@
-import { Injectable, Logger } from '@nestjs/common';
-import {
-  WebSocketGateway,
-  WebSocketServer,
-  OnGatewayInit,
-} from '@nestjs/websockets';
-import { Server } from 'socket.io';
-import { WeatherService } from './weather.service';
-import { WeatherForecastDto } from './dto/weather-forecast.dto';
+import { WebSocketGateway, WebSocketServer, SubscribeMessage, OnGatewayConnection, OnGatewayDisconnect } from '@nestjs/websockets';
+import { Server, Socket } from 'socket.io';
+import { OnEvent } from '@nestjs/event-emitter';
+import { Logger } from '@nestjs/common';
+import { WeatherService, SectorWeather } from './weather.service';
 
-/**
- * 天气 WebSocket 网关
- * 负责向客户端推送天气预警和实时状态
- */
-@Injectable()
+export interface WeatherAlertPayload {
+  sectorId: string;
+  newWeather: SectorWeather;
+  effectiveIn: number;
+  timestamp: Date;
+}
+
+export interface WeatherSubscription {
+  sectorIds: string[];
+}
+
 @WebSocketGateway({
   namespace: '/weather',
   cors: {
     origin: '*',
+    methods: ['GET', 'POST'],
   },
 })
-export class WeatherGateway implements OnGatewayInit {
+export class WeatherGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
   private readonly logger = new Logger(WeatherGateway.name);
+  private clientSubscriptions: Map<string, Set<string>> = new Map();
 
   constructor(private readonly weatherService: WeatherService) {}
 
-  afterInit(server: Server) {
-    this.logger.log('Weather WebSocket Gateway initialized');
+  handleConnection(client: Socket): void {
+    this.logger.log(`Client connected: ${client.id}`);
+    this.clientSubscriptions.set(client.id, new Set());
+
+    // Send current weather state to newly connected client
+    this.sendCurrentState(client);
   }
 
-  /**
-   * 广播天气预警
-   */
-  broadcastWeatherAlert(forecast: WeatherForecastDto): void {
-    this.server.emit('weather:alert', forecast);
-    this.logger.log(`Broadcasting weather alert: ${forecast.name}`);
+  handleDisconnect(client: Socket): void {
+    this.logger.log(`Client disconnected: ${client.id}`);
+    this.clientSubscriptions.delete(client.id);
   }
 
-  /**
-   * 广播天气状态更新
-   */
-  broadcastWeatherUpdate(forecast: WeatherForecastDto): void {
-    this.server.emit('weather:update', forecast);
-    this.logger.debug(`Broadcasting weather update: ${forecast.name}`);
+  private async sendCurrentState(client: Socket): Promise<void> {
+    try {
+      const allWeathers = await this.weatherService.getAllSectorWeathers();
+      client.emit('weather:init', {
+        sectors: allWeathers,
+        timestamp: new Date(),
+      });
+    } catch (error) {
+      this.logger.error(`Failed to send current state to ${client.id}:`, error);
+    }
   }
 
-  /**
-   * 广播天气结束通知
-   */
-  broadcastWeatherEnd(weatherId: string): void {
-    this.server.emit('weather:end', { id: weatherId });
-    this.logger.log(`Broadcasting weather end: ${weatherId}`);
+  @SubscribeMessage('subscribe')
+  handleSubscribe(client: Socket, payload: WeatherSubscription): void {
+    const subscriptions = this.clientSubscriptions.get(client.id);
+    if (subscriptions) {
+      payload.sectorIds.forEach(sectorId => subscriptions.add(sectorId));
+      this.logger.log(`Client ${client.id} subscribed to sectors: ${payload.sectorIds.join(', ')}`);
+      
+      client.emit('subscription:confirmed', {
+        sectorIds: Array.from(subscriptions),
+        timestamp: new Date(),
+      });
+    }
   }
 
-  /**
-   * 发送当前天气状态给指定客户端
-   */
-  sendCurrentWeather(clientId: string): void {
-    const weathers = this.weatherService.getActiveWeathers();
-    const forecasts = weathers.map((w) => this.weatherService.toForecastDto(w));
-    this.server.to(clientId).emit('weather:current', forecasts);
+  @SubscribeMessage('unsubscribe')
+  handleUnsubscribe(client: Socket, payload: WeatherSubscription): void {
+    const subscriptions = this.clientSubscriptions.get(client.id);
+    if (subscriptions) {
+      payload.sectorIds.forEach(sectorId => subscriptions.delete(sectorId));
+      this.logger.log(`Client ${client.id} unsubscribed from sectors: ${payload.sectorIds.join(', ')}`);
+    }
+  }
+
+  @SubscribeMessage('get_weather')
+  async handleGetWeather(client: Socket, sectorId: string): Promise<void> {
+    try {
+      const weather = await this.weatherService.getSectorWeather(sectorId);
+      client.emit('weather:sector', {
+        sectorId,
+        weather,
+        timestamp: new Date(),
+      });
+    } catch (error) {
+      client.emit('weather:error', {
+        sectorId,
+        error: error.message,
+        timestamp: new Date(),
+      });
+    }
+  }
+
+  @OnEvent('SECTOR_WEATHER_CHANGED')
+  handleWeatherChanged(payload: { sectorId: string; newWeather: SectorWeather; effectiveIn: number }): void {
+    this.logger.log(`Weather change event received for sector ${payload.sectorId}`);
+
+    const alertPayload: WeatherAlertPayload = {
+      sectorId: payload.sectorId,
+      newWeather: payload.newWeather,
+      effectiveIn: payload.effectiveIn,
+      timestamp: new Date(),
+    };
+
+    // Broadcast to all connected clients
+    this.server.emit('weather_alert', alertPayload);
+
+    // Also emit to sector-specific room
+    this.server.to(`sector:${payload.sectorId}`).emit('weather_alert', alertPayload);
+
+    this.logger.log(
+      `Weather alert broadcasted: Sector ${payload.sectorId} changing to ${payload.newWeather.weatherType} in ${payload.effectiveIn} seconds`,
+    );
+  }
+
+  @OnEvent('WEATHER_EFFECT_APPLIED')
+  handleWeatherEffectApplied(payload: { sectorId: string; effect: string; modifier: number }): void {
+    this.server.emit('weather:effect', {
+      sectorId: payload.sectorId,
+      effect: payload.effect,
+      modifier: payload.modifier,
+      timestamp: new Date(),
+    });
+  }
+
+  @OnEvent('WEATHER_CYCLE_COMPLETE')
+  handleWeatherCycleComplete(payload: { cycleId: string; affectedSectors: string[] }): void {
+    this.server.emit('weather:cycle', {
+      cycleId: payload.cycleId,
+      affectedSectors: payload.affectedSectors,
+      timestamp: new Date(),
+    });
+  }
+
+  // Method to broadcast emergency alerts
+  broadcastEmergencyAlert(sectorId: string, alertType: string, message: string): void {
+    this.server.emit('emergency_alert', {
+      sectorId,
+      alertType,
+      message,
+      timestamp: new Date(),
+    });
+  }
+
+  // Method to send periodic weather updates
+  async broadcastWeatherUpdate(): Promise<void> {
+    const allWeathers = await this.weatherService.getAllSectorWeathers();
+    this.server.emit('weather:update', {
+      sectors: allWeathers,
+      timestamp: new Date(),
+    });
   }
 }

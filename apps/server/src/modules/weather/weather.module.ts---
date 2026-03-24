@@ -1,16 +1,12 @@
 import { Module } from '@nestjs/common';
-import { ScheduleModule } from '@nestjs/schedule';
+import { WeatherController } from './weather.controller';
 import { WeatherService } from './weather.service';
-import { WeatherCron } from './weather.cron';
+import { WeatherGateway } from './weather.gateway';
 import { EffectsService } from './effects.service';
-import { EventsModule } from '../events/events.module';
 
 @Module({
-  imports: [
-    ScheduleModule.forRoot(),
-    EventsModule,
-  ],
-  providers: [WeatherService, WeatherCron, EffectsService],
+  controllers: [WeatherController],
+  providers: [WeatherService, WeatherGateway, EffectsService],
   exports: [WeatherService, EffectsService],
 })
 export class WeatherModule {}

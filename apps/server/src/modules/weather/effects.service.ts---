@@ -1,69 +1,27 @@
-import { Injectable, Logger } from '@nestjs/common';
-import {
-  WeatherType,
-  WeatherEffects,
-  WEATHER_EFFECTS,
-} from './weather.types';
+import { Injectable } from '@nestjs/common';
+import { SectorWeather, WeatherType } from './weather.service';
+
+export interface EffectCalculation {
+  type: string;
+  baseValue: number;
+  modifier: number;
+  finalValue: number;
+  description: string;
+}
 
 @Injectable()
 export class EffectsService {
-  private readonly logger = new Logger(EffectsService.name);
+  private readonly baseEffectValues: Record<string, number> = {
+    ore_production: 100,
+    energy_consumption: 50,
+    sensor_range: 1000,
+    diplomacy_visibility: 100,
+    research_speed: 100,
+    mutation_chance: 0,
+    trade_efficiency: 100,
+    shield_efficiency: 100,
+    stealth_bonus: 0,
+    travel_speed: 100,
+  };
 
-  getWeatherEffects(weather: WeatherType): WeatherEffects {
-    return WEATHER_EFFECTS[weather] || WEATHER_EFFECTS[WeatherType.NORMAL];
-  }
-
-  applyResourceModifier(baseAmount: number, weather: WeatherType): number {
-    const effects = this.getWeatherEffects(weather);
-    return Math.floor(baseAmount * effects.resourceMultiplier);
-  }
-
-  applyEnergyConsumption(baseConsumption: number, weather: WeatherType): number {
-    const effects = this.getWeatherEffects(weather);
-    return Math.ceil(baseConsumption * effects.energyConsumptionModifier);
-  }
-
-  applySensorRange(baseRange: number, weather: WeatherType): number {
-    const effects = this.getWeatherEffects(weather);
-    return Math.floor(baseRange * effects.sensorRangeModifier);
-  }
-
-  applyResearchSpeed(baseSpeed: number, weather: WeatherType): number {
-    const effects = this.getWeatherEffects(weather);
-    return baseSpeed * effects.researchSpeedModifier;
-  }
-
-  applyTradeEfficiency(baseEfficiency: number, weather: WeatherType): number {
-    const effects = this.getWeatherEffects(weather);
-    return Math.min(1, baseEfficiency * effects.tradeEfficiencyModifier);
-  }
-
-  calculateEventProbability(baseProbability: number, weather: WeatherType): number {
-    const effects = this.getWeatherEffects(weather);
-    return Math.min(1, baseProbability * effects.eventProbabilityModifier);
-  }
-
-  getWeatherDescription(weather: WeatherType): string {
-    const descriptions: Record<WeatherType, string> = {
-      [WeatherType.NORMAL]: 'Normal space conditions. All systems operating at standard capacity.',
-      [WeatherType.RESOURCE_STORM]: 'Resource Storm in progress. Mining yields doubled but energy consumption increased.',
-      [WeatherType.DARK_FLUCTUATION]: 'Dark Fluctuation detected. Sensor range reduced, diplomatic visibility limited.',
-      [WeatherType.DARK_MATTER_WAVE]: 'Dark Matter Wave passing through. Research speed enhanced, but civilization mutation risk elevated.',
-      [WeatherType.SOLAR_FLARE]: 'Solar Flare activity. Energy efficiency improved, sensor range slightly enhanced.',
-      [WeatherType.NEBULA_FOG]: 'Nebula Fog enveloping sector. Trade routes impaired, but research capabilities slightly enhanced.',
-    };
-    return descriptions[weather] || descriptions[WeatherType.NORMAL];
-  }
-
-  getWeatherWarningLevel(weather: WeatherType): 'low' | 'medium' | 'high' {
-    const warningLevels: Record<WeatherType, 'low' | 'medium' | 'high'> = {
-      [WeatherType.NORMAL]: 'low',
-      [WeatherType.RESOURCE_STORM]: 'medium',
-      [WeatherType.DARK_FLUCTUATION]: 'medium',
-      [WeatherType.DARK_MATTER_WAVE]: 'high',
-      [WeatherType.SOLAR_FLARE]: 'low',
-      [WeatherType.NEBULA_FOG]: 'medium',
-    };
-    return warningLevels[weather] || 'low';
-  }
-}
+  calculateAllEffects(weather: SectorWeather
