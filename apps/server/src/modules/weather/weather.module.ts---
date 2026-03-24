@@ -1,12 +1,16 @@
 import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { WeatherState } from './weather.entity';
+import { ScheduleModule } from '@nestjs/schedule';
 import { WeatherService } from './weather.service';
+import { WeatherCron } from './weather.cron';
 import { EffectsService } from './effects.service';
+import { EventsModule } from '../events/events.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([WeatherState])],
-  providers: [WeatherService, EffectsService],
+  imports: [
+    ScheduleModule.forRoot(),
+    EventsModule,
+  ],
+  providers: [WeatherService, WeatherCron, EffectsService],
   exports: [WeatherService, EffectsService],
 })
 export class WeatherModule {}

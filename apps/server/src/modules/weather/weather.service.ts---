@@ -1,85 +1,120 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { WeatherType, Weather, WeatherForecast } from './weather.types';
+import {
+  WeatherType,
+  SectorWeather,
+  WEATHER_TRANSITION_WEIGHTS,
+} from './weather.types';
 
 @Injectable()
 export class WeatherService {
   private readonly logger = new Logger(WeatherService.name);
-  private weatherCache: Map<string, Weather> = new Map();
+  private sectors: Map<string, SectorWeather> = new Map();
+  private initialized: boolean = false;
 
-  constructor() {
-    this.initializeDefaultWeather();
+  async initializeSectors(sectorData: Partial<SectorWeather>[]): Promise<void> {
+    if (this.initialized) return;
+
+    const now = new Date();
+    const nextChange = new Date(now);
+    nextChange.setMinutes(nextChange.getMinutes() + 10);
+
+    for (const data of sectorData) {
+      const sector: SectorWeather = {
+        id: data.id || this.generateId(),
+        name: data.name || 'Unknown Sector',
+        currentWeather: data.currentWeather || WeatherType.NORMAL,
+        previousWeather: data.previousWeather || null,
+        nextChangeAt: data.nextChangeAt || nextChange,
+        lastChangedAt: data.lastChangedAt || now,
+        coordinates: data.coordinates || { x: 0, y: 0, z: 0 },
+      };
+      this.sectors.set(sector.id, sector);
+    }
+
+    this.initialized = true;
+    this.logger.log(`Initialized ${this.sectors.size} sectors with weather data`);
   }
 
-  private initializeDefaultWeather(): void {
-    // 初始化默认天气数据
-    const defaultSectors = ['sector-alpha', 'sector-beta', 'sector-gamma'];
+  async getAllSectors(): Promise<SectorWeather[]> {
+    if (!this.initialized) {
+      await this.initializeDefaultSectors();
+    }
+    return Array.from(this.sectors.values());
+  }
+
+  async getSectorById(sectorId: string): Promise<SectorWeather | null> {
+    return this.sectors.get(sectorId) || null;
+  }
+
+  async transitionWeather(sectorId: string): Promise<WeatherType | null> {
+    const sector = this.sectors.get(sectorId);
+    if (!sector) {
+      this.logger.warn(`Sector ${sectorId} not found`);
+      return null;
+    }
+
+    const currentWeather = sector.currentWeather;
+    const weights = WEATHER_TRANSITION_WEIGHTS[currentWeather];
     
-    defaultSectors.forEach((sectorId) => {
-      this.weatherCache.set(sectorId, {
-        id: `weather-${sectorId}`,
-        sectorId,
-        type: WeatherType.CALM,
-        intensity: 1.0,
-        startTime: new Date(),
-        endTime: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24小时后
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-    });
-  }
-
-  async getWeatherBySector(sectorId: string): Promise<Weather | null> {
-    return this.weatherCache.get(sectorId) || null;
-  }
-
-  async updateWeather(sectorId: string, type: WeatherType, intensity: number): Promise<Weather> {
-    const existingWeather = this.weatherCache.get(sectorId);
+    const newWeather = this.selectWeatherByWeight(weights);
     
-    const weather: Weather = {
-      id: existingWeather?.id || `weather-${sectorId}`,
-      sectorId,
-      type,
-      intensity,
-      startTime: existingWeather?.startTime || new Date(),
-      endTime: new Date(Date.now() + 24 * 60 * 60 * 1000),
-      createdAt: existingWeather?.createdAt || new Date(),
-      updatedAt: new Date(),
+    this.logger.debug(
+      `Transitioning weather for sector ${sector.name}: ${currentWeather} -> ${newWeather}`,
+    );
+
+    return newWeather;
+  }
+
+  async updateSectorWeather(
+    sectorId: string,
+    update: Partial<SectorWeather>,
+  ): Promise<SectorWeather | null> {
+    const sector = this.sectors.get(sectorId);
+    if (!sector) {
+      return null;
+    }
+
+    const updatedSector = {
+      ...sector,
+      ...update,
     };
 
-    this.weatherCache.set(sectorId, weather);
-    this.logger.log(`Weather updated for sector ${sectorId}: ${type} at intensity ${intensity}`);
+    this.sectors.set(sectorId, updatedSector);
+    return updatedSector;
+  }
+
+  private selectWeatherByWeight(
+    weights: Partial<Record<WeatherType, number>>,
+  ): WeatherType {
+    const entries = Object.entries(weights) as [WeatherType, number][];
+    const totalWeight = entries.reduce((sum, [, weight]) => sum + weight, 0);
     
-    return weather;
-  }
-
-  async getForecast(sectorId: string): Promise<WeatherForecast> {
-    const currentWeather = await this.getWeatherBySector(sectorId);
+    let random = Math.random() * totalWeight;
     
-    return {
-      sectorId,
-      forecasts: [
-        {
-          weatherType: currentWeather?.type || WeatherType.CALM,
-          intensity: currentWeather?.intensity || 1.0,
-          startTime: new Date(),
-          endTime: new Date(Date.now() + 6 * 60 * 60 * 1000),
-          probability: 0.7,
-        },
-        {
-          weatherType: this.getRandomWeatherType(),
-          intensity: Math.random() * 0.5 + 0.5,
-          startTime: new Date(Date.now() + 6 * 60 * 60 * 1000),
-          endTime: new Date(Date.now() + 12 * 60 * 60 * 1000),
-          probability: 0.5,
-        },
-      ],
-    };
+    for (const [weather, weight] of entries) {
+      random -= weight;
+      if (random <= 0) {
+        return weather;
+      }
+    }
+
+    return WeatherType.NORMAL;
   }
 
-  private getRandomWeatherType(): WeatherType {
-    const types = Object.values(WeatherType);
-    return types[Math.floor(Math.random() * types.length)];
+  private async initializeDefaultSectors(): Promise<void> {
+    const defaultSectors: Partial<SectorWeather>[] = [
+      { id: 'sector-alpha', name: 'Alpha Quadrant', coordinates: { x: 0, y: 0, z: 0 } },
+      { id: 'sector-beta', name: 'Beta Quadrant', coordinates: { x: 100, y: 0, z: 0 } },
+      { id: 'sector-gamma', name: 'Gamma Quadrant', coordinates: { x: -100, y: 0, z: 0 } },
+      { id: 'sector-delta', name: 'Delta Quadrant', coordinates: { x: 0, y: 100, z: 0 } },
+      { id: 'sector-epsilon', name: 'Epsilon Quadrant', coordinates: { x: 0, y: -100, z: 0 } },
+      { id: 'sector-zeta', name: 'Zeta Quadrant', coordinates: { x: 0, y: 0, z: 100 } },
+    ];
+
+    await this.initializeSectors(defaultSectors);
   }
 
-  async getAllWeather(): Promise<Weather[]> {
-    return
+  private generateId(): string {
+    return `sector-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  }
+}

@@ -1,46 +1,123 @@
 export enum WeatherType {
-  CALM = 'CALM',
-  RESOURCE_STORM = 'RESOURCE_STORM',
-  DARK_FLUCTUATION = 'DARK_FLUCTUATION',
-  DARK_MATTER_WAVE = 'DARK_MATTER_WAVE',
-  ION_STORM = 'ION_STORM',
-  NEBULA_FOG = 'NEBULA_FOG',
+  NORMAL = 'normal',
+  RESOURCE_STORM = 'resource_storm',
+  DARK_FLUCTUATION = 'dark_fluctuation',
+  DARK_MATTER_WAVE = 'dark_matter_wave',
+  SOLAR_FLARE = 'solar_flare',
+  NEBULA_FOG = 'nebula_fog',
 }
 
-export interface Weather {
+export interface WeatherEffects {
+  resourceMultiplier: number;
+  energyConsumptionModifier: number;
+  sensorRangeModifier: number;
+  researchSpeedModifier: number;
+  tradeEfficiencyModifier: number;
+  eventProbabilityModifier: number;
+}
+
+export interface SectorWeather {
   id: string;
-  sectorId: string;
-  type: WeatherType;
-  intensity: number;
-  startTime: Date;
-  endTime: Date;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface WeatherEffect {
-  type: WeatherType;
   name: string;
-  description: string;
-  duration: number;
-  modifiers: {
-    resourceMultiplier: number;
-    energyConsumptionMultiplier: number;
-    sensorRangeModifier: number;
-    researchSpeedMultiplier: number;
-    tradeEfficiencyMultiplier: number;
-    mutationRisk: number;
-    diplomaticVisibilityModifier: number;
+  currentWeather: WeatherType;
+  previousWeather: WeatherType | null;
+  nextChangeAt: Date;
+  lastChangedAt: Date;
+  coordinates: {
+    x: number;
+    y: number;
+    z: number;
   };
 }
 
-export interface WeatherForecast {
-  sectorId: string;
-  forecasts: {
-    weatherType: WeatherType;
-    intensity: number;
-    startTime: Date;
-    endTime: Date;
-    probability: number;
-  }[];
-}
+export const WEATHER_EFFECTS: Record<WeatherType, WeatherEffects> = {
+  [WeatherType.NORMAL]: {
+    resourceMultiplier: 1.0,
+    energyConsumptionModifier: 1.0,
+    sensorRangeModifier: 1.0,
+    researchSpeedModifier: 1.0,
+    tradeEfficiencyModifier: 1.0,
+    eventProbabilityModifier: 1.0,
+  },
+  [WeatherType.RESOURCE_STORM]: {
+    resourceMultiplier: 2.0,
+    energyConsumptionModifier: 1.5,
+    sensorRangeModifier: 1.0,
+    researchSpeedModifier: 1.0,
+    tradeEfficiencyModifier: 0.8,
+    eventProbabilityModifier: 1.3,
+  },
+  [WeatherType.DARK_FLUCTUATION]: {
+    resourceMultiplier: 1.0,
+    energyConsumptionModifier: 1.0,
+    sensorRangeModifier: 0.5,
+    researchSpeedModifier: 1.0,
+    tradeEfficiencyModifier: 0.7,
+    eventProbabilityModifier: 1.5,
+  },
+  [WeatherType.DARK_MATTER_WAVE]: {
+    resourceMultiplier: 1.0,
+    energyConsumptionModifier: 1.2,
+    sensorRangeModifier: 1.0,
+    researchSpeedModifier: 1.5,
+    tradeEfficiencyModifier: 1.0,
+    eventProbabilityModifier: 1.8,
+  },
+  [WeatherType.SOLAR_FLARE]: {
+    resourceMultiplier: 1.0,
+    energyConsumptionModifier: 0.8,
+    sensorRangeModifier: 1.2,
+    researchSpeedModifier: 1.0,
+    tradeEfficiencyModifier: 0.9,
+    eventProbabilityModifier: 1.2,
+  },
+  [WeatherType.NEBULA_FOG]: {
+    resourceMultiplier: 0.8,
+    energyConsumptionModifier: 1.0,
+    sensorRangeModifier: 0.7,
+    researchSpeedModifier: 1.2,
+    tradeEfficiencyModifier: 0.6,
+    eventProbabilityModifier: 1.4,
+  },
+};
+
+export const WEATHER_TRANSITION_WEIGHTS: Record<WeatherType, Partial<Record<WeatherType, number>>> = {
+  [WeatherType.NORMAL]: {
+    [WeatherType.NORMAL]: 0.4,
+    [WeatherType.RESOURCE_STORM]: 0.15,
+    [WeatherType.DARK_FLUCTUATION]: 0.15,
+    [WeatherType.DARK_MATTER_WAVE]: 0.1,
+    [WeatherType.SOLAR_FLARE]: 0.1,
+    [WeatherType.NEBULA_FOG]: 0.1,
+  },
+  [WeatherType.RESOURCE_STORM]: {
+    [WeatherType.NORMAL]: 0.5,
+    [WeatherType.RESOURCE_STORM]: 0.2,
+    [WeatherType.DARK_FLUCTUATION]: 0.1,
+    [WeatherType.NEBULA_FOG]: 0.2,
+  },
+  [WeatherType.DARK_FLUCTUATION]: {
+    [WeatherType.NORMAL]: 0.4,
+    [WeatherType.DARK_FLUCTUATION]: 0.3,
+    [WeatherType.DARK_MATTER_WAVE]: 0.2,
+    [WeatherType.NEBULA_FOG]: 0.1,
+  },
+  [WeatherType.DARK_MATTER_WAVE]: {
+    [WeatherType.NORMAL]: 0.3,
+    [WeatherType.DARK_FLUCTUATION]: 0.3,
+    [WeatherType.DARK_MATTER_WAVE]: 0.2,
+    [WeatherType.SOLAR_FLARE]: 0.2,
+  },
+  [WeatherType.SOLAR_FLARE]: {
+    [WeatherType.NORMAL]: 0.6,
+    [WeatherType.RESOURCE_STORM]: 0.2,
+    [WeatherType.SOLAR_FLARE]: 0.1,
+    [WeatherType.NEBULA_FOG]: 0.1,
+  },
+  [WeatherType.NEBULA_FOG]: {
+    [WeatherType.NORMAL]: 0.5,
+    [WeatherType.DARK_FLUCTUATION]: 0.2,
+    [WeatherType.NEBULA_FOG]: 0.2,
+    [WeatherType.DARK_MATTER_WAVE]: 0.1,
+  },
+};

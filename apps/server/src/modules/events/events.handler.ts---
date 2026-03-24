@@ -1,0 +1,26 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { Subject, Observable } from 'rxjs';
+
+export interface GameEvent {
+  type: string;
+  payload: unknown;
+}
+
+@Injectable()
+export class EventsHandler {
+  private readonly logger = new Logger(EventsHandler.name);
+  private eventSubject = new Subject<GameEvent>();
+
+  async publish(event: GameEvent): Promise<void> {
+    this.logger.debug(`Publishing event: ${event.type}`);
+    this.eventSubject.next(event);
+  }
+
+  getEventObservable(): Observable<GameEvent> {
+    return this.eventSubject.asObservable();
+  }
+
+  subscribe(callback: (event: GameEvent) => void): void {
+    this.eventSubject.subscribe(callback);
+  }
+}

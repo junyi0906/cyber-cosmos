@@ -1,0 +1,9 @@
+import { Module, Global } from '@nestjs/common';
+import { EventsHandler } from './events.handler';
+
+@Global()
+@Module({
+  providers: [EventsHandler],
+  exports: [EventsHandler],
+})
+export class EventsModule {}
