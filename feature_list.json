@@ -352,9 +352,10 @@
         "feat-014",
         "feat-004"
       ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "依赖遗迹生成器和文明资源"
+      "passes": true,
+      "last_attempt": "2026-03-25T00:28:13.378410",
+      "notes": "依赖遗迹生成器和文明资源",
+      "retry_count": 0
     },
     {
       "id": "feat-016",
