@@ -1,0 +1,188 @@
+import { Test, TestingModule } from '@nestjs/testing';
+import { MarketService } from './market.service';
+import { Redis } from 'ioredis';
+
+describe('MarketService', () => {
+  let service: MarketService;
+  let redisMock: jest.Mocked<Redis>;
+
+  beforeEach(async () => {
+    redisMock = {
+      hget: jest.fn(),
+      hset: jest.fn(),
+      hgetall: jest.fn(),
+      exists: jest.fn(),
+      del: jest.fn(),
+      lpush: jest.fn(),
+      ltrim: jest.fn(),
+      lrange: jest.fn(),
+    } as any;
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        MarketService,
+        {
+          provide: 'REDIS_CLIENT',
+          useValue: redisMock,
+        },
+      ],
+    }).compile();
+
+    service = module.get<MarketService>(MarketService);
+  });
+
+  describe('getBasePrice', () => {
+    it('should return correct base price for ore', () => {
+      expect(service.getBasePrice('ore')).toBe(100);
+    });
+
+    it('should return correct base price for energy', () => {
+      expect(service.getBasePrice('energy')).toBe(150);
+    });
+
+    it('should return correct base price for tech', () => {
+      expect(service.getBasePrice('tech')).toBe(500);
+    });
+
+    it('should return default price for unknown resource', () => {
+      expect(service.getBasePrice('unknown')).toBe(100);
+    });
+  });
+
+  describe('calculateNewPrice', () => {
+    it('should return same price when buy and sell volumes are equal', () => {
+      const oldPrice = 100;
+      const result = service.calculateNewPrice(oldPrice, 1000, 1000, 10000);
+      expect(result).toBe(100);
+    });
+
+    it('should increase price when buy volume exceeds sell volume', () => {
+      const oldPrice = 100;
+      const result = service.calculateNewPrice(oldPrice, 2000, 1000, 10000);
+      expect(result).toBeGreaterThan(100);
+    });
+
+    it('should decrease price when sell volume exceeds buy volume', () => {
+      const oldPrice = 100;
+      const result = service.calculateNewPrice(oldPrice, 1000, 2000, 10000);
+      expect(result).toBeLessThan(100);
+    });
+
+    it('should use default K value when not provided', () => {
+      const oldPrice = 100;
+      const result = service.calculateNewPrice(oldPrice, 1000, 0);
+      expect(result).toBeGreaterThan(100);
+    });
+
+    it('should not return price below 1', () => {
+      const oldPrice = 10;
+      const result = service.calculateNewPrice(oldPrice, 0, 100000, 10000);
+      expect(result).toBeGreaterThanOrEqual(1);
+    });
+
+    it('should calculate correct exponential price change', () => {
+      const oldPrice = 100;
+      const buyVolume = 10000;
+      const sellVolume = 0;
+      const k = 10000;
+      const expected = 100 * Math.exp(1);
+      const result = service.calculateNewPrice(oldPrice, buyVolume, sellVolume, k);
+      expect(result).toBeCloseTo(expected, 1);
+    });
+  });
+
+  describe('updateMarketPrice', () => {
+    it('should update price in Redis and return new price', async () => {
+      redisMock.hget.mockResolvedValue('100');
+      redisMock.hset.mockResolvedValue(1);
+      redisMock.lpush.mockResolvedValue(1);
+      redisMock.ltrim.mockResolvedValue('OK');
+
+      const newPrice = await service.updateMarketPrice('ore', 2000, 1000, 10000);
+
+      expect(newPrice).toBeGreaterThan(100);
+      expect(redisMock.hset).toHaveBeenCalledWith('market:prices', 'ore', expect.any(String));
+    });
+  });
+
+  describe('getPrice', () => {
+    it('should return price from Redis if exists', async () => {
+      redisMock.hget.mockResolvedValue('150');
+
+      const price = await service.getPrice('ore');
+
+      expect(price).toBe(150);
+      expect(redisMock.hget).toHaveBeenCalledWith('market:prices', 'ore');
+    });
+
+    it('should return base price if not in Redis', async () => {
+      redisMock.hget.mockResolvedValue(null);
+
+      const price = await service.getPrice('ore');
+
+      expect(price).toBe(100);
+    });
+  });
+
+  describe('getAllPrices', () => {
+    it('should return all prices from Redis', async () => {
+      redisMock.hgetall.mockResolvedValue({
+        ore: '120',
+        energy: '180',
+        tech: '550',
+      });
+
+      const prices = await service.getAllPrices();
+
+      expect(prices).toEqual({
+        ore: 120,
+        energy: 180,
+        tech: 550,
+      });
+    });
+
+    it('should include base prices for missing resources', async () => {
+      redisMock.hgetall.mockResolvedValue({
+        ore: '120',
+      });
+
+      const prices = await service.getAllPrices();
+
+      expect(prices.ore).toBe(120);
+      expect(prices.energy).toBe(150);
+      expect(prices.tech).toBe(500);
+    });
+  });
+
+  describe('initializeMarketPrices', () => {
+    it('should initialize prices if not exists', async () => {
+      redisMock.exists.mockResolvedValue(0);
+      redisMock.hset.mockResolvedValue(3);
+
+      await service.initializeMarketPrices();
+
+      expect(redisMock.hset).toHaveBeenCalledWith('market:prices', {
+        ore: '100',
+        energy: '150',
+        tech: '500',
+      });
+    });
+
+    it('should not initialize prices if already exists', async () => {
+      redisMock.exists.mockResolvedValue(1);
+
+      await service.initializeMarketPrices();
+
+      expect(redisMock.hset).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getResourceTypes', () => {
+    it('should return all resource types', () => {
+      const types = service.getResourceTypes();
+      expect(types).toContain('ore');
+      expect(types).toContain('energy');
+      expect(types).toContain('tech');
+    });
+  });
+});

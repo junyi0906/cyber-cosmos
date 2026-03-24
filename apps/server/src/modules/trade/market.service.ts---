@@ -1,0 +1,147 @@
+import { Injectable, OnModuleInit, Inject } from '@nestjs/common';
+import { Redis } from 'ioredis';
+
+export interface MarketPrice {
+  resourceType: string;
+  price: number;
+  updatedAt: Date;
+}
+
+export interface PriceHistory {
+  resourceType: string;
+  oldPrice: number;
+  newPrice: number;
+  buyVolume: number;
+  sellVolume: number;
+  timestamp: Date;
+}
+
+const RESOURCE_BASE_PRICES: Record<string, number> = {
+  ore: 100,
+  energy: 150,
+  tech: 500,
+};
+
+const DEFAULT_K = 10000;
+
+const MARKET_PRICES_KEY = 'market:prices';
+const PRICE_HISTORY_KEY = 'market:price_history';
+
+@Injectable()
+export class MarketService implements OnModuleInit {
+  private priceHistory: PriceHistory[] = [];
+
+  constructor(@Inject('REDIS_CLIENT') private readonly redis: Redis) {}
+
+  async onModuleInit() {
+    await this.initializeMarketPrices();
+  }
+
+  getBasePrice(resourceType: string): number {
+    return RESOURCE_BASE_PRICES[resourceType] ?? 100;
+  }
+
+  calculateNewPrice(
+    oldPrice: number,
+    buyVolume: number,
+    sellVolume: number,
+    k: number = DEFAULT_K,
+  ): number {
+    const volumeDiff = buyVolume - sellVolume;
+    const exponent = volumeDiff / k;
+    const multiplier = Math.exp(exponent);
+    const newPrice = oldPrice * multiplier;
+    const roundedPrice = Math.round(newPrice * 100) / 100;
+    return Math.max(1, roundedPrice);
+  }
+
+  async updateMarketPrice(
+    resourceType: string,
+    buyVolume: number,
+    sellVolume: number,
+    k: number = DEFAULT_K,
+  ): Promise<number> {
+    const currentPrice = await this.getPrice(resourceType);
+    const newPrice = this.calculateNewPrice(currentPrice, buyVolume, sellVolume, k);
+
+    await this.redis.hset(MARKET_PRICES_KEY, resourceType, newPrice.toString());
+
+    const historyEntry: PriceHistory = {
+      resourceType,
+      oldPrice: currentPrice,
+      newPrice,
+      buyVolume,
+      sellVolume,
+      timestamp: new Date(),
+    };
+    this.priceHistory.push(historyEntry);
+
+    await this.redis.lpush(
+      `${PRICE_HISTORY_KEY}:${resourceType}`,
+      JSON.stringify(historyEntry),
+    );
+    await this.redis.ltrim(`${PRICE_HISTORY_KEY}:${resourceType}`, 0, 99);
+
+    return newPrice;
+  }
+
+  async getPrice(resourceType: string): Promise<number> {
+    const priceStr = await this.redis.hget(MARKET_PRICES_KEY, resourceType);
+    if (priceStr) {
+      return parseFloat(priceStr);
+    }
+    return this.getBasePrice(resourceType);
+  }
+
+  async getAllPrices(): Promise<Record<string, number>> {
+    const prices = await this.redis.hgetall(MARKET_PRICES_KEY);
+    const result: Record<string, number> = {};
+
+    for (const [resourceType, priceStr] of Object.entries(prices)) {
+      result[resourceType] = parseFloat(priceStr);
+    }
+
+    for (const [resourceType, basePrice] of Object.entries(RESOURCE_BASE_PRICES)) {
+      if (!(resourceType in result)) {
+        result[resourceType] = basePrice;
+      }
+    }
+
+    return result;
+  }
+
+  async initializeMarketPrices(): Promise<void> {
+    const existingPrices = await this.redis.exists(MARKET_PRICES_KEY);
+
+    if (!existingPrices) {
+      const initialPrices: Record<string, string> = {};
+      for (const [resourceType, basePrice] of Object.entries(RESOURCE_BASE_PRICES)) {
+        initialPrices[resourceType] = basePrice.toString();
+      }
+      await this.redis.hset(MARKET_PRICES_KEY, initialPrices);
+    }
+  }
+
+  async resetMarketPrices(): Promise<void> {
+    await this.redis.del(MARKET_PRICES_KEY);
+    await this.initializeMarketPrices();
+  }
+
+  getPriceHistory(resourceType: string): PriceHistory[] {
+    return this.priceHistory.filter((h) => h.resourceType === resourceType);
+  }
+
+  async getRecentPriceHistory(resourceType: string, limit: number = 10): Promise<PriceHistory[]> {
+    const historyStrs = await this.redis.lrange(
+      `${PRICE_HISTORY_KEY}:${resourceType}`,
+      0,
+      limit - 1,
+    );
+
+    return historyStrs.map((str) => JSON.parse(str));
+  }
+
+  getResourceTypes(): string[] {
+    return Object.keys(RESOURCE_BASE_PRICES);
+  }
+}

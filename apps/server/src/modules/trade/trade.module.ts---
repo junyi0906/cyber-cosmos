@@ -1,11 +1,21 @@
-import { Module } from '@nestjs/common';
-import { TradeService } from './trade.service';
-import { TradeController } from './trade.controller';
-import { MarketEngine } from './market.engine';
+import { Module, Global } from '@nestjs/common';
+import { MarketService } from './market.service';
 
+@Global()
 @Module({
-  controllers: [TradeController],
-  providers: [TradeService, MarketEngine],
-  exports: [TradeService, MarketEngine],
+  providers: [
+    {
+      provide: 'REDIS_CLIENT',
+      useFactory: () => {
+        const Redis = require('ioredis');
+        return new Redis({
+          host: process.env.REDIS_HOST || 'localhost',
+          port: parseInt(process.env.REDIS_PORT || '6379', 10),
+        });
+      },
+    },
+    MarketService,
+  ],
+  exports: [MarketService, 'REDIS_CLIENT'],
 })
 export class TradeModule {}
