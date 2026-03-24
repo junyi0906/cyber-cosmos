@@ -1,0 +1,22 @@
+export interface ResourcePrice {
+  resourceType: string;
+  basePrice: number;
+  currentPrice: number;
+  volatility: number;
+}
+
+export interface PriceQuote {
+  resourceType: string;
+  price: number;
+  quantity: number;
+  totalPrice: number;
+}
+
+export interface CivilizationResources {
+  civilizationId: string;
+  resources: {
+    ore: number;
+    energy: number;
+    techPoints: number;
+  };
+}

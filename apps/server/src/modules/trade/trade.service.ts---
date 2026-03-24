@@ -1,146 +1,324 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { CreateTradeRouteDto } from './dto/create-trade-route.dto';
-import { MarketPriceDto, MarketOverviewDto } from './dto/market-price.dto';
-import {
-  ITradeRoute,
-  ITradeAgreement,
-  ITradeEvent,
-  TradeRouteStatus,
-  ResourceType,
-} from './interfaces/trade.interface';
-import { v4 as uuidv4 } from 'uuid';
+import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, DataSource } from 'typeorm';
+import { TradeRoute, TradeRouteStatus, ResourceType } from './entities/trade-route.entity';
+import { CreateTradeRouteDto } from './dto';
+import { MarketService } from './market.service';
+
+export interface CivilizationInfo {
+  id: string;
+  name: string;
+  resources: {
+    ore: number;
+    energy: number;
+    techPoints: number;
+  };
+}
+
+export interface TradeCycleResult {
+  routeId: string;
+  sourceId: string;
+  targetId: string;
+  resourceType: ResourceType;
+  quantity: number;
+  efficiency: number;
+  success: boolean;
+  message?: string;
+}
 
 @Injectable()
 export class TradeService {
   private readonly logger = new Logger(TradeService.name);
-  private tradeRoutes: Map<string, ITradeRoute> = new Map();
-  private tradeAgreements: Map<string, ITradeAgreement> = new Map();
-  private tradeEvents: ITradeEvent[] = [];
+  private readonly energyCostPerUnit = 5;
 
-  async createTradeRoute(dto: CreateTradeRouteDto): Promise<ITradeRoute> {
-    const route: ITradeRoute = {
-      id: uuidv4(),
-      fromCivId: dto.fromCivId,
-      toCivId: dto.toCivId,
+  constructor(
+    @InjectRepository(TradeRoute)
+    private readonly tradeRouteRepository: Repository<TradeRoute>,
+    private readonly marketService: MarketService,
+    private readonly dataSource: DataSource,
+  ) {}
+
+  async createTradeRoute(dto: CreateTradeRouteDto): Promise<TradeRoute> {
+    if (dto.sourceCivilizationId === dto.targetCivilizationId) {
+      throw new BadRequestException('Cannot create trade route to the same civilization');
+    }
+
+    const sourceCiv = await this.validateCivilization(dto.sourceCivilizationId);
+    const targetCiv = await this.validateCivilization(dto.targetCivilizationId);
+
+    if (!sourceCiv || !targetCiv) {
+      throw new NotFoundException('Source or target civilization not found');
+    }
+
+    const priceQuote = await this.marketService.calculatePriceQuote(
+      dto.resourceType,
+      dto.quantity,
+    );
+
+    const energyCost = this.calculateEnergyCost(dto.quantity);
+    
+    if (sourceCiv.resources.energy < energyCost) {
+      throw new BadRequestException(
+        `Insufficient energy. Required: ${energyCost}, Available: ${sourceCiv.resources.energy}`,
+      );
+    }
+
+    await this.deductEnergy(dto.sourceCivilizationId, energyCost);
+
+    const tradeRoute = this.tradeRouteRepository.create({
+      sourceCivilizationId: dto.sourceCivilizationId,
+      targetCivilizationId: dto.targetCivilizationId,
       resourceType: dto.resourceType,
-      amount: dto.amount,
+      quantity: dto.quantity,
+      price: priceQuote.price,
       status: TradeRouteStatus.ACTIVE,
       efficiency: 1.0,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+      maxCycles: dto.maxCycles || 100,
+    });
 
-    this.tradeRoutes.set(route.id, route);
-    this.logger.log(`Created trade route ${route.id} from ${dto.fromCivId} to ${dto.toCivId}`);
+    const savedRoute = await this.tradeRouteRepository.save(tradeRoute);
     
-    return route;
-  }
-
-  async getTradeRoute(id: string): Promise<ITradeRoute | null> {
-    return this.tradeRoutes.get(id) || null;
-  }
-
-  async getAllTradeRoutes(): Promise<ITradeRoute[]> {
-    return Array.from(this.tradeRoutes.values());
-  }
-
-  async getTradeRoutesByCiv(civId: string): Promise<ITradeRoute[]> {
-    return Array.from(this.tradeRoutes.values()).filter(
-      (route) => route.fromCivId === civId || route.toCivId === civId,
+    this.logger.log(
+      `Created trade route ${savedRoute.id}: ${dto.sourceCivilizationId} -> ${dto.targetCivilizationId}`,
     );
+
+    return savedRoute;
   }
 
-  async updateRouteStatus(
-    routeId: string,
-    status: TradeRouteStatus,
-    efficiency?: number,
-  ): Promise<ITradeRoute | null> {
-    const route = this.tradeRoutes.get(routeId);
+  async getTradeRoutesByCivilization(civId: string): Promise<TradeRoute[]> {
+    return this.tradeRouteRepository.find({
+      where: [
+        { sourceCivilizationId: civId },
+        { targetCivilizationId: civId },
+      ],
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  async getTradeRouteById(routeId: string): Promise<TradeRoute | null> {
+    return this.tradeRouteRepository.findOne({
+      where: { id: routeId },
+    });
+  }
+
+  async cancelTradeRoute(routeId: string): Promise<TradeRoute> {
+    const route = await this.tradeRouteRepository.findOne({
+      where: { id: routeId },
+    });
+
     if (!route) {
-      return null;
+      throw new NotFoundException(`Trade route ${routeId} not found`);
     }
 
-    route.status = status;
-    if (efficiency !== undefined) {
-      route.efficiency = efficiency;
+    if (route.status === TradeRouteStatus.CANCELLED) {
+      throw new BadRequestException('Trade route is already cancelled');
     }
-    route.updatedAt = new Date();
 
-    this.tradeRoutes.set(routeId, route);
-    return route;
+    route.status = TradeRouteStatus.CANCELLED;
+    const updatedRoute = await this.tradeRouteRepository.save(route);
+
+    this.logger.log(`Cancelled trade route ${routeId}`);
+
+    return updatedRoute;
   }
 
-  async createTradeAgreement(
-    civIdA: string,
-    civIdB: string,
-  ): Promise<ITradeAgreement> {
-    const agreement: ITradeAgreement = {
-      id: uuidv4(),
-      civIdA,
-      civIdB,
-      routes: [],
-      establishedAt: new Date(),
-    };
+  async suspendTradeRoute(routeId: string, reason?: string): Promise<TradeRoute> {
+    const route = await this.tradeRouteRepository.findOne({
+      where: { id: routeId },
+    });
 
-    this.tradeAgreements.set(agreement.id, agreement);
-    this.logger.log(`Created trade agreement ${agreement.id} between ${civIdA} and ${civIdB}`);
+    if (!route) {
+      throw new NotFoundException(`Trade route ${routeId} not found`);
+    }
+
+    route.status = TradeRouteStatus.SUSPENDED;
+    const updatedRoute = await this.tradeRouteRepository.save(route);
+
+    this.logger.log(`Suspended trade route ${routeId}. Reason: ${reason || 'N/A'}`);
+
+    return updatedRoute;
+  }
+
+  async resumeTradeRoute(routeId: string): Promise<TradeRoute> {
+    const route = await this.tradeRouteRepository.findOne({
+      where: { id: routeId },
+    });
+
+    if (!route) {
+      throw new NotFoundException(`Trade route ${routeId} not found`);
+    }
+
+    if (route.status !== TradeRouteStatus.SUSPENDED) {
+      throw new BadRequestException('Can only resume suspended trade routes');
+    }
+
+    route.status = TradeRouteStatus.ACTIVE;
+    const updatedRoute = await this.tradeRouteRepository.save(route);
+
+    this.logger.log(`Resumed trade route ${routeId}`);
+
+    return updatedRoute;
+  }
+
+  async processTradeCycle(): Promise<TradeCycleResult[]> {
+    this.logger.log('Starting trade cycle processing...');
+
+    const activeRoutes = await this.tradeRouteRepository.find({
+      where: { status: TradeRouteStatus.ACTIVE },
+    });
+
+    const results: TradeCycleResult[] = [];
+
+    for (const route of activeRoutes) {
+      try {
+        const result = await this.processSingleRoute(route);
+        results.push(result);
+      } catch (error) {
+        this.logger.error(`Error processing route ${route.id}: ${error}`);
+        results.push({
+          routeId: route.id,
+          sourceId: route.sourceCivilizationId,
+          targetId: route.targetCivilizationId,
+          resourceType: route.resourceType,
+          quantity: route.quantity,
+          efficiency: route.efficiency,
+          success: false,
+          message: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+    }
+
+    await this.updateMarketPrices();
+
+    this.logger.log(`Trade cycle completed. Processed ${results.length} routes.`);
     
-    return agreement;
+    return results;
   }
 
-  async getMarketPrices(): Promise<MarketOverviewDto> {
-    const basePrices: Record<ResourceType, number> = {
-      [ResourceType.ORE]: 100,
-      [ResourceType.ENERGY]: 150,
-      [ResourceType.TECHNOLOGY]: 300,
-    };
+  private async processSingleRoute(route: TradeRoute): Promise<TradeCycleResult> {
+    const sourceCiv = await this.validateCivilization(route.sourceCivilizationId);
+    const targetCiv = await this.validateCivilization(route.targetCivilizationId);
 
-    const prices: MarketPriceDto[] = Object.entries(basePrices).map(
-      ([type, basePrice]) => {
-        const fluctuation = (Math.random() - 0.5) * 0.2;
-        const price = basePrice * (1 + fluctuation);
-        const changeRate = fluctuation * 100;
+    if (!sourceCiv || !targetCiv) {
+      route.status = TradeRouteStatus.SUSPENDED;
+      await this.tradeRouteRepository.save(route);
+      
+      return {
+        routeId: route.id,
+        sourceId: route.sourceCivilizationId,
+        targetId: route.targetCivilizationId,
+        resourceType: route.resourceType,
+        quantity: route.quantity,
+        efficiency: route.efficiency,
+        success: false,
+        message: 'Civilization no longer exists',
+      };
+    }
 
-        return {
-          resourceType: type as ResourceType,
-          price: Math.round(price * 100) / 100,
-          changeRate: Math.round(changeRate * 100) / 100,
-          timestamp: new Date().toISOString(),
-        };
-      },
+    const resourceKey = this.getResourceKey(route.resourceType);
+    const availableResource = sourceCiv.resources[resourceKey];
+    
+    if (availableResource < route.quantity) {
+      return {
+        routeId: route.id,
+        sourceId: route.sourceCivilizationId,
+        targetId: route.targetCivilizationId,
+        resourceType: route.resourceType,
+        quantity: 0,
+        efficiency: route.efficiency,
+        success: false,
+        message: 'Insufficient resources at source',
+      };
+    }
+
+    const actualQuantity = Math.floor(route.quantity * route.efficiency);
+
+    await this.transferResources(
+      route.sourceCivilizationId,
+      route.targetCivilizationId,
+      resourceKey,
+      actualQuantity,
     );
 
-    const avgChangeRate =
-      prices.reduce((sum, p) => sum + p.changeRate, 0) / prices.length;
+    route.cyclesCompleted += 1;
+    
+    if (route.maxCycles && route.cyclesCompleted >= route.maxCycles) {
+      route.status = TradeRouteStatus.CANCELLED;
+    }
 
-    let marketTrend: 'bullish' | 'bearish' | 'stable' = 'stable';
-    if (avgChangeRate > 2) marketTrend = 'bullish';
-    else if (avgChangeRate < -2) marketTrend = 'bearish';
+    await this.tradeRouteRepository.save(route);
 
     return {
-      prices,
-      lastUpdated: new Date(),
-      marketTrend,
+      routeId: route.id,
+      sourceId: route.sourceCivilizationId,
+      targetId: route.targetCivilizationId,
+      resourceType: route.resourceType,
+      quantity: actualQuantity,
+      efficiency: route.efficiency,
+      success: true,
     };
   }
 
-  async recordTradeEvent(event: Omit<ITradeEvent, 'id' | 'occurredAt'>): Promise<ITradeEvent> {
-    const tradeEvent: ITradeEvent = {
-      ...event,
-      id: uuidv4(),
-      occurredAt: new Date(),
-    };
+  private async validateCivilization(civId: string): Promise<CivilizationInfo | null> {
+    try {
+      const queryRunner = this.dataSource.createQueryRunner();
+      await queryRunner.connect();
+      
+      const result = await queryRunner.query(
+        `SELECT id, name, resources FROM civilizations WHERE id = $1`,
+        [civId],
+      );
+      
+      await queryRunner.release();
+      
+      if (!result || result.length === 0) {
+        return null;
+      }
 
-    this.tradeEvents.push(tradeEvent);
-    this.logger.log(`Recorded trade event ${tradeEvent.eventType} on route ${event.routeId}`);
-    
-    return tradeEvent;
-  }
-
-  async getTradeEvents(routeId?: string): Promise<ITradeEvent[]> {
-    if (routeId) {
-      return this.tradeEvents.filter((e) => e.routeId === routeId);
+      const civ = result[0];
+      return {
+        id: civ.id,
+        name: civ.name,
+        resources: civ.resources || { ore: 0, energy: 0, techPoints: 0 },
+      };
+    } catch (error) {
+      this.logger.warn(`Civilization validation failed for ${civId}: ${error}`);
+      return null;
     }
-    return this.tradeEvents;
   }
-}
+
+  private async deductEnergy(civId: string, amount: number): Promise<void> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      const result = await queryRunner.query(
+        `UPDATE civilizations 
+         SET resources = jsonb_set(
+           resources, 
+           '{energy}', 
+           (COALESCE((resources->>'energy')::numeric, 0) - $2)::text::jsonb
+         )
+         WHERE id = $1 
+         RETURNING id`,
+        [civId, amount],
+      );
+
+      if (!result || result.length === 0) {
+        throw new Error('Failed to deduct energy');
+      }
+
+      await queryRunner.commitTransaction();
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  private async transferResources(
+    sourceId: string,
+    targetId: string,
+    resourceKey: string,

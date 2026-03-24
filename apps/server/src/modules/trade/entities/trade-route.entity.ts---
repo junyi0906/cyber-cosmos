@@ -1,17 +1,15 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
 
 export enum TradeRouteStatus {
-  ACTIVE = 'active',
-  SUSPENDED = 'suspended',
-  ENDED = 'ended',
+  ACTIVE = 'ACTIVE',
+  CANCELLED = 'CANCELLED',
+  SUSPENDED = 'SUSPENDED',
 }
 
 export enum ResourceType {
-  ORE = 'ore',
-  ENERGY = 'energy',
-  TECHNOLOGY = 'technology',
-  FOOD = 'food',
-  MINERALS = 'minerals',
+  ORE = 'ORE',
+  ENERGY = 'ENERGY',
+  TECH_POINTS = 'TECH_POINTS',
 }
 
 @Entity('trade_routes')
@@ -19,11 +17,11 @@ export class TradeRoute {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'from_civilization_id' })
-  fromCivilizationId: string;
+  @Column({ name: 'source_civilization_id' })
+  sourceCivilizationId: string;
 
-  @Column({ name: 'to_civilization_id' })
-  toCivilizationId: string;
+  @Column({ name: 'target_civilization_id' })
+  targetCivilizationId: string;
 
   @Column({
     type: 'enum',
@@ -35,14 +33,8 @@ export class TradeRoute {
   @Column({ type: 'int' })
   quantity: number;
 
-  @Column({ type: 'float' })
-  distance: number;
-
-  @Column({ type: 'float', name: 'transport_cost' })
-  transportCost: number;
-
-  @Column({ type: 'float', name: 'relation_bonus' })
-  relationBonus: number;
+  @Column({ type: 'decimal', precision: 10, scale: 2 })
+  price: number;
 
   @Column({
     type: 'enum',
@@ -51,11 +43,14 @@ export class TradeRoute {
   })
   status: TradeRouteStatus;
 
-  @Column({ name: 'suspended_at', type: 'timestamp', nullable: true })
-  suspendedAt: Date | null;
+  @Column({ type: 'decimal', precision: 5, scale: 2, default: 1.0, name: 'efficiency' })
+  efficiency: number;
 
-  @Column({ name: 'ended_at', type: 'timestamp', nullable: true })
-  endedAt: Date | null;
+  @Column({ type: 'int', default: 0, name: 'cycles_completed' })
+  cyclesCompleted: number;
+
+  @Column({ type: 'int', name: 'max_cycles', nullable: true })
+  maxCycles: number;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

@@ -1,147 +1,116 @@
-import { Injectable, OnModuleInit, Inject } from '@nestjs/common';
-import { Redis } from 'ioredis';
-
-export interface MarketPrice {
-  resourceType: string;
-  price: number;
-  updatedAt: Date;
-}
-
-export interface PriceHistory {
-  resourceType: string;
-  oldPrice: number;
-  newPrice: number;
-  buyVolume: number;
-  sellVolume: number;
-  timestamp: Date;
-}
-
-const RESOURCE_BASE_PRICES: Record<string, number> = {
-  ore: 100,
-  energy: 150,
-  tech: 500,
-};
-
-const DEFAULT_K = 10000;
-
-const MARKET_PRICES_KEY = 'market:prices';
-const PRICE_HISTORY_KEY = 'market:price_history';
+import { Injectable, Logger } from '@nestjs/common';
+import { ResourceType } from './entities/trade-route.entity';
+import { ResourcePrice, PriceQuote, CivilizationResources } from './interfaces/market.interface';
 
 @Injectable()
-export class MarketService implements OnModuleInit {
-  private priceHistory: PriceHistory[] = [];
+export class MarketService {
+  private readonly logger = new Logger(MarketService.name);
+  
+  private readonly basePrices: Map<ResourceType, number> = new Map([
+    [ResourceType.ORE, 100],
+    [ResourceType.ENERGY, 150],
+    [ResourceType.TECH_POINTS, 500],
+  ]);
 
-  constructor(@Inject('REDIS_CLIENT') private readonly redis: Redis) {}
+  private readonly priceVolatility: Map<ResourceType, number> = new Map([
+    [ResourceType.ORE, 0.2],
+    [ResourceType.ENERGY, 0.15],
+    [ResourceType.TECH_POINTS, 0.3],
+  ]);
 
-  async onModuleInit() {
-    await this.initializeMarketPrices();
+  private readonly marketPrices: Map<string, ResourcePrice> = new Map();
+
+  constructor() {
+    this.initializeMarket();
   }
 
-  getBasePrice(resourceType: string): number {
-    return RESOURCE_BASE_PRICES[resourceType] ?? 100;
+  private initializeMarket(): void {
+    for (const [resourceType, basePrice] of this.basePrices) {
+      const volatility = this.priceVolatility.get(resourceType) || 0.2;
+      this.marketPrices.set(resourceType, {
+        resourceType,
+        basePrice,
+        currentPrice: basePrice,
+        volatility,
+      });
+    }
   }
 
-  calculateNewPrice(
-    oldPrice: number,
-    buyVolume: number,
-    sellVolume: number,
-    k: number = DEFAULT_K,
-  ): number {
-    const volumeDiff = buyVolume - sellVolume;
-    const exponent = volumeDiff / k;
-    const multiplier = Math.exp(exponent);
-    const newPrice = oldPrice * multiplier;
-    const roundedPrice = Math.round(newPrice * 100) / 100;
-    return Math.max(1, roundedPrice);
+  async getResourcePrice(resourceType: ResourceType): Promise<ResourcePrice> {
+    const price = this.marketPrices.get(resourceType);
+    if (!price) {
+      throw new Error(`Unknown resource type: ${resourceType}`);
+    }
+    return price;
   }
 
-  async updateMarketPrice(
-    resourceType: string,
-    buyVolume: number,
-    sellVolume: number,
-    k: number = DEFAULT_K,
-  ): Promise<number> {
-    const currentPrice = await this.getPrice(resourceType);
-    const newPrice = this.calculateNewPrice(currentPrice, buyVolume, sellVolume, k);
-
-    await this.redis.hset(MARKET_PRICES_KEY, resourceType, newPrice.toString());
-
-    const historyEntry: PriceHistory = {
+  async calculatePriceQuote(
+    resourceType: ResourceType,
+    quantity: number,
+  ): Promise<PriceQuote> {
+    const priceInfo = await this.getResourcePrice(resourceType);
+    const price = priceInfo.currentPrice;
+    
+    const volumeModifier = Math.max(0.8, 1 - (quantity / 10000) * 0.1);
+    const finalPrice = price * volumeModifier;
+    
+    return {
       resourceType,
-      oldPrice: currentPrice,
-      newPrice,
-      buyVolume,
-      sellVolume,
-      timestamp: new Date(),
+      price: finalPrice,
+      quantity,
+      totalPrice: finalPrice * quantity,
     };
-    this.priceHistory.push(historyEntry);
-
-    await this.redis.lpush(
-      `${PRICE_HISTORY_KEY}:${resourceType}`,
-      JSON.stringify(historyEntry),
-    );
-    await this.redis.ltrim(`${PRICE_HISTORY_KEY}:${resourceType}`, 0, 99);
-
-    return newPrice;
   }
 
-  async getPrice(resourceType: string): Promise<number> {
-    const priceStr = await this.redis.hget(MARKET_PRICES_KEY, resourceType);
-    if (priceStr) {
-      return parseFloat(priceStr);
-    }
-    return this.getBasePrice(resourceType);
-  }
+  async updatePrices(civilizationResources: CivilizationResources[]): Promise<void> {
+    for (const [resourceType, basePrice] of this.basePrices) {
+      const totalSupply = civilizationResources.reduce((sum, civ) => {
+        const resourceKey = resourceType.toLowerCase().replace('_', '') as keyof typeof civ.resources;
+        return sum + (civ.resources[resourceKey] || 0);
+      }, 0);
 
-  async getAllPrices(): Promise<Record<string, number>> {
-    const prices = await this.redis.hgetall(MARKET_PRICES_KEY);
-    const result: Record<string, number> = {};
+      const avgSupply = totalSupply / Math.max(civilizationResources.length, 1);
+      const supplyRatio = avgSupply / 1000;
+      
+      let priceModifier = 1;
+      if (supplyRatio > 1.5) {
+        priceModifier = 0.8;
+      } else if (supplyRatio > 1) {
+        priceModifier = 0.9;
+      } else if (supplyRatio < 0.5) {
+        priceModifier = 1.3;
+      } else if (supplyRatio < 0.8) {
+        priceModifier = 1.1;
+      }
 
-    for (const [resourceType, priceStr] of Object.entries(prices)) {
-      result[resourceType] = parseFloat(priceStr);
-    }
-
-    for (const [resourceType, basePrice] of Object.entries(RESOURCE_BASE_PRICES)) {
-      if (!(resourceType in result)) {
-        result[resourceType] = basePrice;
+      const volatility = this.priceVolatility.get(resourceType) || 0.2;
+      const randomFactor = 1 + (Math.random() - 0.5) * volatility * 0.1;
+      
+      const currentPrice = this.marketPrices.get(resourceType);
+      if (currentPrice) {
+        currentPrice.currentPrice = Math.max(
+          basePrice * 0.5,
+          Math.min(basePrice * 2, basePrice * priceModifier * randomFactor),
+        );
       }
     }
-
-    return result;
+    
+    this.logger.log('Market prices updated based on supply/demand');
   }
 
-  async initializeMarketPrices(): Promise<void> {
-    const existingPrices = await this.redis.exists(MARKET_PRICES_KEY);
-
-    if (!existingPrices) {
-      const initialPrices: Record<string, string> = {};
-      for (const [resourceType, basePrice] of Object.entries(RESOURCE_BASE_PRICES)) {
-        initialPrices[resourceType] = basePrice.toString();
-      }
-      await this.redis.hset(MARKET_PRICES_KEY, initialPrices);
-    }
+  async applyWeatherModifier(weatherType: string, efficiency: number): Promise<number> {
+    const weatherModifiers: Record<string, number> = {
+      'RESOURCE_STORM': 1.5,
+      'DARK_FLUCTUATION': 0.7,
+      'DARK_MATTER_WAVE': 1.2,
+      'NORMAL': 1.0,
+    };
+    
+    const modifier = weatherModifiers[weatherType] || 1.0;
+    return efficiency * modifier;
   }
 
-  async resetMarketPrices(): Promise<void> {
-    await this.redis.del(MARKET_PRICES_KEY);
-    await this.initializeMarketPrices();
-  }
-
-  getPriceHistory(resourceType: string): PriceHistory[] {
-    return this.priceHistory.filter((h) => h.resourceType === resourceType);
-  }
-
-  async getRecentPriceHistory(resourceType: string, limit: number = 10): Promise<PriceHistory[]> {
-    const historyStrs = await this.redis.lrange(
-      `${PRICE_HISTORY_KEY}:${resourceType}`,
-      0,
-      limit - 1,
-    );
-
-    return historyStrs.map((str) => JSON.parse(str));
-  }
-
-  getResourceTypes(): string[] {
-    return Object.keys(RESOURCE_BASE_PRICES);
+  getAllPrices(): ResourcePrice[] {
+    return Array.from(this.marketPrices.values());
   }
 }
