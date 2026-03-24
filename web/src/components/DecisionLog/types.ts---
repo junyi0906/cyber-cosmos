@@ -1,0 +1,72 @@
+export interface ThoughtNode {
+  id: string;
+  type: 'observation' | 'analysis' | 'hypothesis' | 'conclusion' | 'action';
+  content: string;
+  timestamp: number;
+  confidence?: number;
+  children?: ThoughtNode[];
+  metadata?: {
+    source?: string;
+    relevance?: number;
+    tags?: string[];
+  };
+}
+
+export interface DecisionOption {
+  id: string;
+  name: string;
+  description: string;
+  weight: number;
+  factors: {
+    name: string;
+    value: number;
+    description?: string;
+  }[];
+  selected: boolean;
+}
+
+export interface Decision {
+  id: string;
+  agentId: string;
+  agentName: string;
+  timestamp: number;
+  context: string;
+  thoughtChain: ThoughtNode;
+  options: DecisionOption[];
+  selectedOption: string;
+  reasoning: string;
+  consequences: Consequence[];
+  status: 'pending' | 'executing' | 'completed' | 'failed';
+}
+
+export interface Consequence {
+  id: string;
+  decisionId: string;
+  timestamp: number;
+  type: 'immediate' | 'short_term' | 'long_term';
+  category: 'resource' | 'diplomacy' | 'technology' | 'population' | 'territory';
+  description: string;
+  impact: number;
+  affectedEntities: string[];
+  verified: boolean;
+  expectedImpact?: number;
+  deviation?: number;
+}
+
+export interface DecisionLogState {
+  decisions: Decision[];
+  selectedDecision: Decision | null;
+  loading: boolean;
+  error: string | null;
+  filters: {
+    agentId?: string;
+    status?: Decision['status'];
+    timeRange?: [number, number];
+  };
+}
+
+export interface WeightFactor {
+  factor: string;
+  value: number;
+  fullMark: number;
+}

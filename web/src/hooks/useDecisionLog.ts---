@@ -1,0 +1,275 @@
+import { useState, useEffect, useCallback } from 'react';
+import type { Decision, DecisionLogState, Consequence } from '../components/DecisionLog/types';
+
+const API_BASE = '/api/decisions';
+
+// Mock data generator for development
+const generateMockDecisions = (): Decision[] => {
+  const agents = ['Alpha-Civ', 'Beta-Empire', 'Gamma-Union', 'Delta-Collective'];
+  const statuses: Decision['status'][] = ['pending', 'executing', 'completed', 'failed'];
+  const categories: Consequence['category'][] = ['resource', 'diplomacy', 'technology', 'population', 'territory'];
+  const consequenceTypes: Consequence['type'][] = ['immediate', 'short_term', 'long_term'];
+
+  return Array.from({ length: 10 }, (_, i) => {
+    const timestamp = Date.now() - (i * 3600000);
+    const selectedOption = `option-${Math.floor(Math.random() * 3) + 1}`;
+    
+    return {
+      id: `decision-${i + 1}`,
+      agentId: `agent-${Math.floor(Math.random() * 4) + 1}`,
+      agentName: agents[Math.floor(Math.random() * agents.length)],
+      timestamp,
+      context: `Strategic decision regarding resource allocation and expansion policy in sector ${String.fromCharCode(65 + i)}`,
+      thoughtChain: {
+        id: `thought-root-${i}`,
+        type: 'observation',
+        content: 'Analyzing current situation and available resources',
+        timestamp,
+        confidence: 0.95,
+        children: [
+          {
+            id: `thought-1-${i}`,
+            type: 'analysis',
+            content: 'Resource levels are at 67% capacity, with energy being the primary constraint',
+            timestamp: timestamp + 100,
+            confidence: 0.88,
+            metadata: { source: 'resource_monitor', relevance: 0.92, tags: ['resources', 'energy'] },
+            children: [
+              {
+                id: `thought-1-1-${i}`,
+                type: 'hypothesis',
+                content: 'Expanding to neighboring star system could increase energy production by 40%',
+                timestamp: timestamp + 200,
+                confidence: 0.75,
+                metadata: { source: 'simulation', relevance: 0.85 }
+              },
+              {
+                id: `thought-1-2-${i}`,
+                type: 'hypothesis',
+                content: 'Investing in fusion technology could improve efficiency by 25%',
+                timestamp: timestamp + 250,
+                confidence: 0.82,
+                metadata: { source: 'tech_analysis', relevance: 0.78 }
+              }
+            ]
+          },
+          {
+            id: `thought-2-${i}`,
+            type: 'analysis',
+            content: 'Diplomatic relations with neighboring civilizations are stable but fragile',
+            timestamp: timestamp + 300,
+            confidence: 0.91,
+            metadata: { source: 'diplomacy_module', relevance: 0.87, tags: ['diplomacy', 'relations'] },
+            children: [
+              {
+                id: `thought-2-1-${i}`,
+                type: 'hypothesis',
+                content: 'Aggressive expansion may trigger hostile response from Beta-Empire',
+                timestamp: timestamp + 400,
+                confidence: 0.68,
+                metadata: { source: 'threat_assessment', relevance: 0.9 }
+              }
+            ]
+          },
+          {
+            id: `thought-3-${i}`,
+            type: 'conclusion',
+            content: 'Recommend balanced approach: limited expansion with diplomatic outreach',
+            timestamp: timestamp + 500,
+            confidence: 0.86,
+            metadata: { source: 'decision_synthesis', relevance: 0.95 }
+          }
+        ]
+      },
+      options: [
+        {
+          id: 'option-1',
+          name: 'Aggressive Expansion',
+          description: 'Rapidly expand to new star systems, prioritizing resource acquisition',
+          weight: 0.35,
+          factors: [
+            { name: 'Resource Gain', value: 85, description: 'High potential for resource increase' },
+            { name: 'Risk Level', value: 75, description: 'High risk of conflict' },
+            { name: 'Time Cost', value: 30, description: 'Quick implementation' },
+            { name: 'Diplomatic Impact', value: 80, description: 'Negative impact on relations' },
+            { name: 'Tech Requirement', value: 40, description: 'Moderate tech needed' }
+          ],
+          selected: selectedOption === 'option-1'
+        },
+        {
+          id: 'option-2',
+          name: 'Diplomatic Outreach',
+          description: 'Focus on building alliances and trade agreements',
+          weight: 0.45,
+          factors: [
+            { name: 'Resource Gain', value: 45, description: 'Moderate resource increase through trade' },
+            { name: 'Risk Level', value: 25, description: 'Low risk approach' },
+            { name: 'Time Cost', value: 70, description: 'Longer implementation time' },
+            { name: 'Diplomatic Impact', value: 90, description: 'Positive impact on relations' },
+            { name: 'Tech Requirement', value: 20, description: 'Minimal tech needed' }
+          ],
+          selected: selectedOption === 'option-2'
+        },
+        {
+          id: 'option-3',
+          name: 'Technology Focus',
+          description: 'Invest heavily in research and development',
+          weight: 0.20,
+          factors: [
+            { name: 'Resource Gain', value: 20, description: 'Initial resource cost' },
+            { name: 'Risk Level', value: 40, description: 'Moderate risk of falling behind' },
+            { name: 'Time Cost', value: 90, description: 'Long-term investment' },
+            { name: 'Diplomatic Impact', value: 50, description: 'Neutral diplomatic impact' },
+            { name: 'Tech Requirement', value: 95, description: 'High tech focus' }
+          ],
+          selected: selectedOption === 'option-3'
+        }
+      ],
+      selectedOption,
+      reasoning: `After analyzing all factors, the decision was made to pursue ${selectedOption === 'option-1' ? 'Aggressive Expansion' : selectedOption === 'option-2' ? 'Diplomatic Outreach' : 'Technology Focus'} strategy. This choice optimizes for long-term stability while maintaining acceptable risk levels.`,
+      consequences: Array.from({ length: Math.floor(Math.random() * 4) + 2 }, (_, j) => ({
+        id: `consequence-${i}-${j}`,
+        decisionId: `decision-${i + 1}`,
+        timestamp: timestamp + (j + 1) * 86400000,
+        type: consequenceTypes[Math.floor(Math.random() * consequenceTypes.length)],
+        category: categories[Math.floor(Math.random() * categories.length)],
+        description: `Observed outcome: ${['Resource production increased', 'New trade route established', 'Research breakthrough achieved', 'Population growth accelerated', 'Territory expanded'][Math.floor(Math.random() * 5)]}`,
+        impact: Math.random() * 100 - 20,
+        affectedEntities: [`entity-${Math.floor(Math.random() * 5)}`, `entity-${Math.floor(Math.random() * 5)}`],
+        verified: Math.random() > 0.3,
+        expectedImpact: Math.random() * 60 + 20,
+        deviation: Math.random() * 30 - 15
+      })),
+      status: statuses[Math.floor(Math.random() * statuses.length)]
+    };
+  });
+};
+
+export function useDecisionLog() {
+  const [state, setState] = useState<DecisionLogState>({
+    decisions: [],
+    selectedDecision: null,
+    loading: true,
+    error: null,
+    filters: {}
+  });
+
+  const fetchDecisions = useCallback(async () => {
+    setState(prev => ({ ...prev, loading: true, error: null }));
+    
+    try {
+      // In production, this would be a real API call
+      // const response = await fetch(API_BASE);
+      // const data = await response.json();
+      
+      // Using mock data for development
+      await new Promise(resolve => setTimeout(resolve, 500));
+      const data = generateMockDecisions();
+      
+      setState(prev => ({
+        ...prev,
+        decisions: data,
+        loading: false
+      }));
+    } catch (error) {
+      setState(prev => ({
+        ...prev,
+        error: error instanceof Error ? error.message : 'Failed to fetch decisions',
+        loading: false
+      }));
+    }
+  }, []);
+
+  const selectDecision = useCallback((decision: Decision | null) => {
+    setState(prev => ({
+      ...prev,
+      selectedDecision: decision
+    }));
+  }, []);
+
+  const setFilters = useCallback((filters: Partial<DecisionLogState['filters']>) => {
+    setState(prev => ({
+      ...prev,
+      filters: { ...prev.filters, ...filters }
+    }));
+  }, []);
+
+  const getFilteredDecisions = useCallback(() => {
+    let filtered = state.decisions;
+    
+    if (state.filters.agentId) {
+      filtered = filtered.filter(d => d.agentId === state.filters.agentId);
+    }
+    if (state.filters.status) {
+      filtered = filtered.filter(d => d.status === state.filters.status);
+    }
+    if (state.filters.timeRange) {
+      const [start, end] = state.filters.timeRange;
+      filtered = filtered.filter(d => d.timestamp >= start && d.timestamp <= end);
+    }
+    
+    return filtered.sort((a, b) => b.timestamp - a.timestamp);
+  }, [state.decisions, state.filters]);
+
+  const getDecisionById = useCallback((id: string) => {
+    return state.decisions.find(d => d.id === id) || null;
+  }, [state.decisions]);
+
+  const getDecisionsByAgent = useCallback((agentId: string) => {
+    return state.decisions.filter(d => d.agentId === agentId);
+  }, [state.decisions]);
+
+  useEffect(() => {
+    fetchDecisions();
+  }, [fetchDecisions]);
+
+  return {
+    ...state,
+    filteredDecisions: getFilteredDecisions(),
+    selectDecision,
+    setFilters,
+    getDecisionById,
+    getDecisionsByAgent,
+    refresh: fetchDecisions
+  };
+}
+
+export function useDecisionStats(decisions: Decision[]) {
+  const stats = {
+    total: decisions.length,
+    byStatus: {} as Record<Decision['status'], number>,
+    byAgent: {} as Record<string, number>,
+    avgConfidence: 0,
+    avgImpact: 0
+  };
+
+  if (decisions.length === 0) return stats;
+
+  let totalConfidence = 0;
+  let totalImpact = 0;
+  let impactCount = 0;
+
+  decisions.forEach(decision => {
+    // Count by status
+    stats.byStatus[decision.status] = (stats.byStatus[decision.status] || 0) + 1;
+    
+    // Count by agent
+    stats.byAgent[decision.agentName] = (stats.byAgent[decision.agentName] || 0) + 1;
+    
+    // Calculate confidence
+    if (decision.thoughtChain.confidence) {
+      totalConfidence += decision.thoughtChain.confidence;
+    }
+    
+    // Calculate impact
+    decision.consequences.forEach(c => {
+      totalImpact += c.impact;
+      impactCount++;
+    });
+  });
+
+  stats.avgConfidence = totalConfidence / decisions.length;
+  stats.avgImpact = impactCount > 0 ? totalImpact / impactCount : 0;
+
+  return stats;
+}

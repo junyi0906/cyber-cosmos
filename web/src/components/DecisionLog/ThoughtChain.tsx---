@@ -1,0 +1,90 @@
+import React, { useState, useMemo } from 'react';
+import type { ThoughtNode } from './types';
+
+interface ThoughtChainProps {
+  thoughtChain: ThoughtNode;
+  maxDepth?: number;
+  onNodeClick?: (node: ThoughtNode) => void;
+  selectedNodeId?: string;
+}
+
+const typeColors: Record<ThoughtNode['type'], { bg: string; border: string; text: string }> = {
+  observation: { bg: 'bg-blue-900/30', border: 'border-blue-500', text: 'text-blue-300' },
+  analysis: { bg: 'bg-purple-900/30', border: 'border-purple-500', text: 'text-purple-300' },
+  hypothesis: { bg: 'bg-yellow-900/30', border: 'border-yellow-500', text: 'text-yellow-300' },
+  conclusion: { bg: 'bg-green-900/30', border: 'border-green-500', text: 'text-green-300' },
+  action: { bg: 'bg-red-900/30', border: 'border-red-500', text: 'text-red-300' }
+};
+
+const typeIcons: Record<ThoughtNode['type'], string> = {
+  observation: '👁️',
+  analysis: '🔍',
+  hypothesis: '💡',
+  conclusion: '✓',
+  action: '⚡'
+};
+
+const ThoughtNodeComponent: React.FC<{
+  node: ThoughtNode;
+  depth: number;
+  maxDepth: number;
+  isExpanded: boolean;
+  onToggle: () => void;
+  onClick: () => void;
+  isSelected: boolean;
+}> = ({ node, depth, maxDepth, isExpanded, onToggle, onClick, isSelected }) => {
+  const colors = typeColors[node.type];
+  const hasChildren = node.children && node.children.length > 0;
+  const canExpand = depth < maxDepth && hasChildren;
+
+  return (
+    <div className="relative">
+      {/* Connection line to parent */}
+      {depth > 0 && (
+        <div className="absolute left-0 top-0 w-px h-full -translate-x-4 bg-gray-700" />
+      )}
+      
+      {/* Node content */}
+      <div
+        className={`
+          relative ml-4 mb-2 p-3 rounded-lg border-2 cursor-pointer transition-all duration-200
+          ${colors.bg} ${colors.border}
+          ${isSelected ? 'ring-2 ring-white ring-opacity-50' : ''}
+          hover:scale-[1.02] hover:shadow-lg
+        `}
+        onClick={onClick}
+      >
+        {/* Header */}
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-lg">{typeIcons[node.type]}</span>
+          <span className={`text-xs font-semibold uppercase ${colors.text}`}>
+            {node.type}
+          </span>
+          {node.confidence !== undefined && (
+            <span className="ml-auto text-xs text-gray-400">
+              {(node.confidence * 100).toFixed(0)}% confidence
+            </span>
+          )}
+        </div>
+        
+        {/* Content */}
+        <p className="text-sm text-gray-200 leading-relaxed">{node.content}</p>
+        
+        {/* Metadata */}
+        {node.metadata && (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {node.metadata.source && (
+              <span className="text-xs px-2 py-0.5 bg-gray-800 rounded text-gray-400">
+                📊 {node.metadata.source}
+              </span>
+            )}
+            {node.metadata.tags?.map(tag => (
+              <span key={tag} className="text-xs px-2 py-0.5 bg-gray-700 rounded text-gray-300">
+                #{tag}
+              </span>
+            ))}
+          </div>
+        )}
+        
+        {/* Expand button */}
+        {canExpand && (
