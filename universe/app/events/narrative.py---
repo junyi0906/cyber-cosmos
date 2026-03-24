@@ -1,0 +1,510 @@
+"""
+Narrative Engine and History Recorder
+Handles event chain persistence and narrative generation
+"""
+import json
+import asyncio
+from datetime import datetime
+from typing import List, Dict, Any, Optional
+from dataclasses import dataclass, field, asdict
+from enum import Enum
+import asyncpg
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class EventType(Enum):
+    """Event types supported by the narrative engine"""
+    # Macro events
+    SUPERNOVA = "supernova"
+    BLACK_HOLE_FORMATION = "black_hole_formation"
+    NEBULA_COLLISION = "nebula_collision"
+    COSMIC_RADIATION = "cosmic_radiation"
+    
+    # Micro events
+    RESOURCE_DEPLETION = "resource_depletion"
+    ENVIRONMENTAL_CHANGE = "environmental_change"
+    TECH_SINGULARITY = "tech_singularity"
+    
+    # Civilization events
+    CIVILIZATION_RISE = "civilization_rise"
+    CIVILIZATION_FALL = "civilization_fall"
+    WAR = "war"
+    ALLIANCE_FORMATION = "alliance_formation"
+    TRADE_AGREEMENT = "trade_agreement"
+    FIRST_CONTACT = "first_contact"
+    
+    # Diplomatic events
+    DECLARATION_OF_WAR = "declaration_of_war"
+    PEACE_TREATY = "peace_treaty"
+    CULTURAL_EXCHANGE = "cultural_exchange"
+
+
+@dataclass
+class EventImpact:
+    """Represents the impact of an event on civilization attributes"""
+    population_change: float = 0.0
+    technology_change: float = 0.0
+    economy_change: float = 0.0
+    military_change: float = 0.0
+    culture_change: float = 0.0
+    
+    def to_dict(self) -> Dict[str, float]:
+        return asdict(self)
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, float]) -> 'EventImpact':
+        return cls(
+            population_change=data.get('population_change', 0.0),
+            technology_change=data.get('technology_change', 0.0),
+            economy_change=data.get('economy_change', 0.0),
+            military_change=data.get('military_change', 0.0),
+            culture_change=data.get('culture_change', 0.0)
+        )
+
+
+@dataclass
+class UniverseEvent:
+    """Represents a single event in the universe"""
+    event_id: str
+    event_type: EventType
+    timestamp: datetime
+    description: str
+    location: Optional[Dict[str, float]] = None
+    participants: List[str] = field(default_factory=list)
+    impact: Optional[EventImpact] = None
+    context: Dict[str, Any] = field(default_factory=dict)
+    parent_event_id: Optional[str] = None
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'event_id': self.event_id,
+            'event_type': self.event_type.value,
+            'timestamp': self.timestamp.isoformat(),
+            'description': self.description,
+            'location': self.location,
+            'participants': self.participants,
+            'impact': self.impact.to_dict() if self.impact else None,
+            'context': self.context,
+            'parent_event_id': self.parent_event_id
+        }
+
+
+@dataclass
+class EventChain:
+    """Represents a chain of related events forming a narrative"""
+    chain_id: str
+    name: str
+    events: List[UniverseEvent] = field(default_factory=list)
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    
+    def add_event(self, event: UniverseEvent):
+        """Add an event to the chain"""
+        self.events.append(event)
+        if self.start_time is None or event.timestamp < self.start_time:
+            self.start_time = event.timestamp
+        if self.end_time is None or event.timestamp > self.end_time:
+            self.end_time = event.timestamp
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'chain_id': self.chain_id,
+            'name': self.name,
+            'events': [e.to_dict() for e in self.events],
+            'start_time': self.start_time.isoformat() if self.start_time else None,
+            'end_time': self.end_time.isoformat() if self.end_time else None,
+            'metadata': self.metadata
+        }
+
+
+class HistoryRecorder:
+    """
+    Records and persists event chains to PostgreSQL database.
+    Manages the historical narrative of the universe simulation.
+    """
+    
+    def __init__(self, db_config: Dict[str, Any]):
+        """
+        Initialize the history recorder.
+        
+        Args:
+            db_config: Database configuration with keys:
+                - host: PostgreSQL host
+                - port: PostgreSQL port
+                - database: Database name
+                - user: Database user
+                - password: Database password
+        """
+        self.db_config = db_config
+        self.pool: Optional[asyncpg.Pool] = None
+        self._initialized = False
+    
+    async def initialize(self):
+        """Initialize database connection pool and create tables"""
+        if self._initialized:
+            return
+            
+        try:
+            self.pool = await asyncpg.create_pool(
+                host=self.db_config.get('host', 'localhost'),
+                port=self.db_config.get('port', 5432),
+                database=self.db_config.get('database', 'cyber_cosmos'),
+                user=self.db_config.get('user', 'postgres'),
+                password=self.db_config.get('password', ''),
+                min_size=2,
+                max_size=10
+            )
+            
+            await self._create_tables()
+            self._initialized = True
+            logger.info("HistoryRecorder initialized successfully")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize HistoryRecorder: {e}")
+            raise
+    
+    async def _create_tables(self):
+        """Create necessary database tables"""
+        async with self.pool.acquire() as conn:
+            # Events table
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS universe_events (
+                    id SERIAL PRIMARY KEY,
+                    event_id VARCHAR(255) UNIQUE NOT NULL,
+                    event_type VARCHAR(100) NOT NULL,
+                    timestamp TIMESTAMP NOT NULL,
+                    description TEXT,
+                    location JSONB,
+                    participants JSONB,
+                    impact JSONB,
+                    context JSONB,
+                    parent_event_id VARCHAR(255),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # Event chains table
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS event_chains (
+                    id SERIAL PRIMARY KEY,
+                    chain_id VARCHAR(255) UNIQUE NOT NULL,
+                    name VARCHAR(255) NOT NULL,
+                    start_time TIMESTAMP,
+                    end_time TIMESTAMP,
+                    metadata JSONB,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # Chain events junction table
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS chain_events (
+                    id SERIAL PRIMARY KEY,
+                    chain_id VARCHAR(255) REFERENCES event_chains(chain_id),
+                    event_id VARCHAR(255) REFERENCES universe_events(event_id),
+                    sequence_order INTEGER,
+                    UNIQUE(chain_id, event_id)
+                )
+            ''')
+            
+            # Civilization history table
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS civilization_history (
+                    id SERIAL PRIMARY KEY,
+                    civilization_id VARCHAR(255) NOT NULL,
+                    event_id VARCHAR(255) REFERENCES universe_events(event_id),
+                    attribute_changes JSONB,
+                    timestamp TIMESTAMP NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # Create indexes
+            await conn.execute('''
+                CREATE INDEX IF NOT EXISTS idx_events_timestamp ON universe_events(timestamp);
+                CREATE INDEX IF NOT EXISTS idx_events_type ON universe_events(event_type);
+                CREATE INDEX IF NOT EXISTS idx_events_participants ON universe_events USING GIN(participants);
+                CREATE INDEX IF NOT EXISTS idx_civ_history_civ_id ON civilization_history(civilization_id);
+            ''')
+    
+    async def save_event(self, event: UniverseEvent) -> bool:
+        """
+        Save a single event to the database.
+        
+        Args:
+            event: The UniverseEvent to save
+            
+        Returns:
+            True if saved successfully, False otherwise
+        """
+        if not self._initialized:
+            await self.initialize()
+        
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute('''
+                    INSERT INTO universe_events 
+                    (event_id, event_type, timestamp, description, location, 
+                     participants, impact, context, parent_event_id)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                    ON CONFLICT (event_id) DO UPDATE SET
+                    description = EXCLUDED.description,
+                    impact = EXCLUDED.impact,
+                    context = EXCLUDED.context
+                ''',
+                    event.event_id,
+                    event.event_type.value,
+                    event.timestamp,
+                    event.description,
+                    json.dumps(event.location) if event.location else None,
+                    json.dumps(event.participants),
+                    json.dumps(event.impact.to_dict()) if event.impact else None,
+                    json.dumps(event.context),
+                    event.parent_event_id
+                )
+                return True
+                
+        except Exception as e:
+            logger.error(f"Failed to save event {event.event_id}: {e}")
+            return False
+    
+    async def save_event_chain(self, chain: EventChain) -> bool:
+        """
+        Save an event chain to PostgreSQL database.
+        
+        Args:
+            chain: The EventChain to save
+            
+        Returns:
+            True if saved successfully, False otherwise
+        """
+        if not self._initialized:
+            await self.initialize()
+        
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.transaction():
+                    # Save chain metadata
+                    await conn.execute('''
+                        INSERT INTO event_chains 
+                        (chain_id, name, start_time, end_time, metadata)
+                        VALUES ($1, $2, $3, $4, $5)
+                        ON CONFLICT (chain_id) DO UPDATE SET
+                        name = EXCLUDED.name,
+                        start_time = EXCLUDED.start_time,
+                        end_time = EXCLUDED.end_time,
+                        metadata = EXCLUDED.metadata
+                    ''',
+                        chain.chain_id,
+                        chain.name,
+                        chain.start_time,
+                        chain.end_time,
+                        json.dumps(chain.metadata)
+                    )
+                    
+                    # Save each event and link to chain
+                    for idx, event in enumerate(chain.events):
+                        # Save event
+                        await self.save_event(event)
+                        
+                        # Link event to chain
+                        await conn.execute('''
+                            INSERT INTO chain_events (chain_id, event_id, sequence_order)
+                            VALUES ($1, $2, $3)
+                            ON CONFLICT (chain_id, event_id) DO UPDATE SET
+                            sequence_order = EXCLUDED.sequence_order
+                        ''',
+                            chain.chain_id,
+                            event.event_id,
+                            idx
+                        )
+                        
+                        # Update civilization history if impact exists
+                        if event.impact:
+                            for civ_id in event.participants:
+                                await conn.execute('''
+                                    INSERT INTO civilization_history 
+                                    (civilization_id, event_id, attribute_changes, timestamp)
+                                    VALUES ($1, $2, $3, $4)
+                                ''',
+                                    civ_id,
+                                    event.event_id,
+                                    json.dumps(event.impact.to_dict()),
+                                    event.timestamp
+                                )
+            
+            logger.info(f"Saved event chain {chain.chain_id} with {len(chain.events)} events")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to save event chain {chain.chain_id}: {e}")
+            return False
+    
+    async def get_event_chain(self, chain_id: str) -> Optional[EventChain]:
+        """
+        Retrieve an event chain by ID.
+        
+        Args:
+            chain_id: The chain ID to retrieve
+            
+        Returns:
+            EventChain if found, None otherwise
+        """
+        if not self._initialized:
+            await self.initialize()
+        
+        try:
+            async with self.pool.acquire() as conn:
+                # Get chain metadata
+                chain_row = await conn.fetchrow('''
+                    SELECT chain_id, name, start_time, end_time, metadata
+                    FROM event_chains WHERE chain_id = $1
+                ''', chain_id)
+                
+                if not chain_row:
+                    return None
+                
+                # Get events in order
+                event_rows = await conn.fetch('''
+                    SELECT e.event_id, e.event_type, e.timestamp, e.description,
+                           e.location, e.participants, e.impact, e.context, e.parent_event_id
+                    FROM universe_events e
+                    JOIN chain_events ce ON e.event_id = ce.event_id
+                    WHERE ce.chain_id = $1
+                    ORDER BY ce.sequence_order
+                ''', chain_id)
+                
+                events = []
+                for row in event_rows:
+                    impact = None
+                    if row['impact']:
+                        impact = EventImpact.from_dict(json.loads(row['impact']))
+                    
+                    event = UniverseEvent(
+                        event_id=row['event_id'],
+                        event_type=EventType(row['event_type']),
+                        timestamp=row['timestamp'],
+                        description=row['description'] or '',
+                        location=json.loads(row['location']) if row['location'] else None,
+                        participants=json.loads(row['participants']) if row['participants'] else [],
+                        impact=impact,
+                        context=json.loads(row['context']) if row['context'] else {},
+                        parent_event_id=row['parent_event_id']
+                    )
+                    events.append(event)
+                
+                return EventChain(
+                    chain_id=chain_row['chain_id'],
+                    name=chain_row['name'],
+                    events=events,
+                    start_time=chain_row['start_time'],
+                    end_time=chain_row['end_time'],
+                    metadata=json.loads(chain_row['metadata']) if chain_row['metadata'] else {}
+                )
+                
+        except Exception as e:
+            logger.error(f"Failed to get event chain {chain_id}: {e}")
+            return None
+    
+    async def get_civilization_history(
+        self, 
+        civilization_id: str,
+        limit: int = 100
+    ) -> List[UniverseEvent]:
+        """
+        Get event history for a specific civilization.
+        
+        Args:
+            civilization_id: The civilization ID
+            limit: Maximum number of events to return
+            
+        Returns:
+            List of events involving the civilization
+        """
+        if not self._initialized:
+            await self.initialize()
+        
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch('''
+                    SELECT e.event_id, e.event_type, e.timestamp, e.description,
+                           e.location, e.participants, e.impact, e.context, e.parent_event_id
+                    FROM universe_events e
+                    WHERE $1 = ANY(e.participants::jsonb::text[])
+                    ORDER BY e.timestamp DESC
+                    LIMIT $2
+                ''', civilization_id, limit)
+                
+                events = []
+                for row in rows:
+                    impact = None
+                    if row['impact']:
+                        impact = EventImpact.from_dict(json.loads(row['impact']))
+                    
+                    event = UniverseEvent(
+                        event_id=row['event_id'],
+                        event_type=EventType(row['event_type']),
+                        timestamp=row['timestamp'],
+                        description=row['description'] or '',
+                        location=json.loads(row['location']) if row['location'] else None,
+                        participants=json.loads(row['participants']) if row['participants'] else [],
+                        impact=impact,
+                        context=json.loads(row['context']) if row['context'] else {},
+                        parent_event_id=row['parent_event_id']
+                    )
+                    events.append(event)
+                
+                return events
+                
+        except Exception as e:
+            logger.error(f"Failed to get civilization history: {e}")
+            return []
+    
+    async def get_events_by_type(
+        self,
+        event_type: EventType,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+        limit: int = 100
+    ) -> List[UniverseEvent]:
+        """
+        Get events filtered by type and time range.
+        
+        Args:
+            event_type: Type of events to retrieve
+            start_time: Optional start time filter
+            end_time: Optional end time filter
+            limit: Maximum number of events to return
+            
+        Returns:
+            List of matching events
+        """
+        if not self._initialized:
+            await self.initialize()
+        
+        try:
+            async with self.pool.acquire() as conn:
+                query = '''
+                    SELECT event_id, event_type, timestamp, description,
+                           location, participants, impact, context, parent_event_id
+                    FROM universe_events
+                    WHERE event_type = $1
+                '''
+                params = [event_type.value]
+                param_idx = 2
+                
+                if start_time:
+                    query += f" AND timestamp >= ${param_idx}"
+                    params.append(start_time)
+                    param_idx += 1
+                
+                if end_time:
+                    query += f" AND timestamp <= ${param_idx}"
+                    params.append(end_time)
+                    param_idx += 1
+                
+                query += f" ORDER BY timestamp DESC LIMIT ${param_idx}"
+                params.append(limit

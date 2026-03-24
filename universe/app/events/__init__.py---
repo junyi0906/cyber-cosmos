@@ -1,3 +1,4 @@
-from .generator import MacroEventGenerator, MicroEventGenerator
+# Events Module
+from .narrative import HistoryRecorder, EventChain, EventImpact
 
-__all__ = ['MacroEventGenerator', 'MicroEventGenerator']
+__all__ = ['HistoryRecorder', 'EventChain', 'EventImpact']
