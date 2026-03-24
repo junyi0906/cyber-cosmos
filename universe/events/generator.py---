@@ -1,0 +1,162 @@
+"""
+事件生成器模块
+根据宇宙状态动态生成各类事件
+"""
+import random
+import math
+from typing import Dict, List, Optional, Any, Tuple
+from dataclasses import dataclass, field
+from datetime import datetime
+import uuid
+
+from .probabilities import (
+    EventProbabilities,
+    EventConfig,
+    EventType,
+    EventCategory,
+    EventSeverity,
+    event_probabilities
+)
+
+
+@dataclass
+class Event:
+    """事件数据结构"""
+    event_id: str
+    event_type: EventType
+    category: EventCategory
+    severity: EventSeverity
+    description: str
+    tick: int
+    timestamp: datetime = field(default_factory=datetime.now)
+    affected_entities: Dict[str, Any] = field(default_factory=dict)
+    effects: Dict[str, Any] = field(default_factory=dict)
+    duration: int = 0  # 事件持续时间（tick数），0表示瞬时事件
+    source_coordinates: Optional[Tuple[float, float, float]] = None
+    radius: float = 0.0  # 影响半径
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典格式"""
+        return {
+            "event_id": self.event_id,
+            "event_type": self.event_type.value,
+            "category": self.category.value,
+            "severity": self.severity.value,
+            "description": self.description,
+            "tick": self.tick,
+            "timestamp": self.timestamp.isoformat(),
+            "affected_entities": self.affected_entities,
+            "effects": self.effects,
+            "duration": self.duration,
+            "source_coordinates": self.source_coordinates,
+            "radius": self.radius
+        }
+
+
+@dataclass
+class UniverseSnapshot:
+    """宇宙状态快照"""
+    tick: int
+    age: float  # 宇宙年龄
+    star_count: int
+    planet_count: int
+    civilizations: List[Dict[str, Any]]
+    active_wars: int
+    alliances: int
+    resources: Dict[str, float]
+    coordinates_range: Tuple[float, float, float]  # (x, y, z) 最大坐标
+    nebula_count: int = 0
+    black_hole_count: int = 0
+    radiation_level: float = 0.0
+    
+    def get_civilization_by_id(self, civ_id: str) -> Optional[Dict[str, Any]]:
+        """根据ID获取文明"""
+        for civ in self.civilizations:
+            if civ.get("id") == civ_id:
+                return civ
+        return None
+
+
+class EventGenerator:
+    """事件生成器类"""
+    
+    def __init__(self, probabilities: Optional[EventProbabilities] = None):
+        """
+        初始化事件生成器
+        
+        Args:
+            probabilities: 事件概率配置实例，默认使用全局配置
+        """
+        self.probabilities = probabilities or event_probabilities
+        self._event_history: List[Event] = []
+        self._cooldown_tracker: Dict[EventType, int] = {}
+        self._random_seed: Optional[int] = None
+    
+    def set_random_seed(self, seed: int):
+        """设置随机种子（用于测试或可重现性）"""
+        self._random_seed = seed
+        random.seed(seed)
+    
+    def _generate_event_id(self) -> str:
+        """生成唯一事件ID"""
+        return f"evt-{uuid.uuid4().hex[:12]}"
+    
+    def _calculate_event_probability(
+        self,
+        config: EventConfig,
+        snapshot: UniverseSnapshot,
+        context: Optional[Dict[str, Any]] = None
+    ) -> float:
+        """
+        基于状态计算事件触发概率
+        
+        Args:
+            config: 事件配置
+            snapshot: 宇宙状态快照
+            context: 额外上下文信息
+        
+        Returns:
+            计算后的概率值 (0.0 - 1.0)
+        """
+        # 检查冷却时间
+        last_trigger_tick = self._cooldown_tracker.get(config.event_type, -config.cooldown_ticks)
+        if snapshot.tick - last_trigger_tick < config.cooldown_ticks:
+            return 0.0
+        
+        # 基础概率
+        probability = config.base_probability
+        
+        # 应用修饰符
+        modifiers = config.modifiers
+        context = context or {}
+        
+        # 宇宙年龄影响
+        if "universe_age" in modifiers:
+            age_factor = min(snapshot.age / 10000, 1.0)  # 归一化
+            probability *= (1 + modifiers["universe_age"] * age_factor)
+        
+        # 恒星数量影响
+        if "star_count" in modifiers:
+            star_factor = min(snapshot.star_count / 1000, 1.0)
+            probability *= (1 + modifiers["star_count"] * star_factor)
+        
+        # 星云数量影响
+        if "nebula_count" in modifiers:
+            nebula_factor = min(snapshot.nebula_count / 50, 1.0)
+            probability *= (1 + modifiers["nebula_count"] * nebula_factor)
+        
+        # 战争状态影响
+        if config.requires_peace and snapshot.active_wars > 0:
+            probability *= 0.3  # 和平事件在战争期间概率降低
+        if config.requires_war and snapshot.active_wars == 0:
+            probability *= 0.2  # 战争事件在和平期间概率降低
+        
+        # 文明相关影响
+        if "civilization_count" in modifiers:
+            civ_factor = len(snapshot.civilizations) / 20
+            probability *= (1 + modifiers["civilization_count"] * min(civ_factor, 1.0))
+        
+        # 资源丰度影响
+        if "resource_abundance" in modifiers:
+            total_resources = sum(snapshot.resources.values()) if snapshot.resources else 0
+            resource_factor = min(total_resources / 10000, 1.0)
