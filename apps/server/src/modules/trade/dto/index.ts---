@@ -1,1 +1,1 @@
-export * from './create-trade-route.dto';
+export * from './create-route.dto';

@@ -1,39 +1,66 @@
-import { Entity, Column, PrimaryColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
-import { ResourceType, TradeRouteStatus } from './interfaces/trade.interface';
+import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
+import { ResourceType } from './dto/create-route.dto';
+
+export enum RouteStatus {
+  ACTIVE = 'active',
+  PAUSED = 'paused',
+  CANCELLED = 'cancelled',
+  COMPLETED = 'completed',
+}
 
 @Entity('trade_routes')
-export class TradeRouteEntity {
-  @PrimaryColumn('uuid')
+export class TradeRoute {
+  @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column('uuid')
-  fromCivId: string;
+  @Column({ name: 'source_civ_id' })
+  sourceCivId: string;
 
-  @Column('uuid')
-  toCivId: string;
+  @Column({ name: 'target_civ_id' })
+  targetCivId: string;
 
   @Column({
     type: 'enum',
     enum: ResourceType,
+    name: 'offer_type',
   })
-  resourceType: ResourceType;
+  offerType: ResourceType;
 
-  @Column('integer')
-  amount: number;
+  @Column({ name: 'offer_quantity', type: 'decimal', precision: 12, scale: 2 })
+  offerQuantity: number;
 
   @Column({
     type: 'enum',
-    enum: TradeRouteStatus,
-    default: TradeRouteStatus.ACTIVE,
+    enum: ResourceType,
+    name: 'request_type',
   })
-  status: TradeRouteStatus;
+  requestType: ResourceType;
 
-  @Column('decimal', { precision: 5, scale: 2, default: 1.0 })
+  @Column({ name: 'request_quantity', type: 'decimal', precision: 12, scale: 2 })
+  requestQuantity: number;
+
+  @Column({
+    type: 'enum',
+    enum: RouteStatus,
+    default: RouteStatus.ACTIVE,
+  })
+  status: RouteStatus;
+
+  @Column({ type: 'decimal', precision: 5, scale: 2, default: 1.0 })
   efficiency: number;
 
-  @CreateDateColumn()
+  @Column({ type: 'int', default: 3600 })
+  interval: number;
+
+  @Column({ name: 'last_execution', type: 'timestamp', nullable: true })
+  lastExecution: Date;
+
+  @Column({ name: 'total_trades', type: 'int', default: 0 })
+  totalTrades: number;
+
+  @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
 }

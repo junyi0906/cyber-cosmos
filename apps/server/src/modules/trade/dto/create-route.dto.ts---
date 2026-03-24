@@ -1,0 +1,47 @@
+import { IsString, IsNumber, IsEnum, IsPositive, IsOptional, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+
+export enum ResourceType {
+  ORE = 'ore',
+  ENERGY = 'energy',
+  TECH_POINTS = 'tech_points',
+}
+
+export class ResourceOfferDto {
+  @IsEnum(ResourceType)
+  type: ResourceType;
+
+  @IsNumber()
+  @IsPositive()
+  quantity: number;
+}
+
+export class ResourceRequestDto {
+  @IsEnum(ResourceType)
+  type: ResourceType;
+
+  @IsNumber()
+  @IsPositive()
+  quantity: number;
+}
+
+export class CreateRouteDto {
+  @IsString()
+  sourceCivId: string;
+
+  @IsString()
+  targetCivId: string;
+
+  @ValidateNested()
+  @Type(() => ResourceOfferDto)
+  offer: ResourceOfferDto;
+
+  @ValidateNested()
+  @Type(() => ResourceRequestDto)
+  request: ResourceRequestDto;
+
+  @IsNumber()
+  @IsPositive()
+  @IsOptional()
+  interval?: number;
+}

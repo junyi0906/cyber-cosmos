@@ -1,116 +1,54 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ResourceType } from './entities/trade-route.entity';
-import { ResourcePrice, PriceQuote, CivilizationResources } from './interfaces/market.interface';
+import { MarketEngine, MarketPrice } from './market.engine';
+import { ResourceType } from './dto/create-route.dto';
 
 @Injectable()
 export class MarketService {
   private readonly logger = new Logger(MarketService.name);
-  
-  private readonly basePrices: Map<ResourceType, number> = new Map([
-    [ResourceType.ORE, 100],
-    [ResourceType.ENERGY, 150],
-    [ResourceType.TECH_POINTS, 500],
-  ]);
 
-  private readonly priceVolatility: Map<ResourceType, number> = new Map([
-    [ResourceType.ORE, 0.2],
-    [ResourceType.ENERGY, 0.15],
-    [ResourceType.TECH_POINTS, 0.3],
-  ]);
+  constructor(private readonly marketEngine: MarketEngine) {}
 
-  private readonly marketPrices: Map<string, ResourcePrice> = new Map();
-
-  constructor() {
-    this.initializeMarket();
+  getMarketPrices(): MarketPrice[] {
+    return this.marketEngine.getCurrentPrices();
   }
 
-  private initializeMarket(): void {
-    for (const [resourceType, basePrice] of this.basePrices) {
-      const volatility = this.priceVolatility.get(resourceType) || 0.2;
-      this.marketPrices.set(resourceType, {
-        resourceType,
-        basePrice,
-        currentPrice: basePrice,
-        volatility,
-      });
-    }
+  getPrice(type: ResourceType): MarketPrice | undefined {
+    return this.marketEngine.getPrice(type);
   }
 
-  async getResourcePrice(resourceType: ResourceType): Promise<ResourcePrice> {
-    const price = this.marketPrices.get(resourceType);
-    if (!price) {
-      throw new Error(`Unknown resource type: ${resourceType}`);
-    }
-    return price;
+  triggerMarketSimulation(): void {
+    this.marketEngine.simulateMarketTick();
+    this.logger.log('Market simulation triggered');
   }
 
-  async calculatePriceQuote(
-    resourceType: ResourceType,
-    quantity: number,
-  ): Promise<PriceQuote> {
-    const priceInfo = await this.getResourcePrice(resourceType);
-    const price = priceInfo.currentPrice;
-    
-    const volumeModifier = Math.max(0.8, 1 - (quantity / 10000) * 0.1);
-    const finalPrice = price * volumeModifier;
-    
-    return {
-      resourceType,
-      price: finalPrice,
-      quantity,
-      totalPrice: finalPrice * quantity,
-    };
+  applyWeatherEffect(type: ResourceType, modifier: number, reason: string): void {
+    this.marketEngine.addPriceModifier({ type, modifier, reason });
+    this.logger.log(`Applied weather effect to ${type}: ${modifier}x (${reason})`);
   }
 
-  async updatePrices(civilizationResources: CivilizationResources[]): Promise<void> {
-    for (const [resourceType, basePrice] of this.basePrices) {
-      const totalSupply = civilizationResources.reduce((sum, civ) => {
-        const resourceKey = resourceType.toLowerCase().replace('_', '') as keyof typeof civ.resources;
-        return sum + (civ.resources[resourceKey] || 0);
-      }, 0);
+  removeWeatherEffect(type: ResourceType, reason: string): void {
+    this.marketEngine.removePriceModifier(type, reason);
+    this.logger.log(`Removed weather effect from ${type}: ${reason}`);
+  }
 
-      const avgSupply = totalSupply / Math.max(civilizationResources.length, 1);
-      const supplyRatio = avgSupply / 1000;
-      
-      let priceModifier = 1;
-      if (supplyRatio > 1.5) {
-        priceModifier = 0.8;
-      } else if (supplyRatio > 1) {
-        priceModifier = 0.9;
-      } else if (supplyRatio < 0.5) {
-        priceModifier = 1.3;
-      } else if (supplyRatio < 0.8) {
-        priceModifier = 1.1;
+  getMarketSummary(): {
+    prices: MarketPrice[];
+    trends: Record<ResourceType, 'up' | 'down' | 'stable'>;
+  } {
+    const prices = this.marketEngine.getCurrentPrices();
+    const trends: Record<ResourceType, 'up' | 'down' | 'stable'> = {} as any;
+
+    prices.forEach((price) => {
+      const ratio = price.currentPrice / price.basePrice;
+      if (ratio > 1.1) {
+        trends[price.type] = 'up';
+      } else if (ratio < 0.9) {
+        trends[price.type] = 'down';
+      } else {
+        trends[price.type] = 'stable';
       }
+    });
 
-      const volatility = this.priceVolatility.get(resourceType) || 0.2;
-      const randomFactor = 1 + (Math.random() - 0.5) * volatility * 0.1;
-      
-      const currentPrice = this.marketPrices.get(resourceType);
-      if (currentPrice) {
-        currentPrice.currentPrice = Math.max(
-          basePrice * 0.5,
-          Math.min(basePrice * 2, basePrice * priceModifier * randomFactor),
-        );
-      }
-    }
-    
-    this.logger.log('Market prices updated based on supply/demand');
-  }
-
-  async applyWeatherModifier(weatherType: string, efficiency: number): Promise<number> {
-    const weatherModifiers: Record<string, number> = {
-      'RESOURCE_STORM': 1.5,
-      'DARK_FLUCTUATION': 0.7,
-      'DARK_MATTER_WAVE': 1.2,
-      'NORMAL': 1.0,
-    };
-    
-    const modifier = weatherModifiers[weatherType] || 1.0;
-    return efficiency * modifier;
-  }
-
-  getAllPrices(): ResourcePrice[] {
-    return Array.from(this.marketPrices.values());
+    return { prices, trends };
   }
 }

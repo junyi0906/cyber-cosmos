@@ -1,17 +1,20 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ResourceType } from './interfaces/trade.interface';
+import { ResourceType } from './dto/create-route.dto';
 
-interface ResourceSupply {
-  resourceType: ResourceType;
-  totalSupply: number;
-  totalDemand: number;
+export interface MarketPrice {
+  type: ResourceType;
+  basePrice: number;
+  currentPrice: number;
+  volatility: number;
+  supply: number;
+  demand: number;
+  lastUpdated: Date;
 }
 
-interface CivilizationResources {
-  civId: string;
-  resources: Record<ResourceType, number>;
-  production: Record<ResourceType, number>;
-  consumption: Record<ResourceType, number>;
+export interface PriceModifier {
+  type: ResourceType;
+  modifier: number;
+  reason: string;
 }
 
 @Injectable()
@@ -20,113 +23,109 @@ export class MarketEngine {
   private readonly basePrices: Record<ResourceType, number> = {
     [ResourceType.ORE]: 100,
     [ResourceType.ENERGY]: 150,
-    [ResourceType.TECHNOLOGY]: 300,
+    [ResourceType.TECH_POINTS]: 500,
   };
 
-  private readonly priceElasticity = 0.1;
-  private readonly maxPriceMultiplier = 3.0;
-  private readonly minPriceMultiplier = 0.3;
+  private readonly volatilities: Record<ResourceType, number> = {
+    [ResourceType.ORE]: 0.2,
+    [ResourceType.ENERGY]: 0.15,
+    [ResourceType.TECH_POINTS]: 0.3,
+  };
 
-  private marketState: Map<ResourceType, ResourceSupply> = new Map();
-  private priceHistory: Map<ResourceType, { price: number; timestamp: Date }[]> = new Map();
+  private marketState: Map<ResourceType, MarketPrice> = new Map();
+  private priceModifiers: Map<ResourceType, PriceModifier[]> = new Map();
 
   constructor() {
+    this.initializeMarket();
+  }
+
+  private initializeMarket(): void {
     Object.values(ResourceType).forEach((type) => {
       this.marketState.set(type, {
-        resourceType: type,
-        totalSupply: 1000,
-        totalDemand: 1000,
+        type,
+        basePrice: this.basePrices[type],
+        currentPrice: this.basePrices[type],
+        volatility: this.volatilities[type],
+        supply: 1000,
+        demand: 1000,
+        lastUpdated: new Date(),
       });
-      this.priceHistory.set(type, []);
+      this.priceModifiers.set(type, []);
     });
   }
 
-  calculatePrice(resourceType: ResourceType): number {
-    const supply = this.marketState.get(resourceType);
-    if (!supply) {
-      return this.basePrices[resourceType];
-    }
-
-    const supplyDemandRatio = supply.totalSupply / Math.max(supply.totalDemand, 1);
-    const priceModifier = Math.pow(supplyDemandRatio, -this.priceElasticity);
-    const clampedModifier = Math.max(
-      this.minPriceMultiplier,
-      Math.min(this.maxPriceMultiplier, priceModifier),
-    );
-
-    return this.basePrices[resourceType] * clampedModifier;
+  getCurrentPrices(): MarketPrice[] {
+    return Array.from(this.marketState.values());
   }
 
-  updateSupply(resourceType: ResourceType, delta: number): void {
-    const supply = this.marketState.get(resourceType);
-    if (supply) {
-      supply.totalSupply = Math.max(0, supply.totalSupply + delta);
-      this.logger.debug(
-        `Updated ${resourceType} supply by ${delta}, new total: ${supply.totalSupply}`,
-      );
-    }
+  getPrice(type: ResourceType): MarketPrice | undefined {
+    return this.marketState.get(type);
   }
 
-  updateDemand(resourceType: ResourceType, delta: number): void {
-    const supply = this.marketState.get(resourceType);
-    if (supply) {
-      supply.totalDemand = Math.max(0, supply.totalDemand + delta);
-      this.logger.debug(
-        `Updated ${resourceType} demand by ${delta}, new total: ${supply.totalDemand}`,
-      );
-    }
+  updateSupplyDemand(type: ResourceType, supplyDelta: number, demandDelta: number): void {
+    const price = this.marketState.get(type);
+    if (!price) return;
+
+    price.supply = Math.max(0, price.supply + supplyDelta);
+    price.demand = Math.max(0, price.demand + demandDelta);
+
+    this.recalculatePrice(type);
   }
 
-  recordPrice(resourceType: ResourceType, price: number): void {
-    const history = this.priceHistory.get(resourceType);
-    if (history) {
-      history.push({ price, timestamp: new Date() });
-      if (history.length > 100) {
-        history.shift();
-      }
-    }
+  addPriceModifier(modifier: PriceModifier): void {
+    const modifiers = this.priceModifiers.get(modifier.type) || [];
+    modifiers.push(modifier);
+    this.priceModifiers.set(modifier.type, modifiers);
+    this.recalculatePrice(modifier.type);
   }
 
-  getPriceHistory(resourceType: ResourceType): { price: number; timestamp: Date }[] {
-    return this.priceHistory.get(resourceType) || [];
+  removePriceModifier(type: ResourceType, reason: string): void {
+    const modifiers = this.priceModifiers.get(type) || [];
+    const filtered = modifiers.filter((m) => m.reason !== reason);
+    this.priceModifiers.set(type, filtered);
+    this.recalculatePrice(type);
   }
 
-  getMarketState(): Map<ResourceType, ResourceSupply> {
-    return this.marketState;
+  private recalculatePrice(type: ResourceType): void {
+    const price = this.marketState.get(type);
+    if (!price) return;
+
+    const supplyDemandRatio = price.supply > 0 ? price.demand / price.supply : 2;
+    let newPrice = price.basePrice * Math.pow(supplyDemandRatio, 0.5);
+
+    const modifiers = this.priceModifiers.get(type) || [];
+    const totalModifier = modifiers.reduce((acc, m) => acc * m.modifier, 1);
+    newPrice *= totalModifier;
+
+    const volatilityFactor = 1 + (Math.random() - 0.5) * price.volatility;
+    newPrice *= volatilityFactor;
+
+    price.currentPrice = Math.max(1, Math.round(newPrice * 100) / 100);
+    price.lastUpdated = new Date();
+
+    this.logger.debug(`Price updated for ${type}: ${price.currentPrice}`);
   }
 
-  processCivilizationUpdate(civ: CivilizationResources): void {
-    Object.values(ResourceType).forEach((type) => {
-      const production = civ.production[type] || 0;
-      const consumption = civ.consumption[type] || 0;
-      
-      this.updateSupply(type, production);
-      this.updateDemand(type, consumption);
-    });
-  }
-
-  calculateTradeEfficiency(
-    fromCivResources: Record<ResourceType, number>,
-    toCivResources: Record<ResourceType, number>,
-    resourceType: ResourceType,
-  ): number {
-    const fromHasResource = (fromCivResources[resourceType] || 0) > 0;
-    const toNeedsResource = (toCivResources[resourceType] || 0) < 100;
-
-    if (!fromHasResource) return 0;
-    if (!toNeedsResource) return 0.5;
-
-    const supplyRatio = fromCivResources[resourceType] / 1000;
-    const demandRatio = 1 - toCivResources[resourceType] / 1000;
-
-    return Math.min(1, (supplyRatio + demandRatio) / 2);
+  calculateTradeValue(type: ResourceType, quantity: number): number {
+    const price = this.marketState.get(type);
+    if (!price) return 0;
+    return price.currentPrice * quantity;
   }
 
   simulateMarketTick(): void {
     Object.values(ResourceType).forEach((type) => {
-      const price = this.calculatePrice(type);
-      this.recordPrice(type, price);
-      this.logger.debug(`Market tick: ${type} price = ${price.toFixed(2)}`);
+      const price = this.marketState.get(type);
+      if (!price) return;
+
+      const naturalSupplyChange = (Math.random() - 0.5) * 50;
+      const naturalDemandChange = (Math.random() - 0.5) * 50;
+
+      price.supply = Math.max(0, price.supply + naturalSupplyChange);
+      price.demand = Math.max(0, price.demand + naturalDemandChange);
+
+      this.recalculatePrice(type);
     });
+
+    this.logger.debug('Market tick completed');
   }
 }

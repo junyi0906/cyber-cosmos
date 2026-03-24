@@ -1,79 +1,62 @@
-import { Controller, Get, Post, Body, Param, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Delete,
+  Body,
+  Param,
+  Query,
+  HttpCode,
+  HttpStatus,
+  ParseUUIDPipe,
+} from '@nestjs/common';
 import { TradeService } from './trade.service';
-import { CreateTradeRouteDto } from './dto/create-trade-route.dto';
-import { MarketEngine } from './market.engine';
-import { ResourceType, TradeRouteStatus } from './interfaces/trade.interface';
+import { MarketService } from './market.service';
+import { CreateRouteDto } from './dto';
 
-@Controller('trade')
+@Controller('api/trade')
 export class TradeController {
   constructor(
     private readonly tradeService: TradeService,
-    private readonly marketEngine: MarketEngine,
+    private readonly marketService: MarketService,
   ) {}
 
   @Post('routes')
-  async createRoute(@Body() dto: CreateTradeRouteDto) {
-    return this.tradeService.createTradeRoute(dto);
+  @HttpCode(HttpStatus.CREATED)
+  async createRoute(@Body() dto: CreateRouteDto) {
+    const route = await this.tradeService.createRoute(dto);
+    return {
+      success: true,
+      data: route,
+      message: 'Trade route created successfully',
+    };
   }
 
   @Get('routes')
-  async getAllRoutes() {
-    return this.tradeService.getAllTradeRoutes();
+  async getRoutes(@Query('civId') civId?: string) {
+    const routes = await this.tradeService.getRoutes(civId);
+    return {
+      success: true,
+      data: routes,
+      count: routes.length,
+    };
   }
 
-  @Get('routes/:id')
-  async getRoute(@Param('id') id: string) {
-    return this.tradeService.getTradeRoute(id);
+  @Delete('routes/:id')
+  @HttpCode(HttpStatus.OK)
+  async cancelRoute(@Param('id', ParseUUIDPipe) id: string) {
+    const route = await this.tradeService.cancelRoute(id);
+    return {
+      success: true,
+      data: route,
+      message: 'Trade route cancelled successfully',
+    };
   }
 
-  @Get('routes/civ/:civId')
-  async getRoutesByCiv(@Param('civId') civId: string) {
-    return this.tradeService.getTradeRoutesByCiv(civId);
-  }
-
-  @Post('routes/:id/status')
-  async updateRouteStatus(
-    @Param('id') id: string,
-    @Body('status') status: TradeRouteStatus,
-    @Body('efficiency') efficiency?: number,
-  ) {
-    return this.tradeService.updateRouteStatus(id, status, efficiency);
-  }
-
-  @Get('market/prices')
+  @Get('market')
   async getMarketPrices() {
-    return this.tradeService.getMarketPrices();
-  }
-
-  @Get('market/history/:resourceType')
-  async getPriceHistory(@Param('resourceType') resourceType: ResourceType) {
-    return this.marketEngine.getPriceHistory(resourceType);
-  }
-
-  @Get('market/state')
-  async getMarketState() {
-    const state = this.marketEngine.getMarketState();
-    const result: Record<string, { supply: number; demand: number; price: number }> = {};
-    
-    state.forEach((value, key) => {
-      result[key] = {
-        supply: value.totalSupply,
-        demand: value.totalDemand,
-        price: this.marketEngine.calculatePrice(key),
-      };
-    });
-    
-    return result;
-  }
-
-  @Post('market/tick')
-  async simulateMarketTick() {
-    this.marketEngine.simulateMarketTick();
-    return { status: 'ok', timestamp: new Date() };
-  }
-
-  @Get('events')
-  async getTradeEvents(@Query('routeId') routeId?: string) {
-    return this.tradeService.getTradeEvents(routeId);
-  }
-}
+    const summary = this.marketService.getMarketSummary();
+    return {
+      success: true,
+      data: summary.prices,
+      trends: summary.t
