@@ -280,9 +280,10 @@
         "feat-010",
         "feat-004"
       ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "依赖赛季管理器和文明资源"
+      "passes": true,
+      "last_attempt": "2026-03-25T00:24:54.931619",
+      "notes": "依赖赛季管理器和文明资源",
+      "retry_count": 0
     },
     {
       "id": "feat-013",
