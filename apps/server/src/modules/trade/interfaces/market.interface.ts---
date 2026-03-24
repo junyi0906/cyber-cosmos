@@ -1,45 +1,53 @@
-export interface MarketPrice {
-  resourceType: ResourceType;
+export interface ResourcePrice {
+  resourceType: string;
   currentPrice: number;
-  supply: number;
-  demand: number;
-  lastUpdate: Date;
-  priceChange: number;
+  previousPrice: number;
+  change24h: number;
+  changePercent24h: number;
+  high24h: number;
+  low24h: number;
+  volume24h: number;
+  lastUpdated: Date;
 }
 
-export enum ResourceType {
-  ORE = 'ore',
-  ENERGY = 'energy',
-  TECH_POINT = 'tech_point',
+export interface PriceHistoryPoint {
+  timestamp: Date;
+  price: number;
+  volume: number;
 }
 
-export interface MarketState {
-  prices: Map<ResourceType, MarketPrice>;
-  totalVolume: number;
+export interface PriceHistoryResponse {
+  resourceType: string;
+  timeRange: string;
+  data: PriceHistoryPoint[];
+  statistics: {
+    startPrice: number;
+    endPrice: number;
+    highPrice: number;
+    lowPrice: number;
+    averagePrice: number;
+    totalVolume: number;
+    priceChange: number;
+    priceChangePercent: number;
+  };
+}
+
+export interface MarketOverview {
+  prices: ResourcePrice[];
+  marketStatus: 'open' | 'closed' | 'suspended';
+  seasonId: string;
+  seasonPhase: string;
   timestamp: Date;
 }
 
-export interface SupplyDemand {
-  resourceType: ResourceType;
-  supply: number;
-  demand: number;
+export interface TradeOrder {
+  id: string;
+  civilizationId: string;
+  resourceType: string;
+  orderType: 'buy' | 'sell';
+  quantity: number;
+  price: number;
+  status: 'pending' | 'filled' | 'cancelled' | 'partial';
+  createdAt: Date;
+  updatedAt: Date;
 }
-
-export interface PriceCalculationResult {
-  basePrice: number;
-  calculatedPrice: number;
-  supplyDemandRatio: number;
-}
-
-export const BASE_PRICES: Record<ResourceType, number> = {
-  [ResourceType.ORE]: 100,
-  [ResourceType.ENERGY]: 150,
-  [ResourceType.TECH_POINT]: 500,
-};
-
-export const PRICE_CONSTANTS = {
-  MIN_PRICE: 10,
-  MAX_PRICE: 10000,
-  CACHE_TTL: 60,
-  VOLATILITY_FACTOR: 0.1,
-};

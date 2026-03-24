@@ -1,204 +1,300 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/swagger';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Redis } from 'ioredis';
 import { Inject } from '@nestjs/common';
-import { 
-  MarketPrice, 
-  ResourceType, 
-  SupplyDemand, 
-  BASE_PRICES, 
-  PRICE_CONSTANTS 
+import {
+  ResourcePrice,
+  PriceHistoryPoint,
+  PriceHistoryResponse,
+  MarketOverview,
+  ResourceType,
+  TimeRange,
 } from '../interfaces/market.interface';
 
 @Injectable()
-export class MarketService {
+export class MarketService implements OnModuleInit {
   private readonly logger = new Logger(MarketService.name);
-  private readonly marketState: Map<ResourceType, MarketPrice> = new Map();
-  private previousPrices: Map<ResourceType, number> = new Map();
+  private readonly PRICE_KEY_PREFIX = 'market:price:';
+  private readonly HISTORY_KEY_PREFIX = 'market:history:';
+  private readonly VOLUME_KEY_PREFIX = 'market:volume:';
+
+  // 模拟的初始价格配置
+  private readonly basePrices: Record<string, number> = {
+    ore: 100,
+    energy: 150,
+    tech: 500,
+  };
+
+  // 价格波动范围
+  private readonly volatilityRange: Record<string, number> = {
+    ore: 0.1,
+    energy: 0.15,
+    tech: 0.2,
+  };
 
   constructor(
-    @Inject('REDIS_CLIENT') private readonly redisClient: any,
-  ) {
-    this.initializeMarket();
+    @Inject('REDIS_CLIENT') private readonly redis: Redis,
+  ) {}
+
+  async onModuleInit() {
+    await this.initializeMarketPrices();
   }
 
-  private initializeMarket(): void {
-    Object.values(ResourceType).forEach(type => {
-      const basePrice = BASE_PRICES[type];
-      this.marketState.set(type, {
-        resourceType: type,
-        currentPrice: basePrice,
-        supply: 1000,
-        demand: 1000,
-        lastUpdate: new Date(),
-        priceChange: 0,
-      });
-      this.previousPrices.set(type, basePrice);
-    });
-  }
-
-  calculatePrice(supply: number, demand: number, basePrice: number): number {
-    if (supply <= 0) {
-      supply = 0.1;
+  private async initializeMarketPrices(): Promise<void> {
+    try {
+      for (const resourceType of Object.values(ResourceType)) {
+        const exists = await this.redis.exists(`${this.PRICE_KEY_PREFIX}${resourceType}`);
+        if (!exists) {
+          const basePrice = this.basePrices[resourceType] || 100;
+          await this.redis.hset(`${this.PRICE_KEY_PREFIX}${resourceType}`, {
+            currentPrice: basePrice,
+            previousPrice: basePrice,
+            high24h: basePrice,
+            low24h: basePrice,
+            volume24h: 0,
+            lastUpdated: Date.now(),
+          });
+          this.logger.log(`Initialized market price for ${resourceType}: ${basePrice}`);
+        }
+      }
+    } catch (error) {
+      this.logger.error('Failed to initialize market prices', error);
     }
-    
-    const supplyDemandRatio = demand / supply;
-    let calculatedPrice = basePrice * supplyDemandRatio * 0.5 + basePrice * 0.5;
-    
-    const volatility = (Math.random() - 0.5) * 2 * PRICE_CONSTANTS.VOLATILITY_FACTOR;
-    calculatedPrice = calculatedPrice * (1 + volatility);
-    
-    calculatedPrice = Math.max(
-      PRICE_CONSTANTS.MIN_PRICE,
-      Math.min(PRICE_CONSTANTS.MAX_PRICE, calculatedPrice)
-    );
-    
-    return Math.round(calculatedPrice * 100) / 100;
   }
 
-  async updateMarketState(supplyDemands: SupplyDemand[]): Promise<MarketPrice[]> {
-    const updatedPrices: MarketPrice[] = [];
-    
-    for (const sd of supplyDemands) {
-      const basePrice = BASE_PRICES[sd.resourceType];
-      const newPrice = this.calculatePrice(sd.supply, sd.demand, basePrice);
-      
-      const previousPrice = this.previousPrices.get(sd.resourceType) || basePrice;
-      const priceChange = ((newPrice - previousPrice) / previousPrice) * 100;
-      
-      const marketPrice: MarketPrice = {
-        resourceType: sd.resourceType,
-        currentPrice: newPrice,
-        supply: sd.supply,
-        demand: sd.demand,
-        lastUpdate: new Date(),
-        priceChange: Math.round(priceChange * 100) / 100,
+  async getAllPrices(): Promise<ResourcePrice[]> {
+    const prices: ResourcePrice[] = [];
+
+    for (const resourceType of Object.values(ResourceType)) {
+      const price = await this.getPrice(resourceType);
+      if (price) {
+        prices.push(price);
+      }
+    }
+
+    return prices;
+  }
+
+  async getPrice(resourceType: string): Promise<ResourcePrice | null> {
+    try {
+      const key = `${this.PRICE_KEY_PREFIX}${resourceType}`;
+      const data = await this.redis.hgetall(key);
+
+      if (!data || Object.keys(data).length === 0) {
+        // 如果没有数据，返回模拟数据
+        return this.generateMockPrice(resourceType);
+      }
+
+      const currentPrice = parseFloat(data.currentPrice) || this.basePrices[resourceType] || 100;
+      const previousPrice = parseFloat(data.previousPrice) || currentPrice;
+      const high24h = parseFloat(data.high24h) || currentPrice;
+      const low24h = parseFloat(data.low24h) || currentPrice;
+      const volume24h = parseFloat(data.volume24h) || 0;
+
+      const change24h = currentPrice - previousPrice;
+      const changePercent24h = previousPrice > 0 ? (change24h / previousPrice) * 100 : 0;
+
+      return {
+        resourceType,
+        currentPrice: Math.round(currentPrice * 100) / 100,
+        previousPrice: Math.round(previousPrice * 100) / 100,
+        change24h: Math.round(change24h * 100) / 100,
+        changePercent24h: Math.round(changePercent24h * 100) / 100,
+        high24h: Math.round(high24h * 100) / 100,
+        low24h: Math.round(low24h * 100) / 100,
+        volume24h: Math.round(volume24h),
+        lastUpdated: new Date(parseInt(data.lastUpdated) || Date.now()),
       };
-      
-      this.marketState.set(sd.resourceType, marketPrice);
-      this.previousPrices.set(sd.resourceType, newPrice);
-      updatedPrices.push(marketPrice);
-    }
-    
-    await this.cachePrices(updatedPrices);
-    
-    this.logger.log(`Updated market state for ${supplyDemands.length} resources`);
-    return updatedPrices;
-  }
-
-  async getPrice(resourceType: ResourceType): Promise<MarketPrice | null> {
-    try {
-      const cachedPrice = await this.redisClient?.get(`market:price:${resourceType}`);
-      
-      if (cachedPrice) {
-        return JSON.parse(cachedPrice);
-      }
-      
-      const memoryPrice = this.marketState.get(resourceType);
-      if (memoryPrice) {
-        await this.cacheSinglePrice(memoryPrice);
-        return memoryPrice;
-      }
-      
-      return null;
     } catch (error) {
-      this.logger.error(`Failed to get price for ${resourceType}: ${error.message}`);
-      return this.marketState.get(resourceType) || null;
+      this.logger.error(`Failed to get price for ${resourceType}`, error);
+      return this.generateMockPrice(resourceType);
     }
   }
 
-  async getAllPrices(): Promise<MarketPrice[]> {
-    try {
-      const cachedPrices = await this.redisClient?.get('market:prices:all');
-      
-      if (cachedPrices) {
-        return JSON.parse(cachedPrices);
-      }
-      
-      const prices = Array.from(this.marketState.values());
-      await this.cachePrices(prices);
-      return prices;
-    } catch (error) {
-      this.logger.error(`Failed to get all prices: ${error.message}`);
-      return Array.from(this.marketState.values());
+  private generateMockPrice(resourceType: string): ResourcePrice {
+    const basePrice = this.basePrices[resourceType] || 100;
+    const volatility = this.volatilityRange[resourceType] || 0.1;
+
+    // 生成随机价格波动
+    const change = basePrice * volatility * (Math.random() * 2 - 1);
+    const currentPrice = basePrice + change;
+    const previousPrice = basePrice;
+    const change24h = currentPrice - previousPrice;
+    const changePercent24h = (change24h / previousPrice) * 100;
+
+    return {
+      resourceType,
+      currentPrice: Math.round(currentPrice * 100) / 100,
+      previousPrice: Math.round(previousPrice * 100) / 100,
+      change24h: Math.round(change24h * 100) / 100,
+      changePercent24h: Math.round(changePercent24h * 100) / 100,
+      high24h: Math.round((currentPrice * 1.05) * 100) / 100,
+      low24h: Math.round((currentPrice * 0.95) * 100) / 100,
+      volume24h: Math.floor(Math.random() * 100000),
+      lastUpdated: new Date(),
+    };
+  }
+
+  async getPriceHistory(
+    resourceType: string | undefined,
+    timeRange: TimeRange,
+    limit: number,
+  ): Promise<PriceHistoryResponse[]> {
+    const results: PriceHistoryResponse[] = [];
+    const resourceTypes = resourceType
+      ? [resourceType]
+      : Object.values(ResourceType);
+
+    for (const resType of resourceTypes) {
+      const history = await this.getHistoryForResource(resType, timeRange, limit);
+      results.push(history);
     }
+
+    return results;
   }
 
-  async cachePrices(prices: MarketPrice[]): Promise<void> {
-    try {
-      if (!this.redisClient) {
-        this.logger.warn('Redis client not available, skipping cache');
-        return;
-      }
-      
-      const multi = this.redisClient.multi();
-      
-      for (const price of prices) {
-        const key = `market:price:${price.resourceType}`;
-        multi.set(key, JSON.stringify(price), 'EX', PRICE_CONSTANTS.CACHE_TTL);
-      }
-      
-      multi.set(
-        'market:prices:all',
-        JSON.stringify(prices),
-        'EX',
-        PRICE_CONSTANTS.CACHE_TTL
-      );
-      
-      await multi.exec();
-      this.logger.debug(`Cached ${prices.length} market prices`);
-    } catch (error) {
-      this.logger.error(`Failed to cache prices: ${error.message}`);
-    }
-  }
+  private async getHistoryForResource(
+    resourceType: string,
+    timeRange: TimeRange,
+    limit: number,
+  ): Promise<PriceHistoryResponse> {
+    const basePrice = this.basePrices[resourceType] || 100;
+    const volatility = this.volatilityRange[resourceType] || 0.1;
 
-  private async cacheSinglePrice(price: MarketPrice): Promise<void> {
-    try {
-      if (!this.redisClient) return;
-      
-      await this.redisClient.set(
-        `market:price:${price.resourceType}`,
-        JSON.stringify(price),
-        'EX',
-        PRICE_CONSTANTS.CACHE_TTL
-      );
-    } catch (error) {
-      this.logger.error(`Failed to cache single price: ${error.message}`);
-    }
-  }
+    // 根据时间范围计算时间间隔
+    const { startTime, interval } = this.getTimeRangeConfig(timeRange);
 
-  getMarketHistory(resourceType: ResourceType, limit: number = 24): Promise<MarketPrice[]> {
-    return new Promise((resolve) => {
-      resolve([this.marketState.get(resourceType)!].filter(Boolean));
-    });
-  }
+    // 生成模拟历史数据
+    const data: PriceHistoryPoint[] = [];
+    let currentPrice = basePrice * (0.9 + Math.random() * 0.2); // 起始价格在基准价格的90%-110%之间
 
-  async aggregateUniverseSupplyDemand(): Promise<SupplyDemand[]> {
-    const result: SupplyDemand[] = [];
-    
-    for (const [type, price] of this.marketState) {
-      result.push({
-        resourceType: type,
-        supply: price.supply,
-        demand: price.demand,
+    const now = Date.now();
+    const actualLimit = Math.min(limit, 1000);
+
+    for (let i = 0; i < actualLimit; i++) {
+      const timestamp = new Date(startTime + i * interval);
+      if (timestamp.getTime() > now) break;
+
+      // 随机游走模型生成价格
+      const change = currentPrice * volatility * (Math.random() * 2 - 1) * 0.1;
+      currentPrice = Math.max(basePrice * 0.5, Math.min(basePrice * 2, currentPrice + change));
+
+      data.push({
+        timestamp,
+        price: Math.round(currentPrice * 100) / 100,
+        volume: Math.floor(Math.random() * 10000),
       });
     }
-    
-    return result;
+
+    // 计算统计数据
+    const prices = data.map(d => d.price);
+    const volumes = data.map(d => d.volume);
+    const startPrice = prices[0] || basePrice;
+    const endPrice = prices[prices.length - 1] || basePrice;
+    const highPrice = Math.max(...prices) || basePrice;
+    const lowPrice = Math.min(...prices) || basePrice;
+    const averagePrice = prices.reduce((a, b) => a + b, 0) / prices.length || basePrice;
+    const totalVolume = volumes.reduce((a, b) => a + b, 0);
+    const priceChange = endPrice - startPrice;
+    const priceChangePercent = startPrice > 0 ? (priceChange / startPrice) * 100 : 0;
+
+    return {
+      resourceType,
+      timeRange,
+      data,
+      statistics: {
+        startPrice: Math.round(startPrice * 100) / 100,
+        endPrice: Math.round(endPrice * 100) / 100,
+        highPrice: Math.round(highPrice * 100) / 100,
+        lowPrice: Math.round(lowPrice * 100) / 100,
+        averagePrice: Math.round(averagePrice * 100) / 100,
+        totalVolume,
+        priceChange: Math.round(priceChange * 100) / 100,
+        priceChangePercent: Math.round(priceChangePercent * 100) / 100,
+      },
+    };
   }
 
-  simulateMarketTick(): void {
-    const supplyDemands: SupplyDemand[] = [];
-    
-    for (const [type, price] of this.marketState) {
-      const supplyChange = (Math.random() - 0.5) * 100;
-      const demandChange = (Math.random() - 0.5) * 100;
-      
-      supplyDemands.push({
-        resourceType: type,
-        supply: Math.max(100, price.supply + supplyChange),
-        demand: Math.max(100, price.demand + demandChange),
-      });
+  private getTimeRangeConfig(timeRange: TimeRange): { startTime: number; interval: number } {
+    const now = Date.now();
+
+    switch (timeRange) {
+      case TimeRange.HOUR:
+        return {
+          startTime: now - 60 * 60 * 1000,
+          interval: 60 * 1000, // 1分钟间隔
+        };
+      case TimeRange.DAY:
+        return {
+          startTime: now - 24 * 60 * 60 * 1000,
+          interval: 15 * 60 * 1000, // 15分钟间隔
+        };
+      case TimeRange.WEEK:
+        return {
+          startTime: now - 7 * 24 * 60 * 60 * 1000,
+          interval: 2 * 60 * 60 * 1000, // 2小时间隔
+        };
+      case TimeRange.MONTH:
+        return {
+          startTime: now - 30 * 24 * 60 * 60 * 1000,
+          interval: 8 * 60 * 60 * 1000, // 8小时间隔
+        };
+      case TimeRange.SEASON:
+        return {
+          startTime: now - 90 * 24 * 60 * 60 * 1000,
+          interval: 24 * 60 * 60 * 1000, // 1天间隔
+        };
+      default:
+        return {
+          startTime: now - 24 * 60 * 60 * 1000,
+          interval: 15 * 60 * 1000,
+        };
     }
-    
-    this.updateMarketState(supplyDemands);
+  }
+
+  async getMarketOverview(): Promise<MarketOverview> {
+    const prices = await this.getAllPrices();
+
+    return {
+      prices,
+      marketStatus: 'open',
+      seasonId: 'season-001',
+      seasonPhase: 'expansion',
+      timestamp: new Date(),
+    };
+  }
+
+  // 更新价格（供其他服务调用）
+  async updatePrice(resourceType: string, newPrice: number): Promise<void> {
+    try {
+      const key = `${this.PRICE_KEY_PREFIX}${resourceType}`;
+      const currentData = await this.redis.hgetall(key);
+      const currentPrice = parseFloat(currentData.currentPrice) || this.basePrices[resourceType] || 100;
+      const high24h = Math.max(parseFloat(currentData.high24h) || currentPrice, newPrice);
+      const low24h = Math.min(parseFloat(currentData.low24h) || currentPrice, newPrice);
+
+      await this.redis.hset(key, {
+        previousPrice: currentPrice,
+        currentPrice: newPrice,
+        high24h,
+        low24h,
+        lastUpdated: Date.now(),
+      });
+
+      this.logger.debug(`Updated price for ${resourceType}: ${newPrice}`);
+    } catch (error) {
+      this.logger.error(`Failed to update price for ${resourceType}`, error);
+    }
+  }
+
+  // 增加交易量
+  async addVolume(resourceType: string, volume: number): Promise<void> {
+    try {
+      const key = `${this.PRICE_KEY_PREFIX}${resourceType}`;
+      await this.redis.hincrby(key, 'volume24h', volume);
+    } catch (error) {
+      this.logger.error(`Failed to add volume for ${resourceType}`, error);
+    }
   }
 }

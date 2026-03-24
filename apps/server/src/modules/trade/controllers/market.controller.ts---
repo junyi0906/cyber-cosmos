@@ -1,0 +1,62 @@
+import {
+  Controller,
+  Get,
+  Param,
+  Query,
+  HttpCode,
+  HttpStatus,
+  Logger,
+} from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiParam,
+  ApiQuery,
+} from '@nestjs/swagger';
+import { MarketService } from '../services/market.service';
+import { MarketHistoryQueryDto, PriceQueryDto, ResourceType } from '../dto/market-query.dto';
+import {
+  ResourcePrice,
+  PriceHistoryResponse,
+  MarketOverview,
+} from '../interfaces/market.interface';
+
+@ApiTags('市场')
+@Controller('api/v2/market')
+export class MarketController {
+  private readonly logger = new Logger(MarketController.name);
+
+  constructor(private readonly marketService: MarketService) {}
+
+  @Get('prices')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '获取所有资源当前价格',
+    description: '返回市场上所有资源（矿石、能源、技术点）的当前价格、24小时变化、交易量等信息',
+  })
+  @ApiQuery({
+    name: 'resourceType',
+    required: false,
+    enum: ResourceType,
+    description: '可选，指定资源类型',
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: '成功获取价格信息',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: true },
+        data: {
+          type: 'object',
+          properties: {
+            prices: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  resourceType: { type: 'string', example: 'ore' },
+                  currentPrice: { type: 'number', example: 105.5 },
+                  previousPrice: { type: 'number', example: 100.0 },
+                  change24h:

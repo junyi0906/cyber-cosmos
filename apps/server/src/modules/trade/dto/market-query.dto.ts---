@@ -1,0 +1,65 @@
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { IsOptional, IsString, IsEnum, IsInt, Min, Max } from 'class-validator';
+import { Type } from 'class-transformer';
+
+export enum TimeRange {
+  HOUR = '1h',
+  DAY = '24h',
+  WEEK = '7d',
+  MONTH = '30d',
+  SEASON = 'season',
+}
+
+export enum ResourceType {
+  ORE = 'ore',
+  ENERGY = 'energy',
+  TECH = 'tech',
+}
+
+export class MarketHistoryQueryDto {
+  @ApiPropertyOptional({
+    description: '资源类型',
+    enum: ResourceType,
+    example: ResourceType.ORE,
+  })
+  @IsOptional()
+  @IsEnum(ResourceType)
+  @IsString()
+  resourceType?: ResourceType;
+
+  @ApiPropertyOptional({
+    description: '时间范围',
+    enum: TimeRange,
+    default: TimeRange.DAY,
+    example: TimeRange.DAY,
+  })
+  @IsOptional()
+  @IsEnum(TimeRange)
+  @IsString()
+  timeRange?: TimeRange = TimeRange.DAY;
+
+  @ApiPropertyOptional({
+    description: '返回数据点数量限制',
+    default: 100,
+    minimum: 1,
+    maximum: 1000,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(1000)
+  limit?: number = 100;
+}
+
+export class PriceQueryDto {
+  @ApiPropertyOptional({
+    description: '资源类型，不传则返回所有资源价格',
+    enum: ResourceType,
+    example: ResourceType.ORE,
+  })
+  @IsOptional()
+  @IsEnum(ResourceType)
+  @IsString()
+  resourceType?: ResourceType;
+}
