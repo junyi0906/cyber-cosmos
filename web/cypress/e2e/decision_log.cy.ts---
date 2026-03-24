@@ -1,173 +1,122 @@
-/// <reference types="cypress" />
-
-describe('Decision Log - 决策日志', () => {
+describe('Decision Log', () => {
   beforeEach(() => {
     cy.visit('/');
     cy.waitForAppReady();
-    cy.openDecisionLogPanel();
   });
 
-  describe('日志面板', () => {
-    it('应该显示决策日志面板', () => {
+  describe('Log Display', () => {
+    it('should display decision log panel', () => {
       cy.get('[data-testid="decision-log-panel"]').should('be.visible');
     });
 
-    it('应该显示日志列表', () => {
+    it('should show real-time scrolling log stream', () => {
+      cy.waitForDecisions();
+      
       cy.get('[data-testid="log-entry"]').should('have.length.at.least', 1);
     });
 
-    it('日志应该按时间倒序排列', () => {
-      cy.get('[data-testid="log-entry"]').then($entries => {
-        const timestamps = $entries.map((_, el) => {
-          return Cypress.$(el).attr('data-timestamp');
-        }).get();
+    it('should display agent thinking process', () => {
+      cy.get('[data-testid="log-entry"]').first().within(() => {
+        cy.get('[data-testid="agent-name"]').should('be.visible');
+        cy.get('[data-testid="decision-input"]').should('be.visible');
+        cy.get('[data-testid="decision-reasoning"]').should('be.visible');
+        cy.get('[data-testid="decision-action"]').should('be.visible');
+      });
+    });
+
+    it('should auto-scroll to newest entries', () => {
+      cy.get('[data-testid="decision-log-panel"]').then(($panel) => {
+        const scrollHeight = $panel[0].scrollHeight;
+        const scrollTop = $panel[0].scrollTop;
+        const clientHeight = $panel[0].clientHeight;
         
-        const sorted = [...timestamps].sort((a, b) => Number(b) - Number(a));
-        expect(timestamps).to.deep.equal(sorted);
+        expect(scrollTop + clientHeight).to.be.closeTo(scrollHeight, 50);
       });
     });
   });
 
-  describe('日志内容', () => {
-    it('应该显示 Input 部分', () => {
-      cy.get('[data-testid="log-entry"]').first().within(() => {
-        cy.get('[data-testid="log-input"]').should('be.visible');
-      });
-    });
-
-    it('应该显示 Reasoning 部分', () => {
-      cy.get('[data-testid="log-entry"]').first().within(() => {
-        cy.get('[data-testid="log-reasoning"]').should('be.visible');
-      });
-    });
-
-    it('应该显示 Action 部分', () => {
-      cy.get('[data-testid="log-entry"]').first().within(() => {
-        cy.get('[data-testid="log-action"]').should('be.visible');
-      });
-    });
-
-    it('应该显示文明 ID', () => {
-      cy.get('[data-testid="log-entry"]').first().within(() => {
-        cy.get('[data-testid="log-civilization-id"]').should('be.visible');
-      });
-    });
-
-    it('应该显示时间戳', () => {
+  describe('Log Entry Details', () => {
+    it('should show timestamp for each entry', () => {
       cy.get('[data-testid="log-entry"]').first().within(() => {
         cy.get('[data-testid="log-timestamp"]').should('be.visible');
       });
     });
-  });
 
-  describe('实时滚动', () => {
-    it('新日志应该自动滚动到视图', () => {
-      cy.get('[data-testid="decision-log-panel"]').then($panel => {
-        const initialScrollTop = $panel.scrollTop();
-        
-        // 等待新日志产生
-        cy.wait(2000);
-        
-        cy.get('[data-testid="decision-log-panel"]').then($newPanel => {
-          // 如果有新日志，滚动位置应该变化
-          const newScrollTop = $newPanel.scrollTop();
-          // 允许滚动位置相同（如果没有新日志）
-          expect(newScrollTop).to.be.at.least(initialScrollTop);
-        });
+    it('should show civilization ID for each entry', () => {
+      cy.get('[data-testid="log-entry"]').first().within(() => {
+        cy.get('[data-testid="civ-id"]').should('be.visible');
       });
     });
 
-    it('应该显示新日志指示器', () => {
-      // 模拟新日志到达
-      cy.get('[data-testid="decision-log-panel"]').scrollTo('top');
-      cy.wait(1000);
-      cy.get('[data-testid="new-log-indicator"]').should('exist');
-    });
-  });
-
-  describe('筛选功能', () => {
-    it('应该显示筛选器', () => {
-      cy.get('[data-testid="log-filter"]').should('be.visible');
-    });
-
-    it('应该可以按文明 ID 筛选', () => {
-      cy.get('[data-testid="filter-civilization"]').click();
-      cy.get('[data-testid="filter-civilization-option"]').first().click();
-      
-      cy.get('[data-testid="log-entry"]').each($entry => {
-        cy.wrap($entry).should('have.attr', 'data-civilization-id');
-      });
-    });
-
-    it('应该可以按事件类型筛选', () => {
-      cy.get('[data-testid="filter-event-type"]').click();
-      cy.get('[data-testid="filter-event-option"]').first().click();
-      
-      cy.get('[data-testid="log-entry"]').each($entry => {
-        cy.wrap($entry).should('have.attr', 'data-event-type');
-      });
-    });
-
-    it('应该可以清除筛选', () => {
-      cy.get('[data-testid="filter-civilization"]').click();
-      cy.get('[data-testid="filter-civilization-option"]').first().click();
-      
-      cy.get('[data-testid="filter-clear"]').click();
-      
-      cy.get('[data-testid="log-entry"]').should('have.length.at.least', 1);
-    });
-
-    it('应该支持多条件组合筛选', () => {
-      cy.get('[data-testid="filter-civilization"]').click();
-      cy.get('[data-testid="filter-civilization-option"]').first().click();
-      
-      cy.get('[data-testid="filter-event-type"]').click();
-      cy.get('[data-testid="filter-event-option"]').first().click();
-      
-      cy.get('[data-testid="log-entry"]').should('exist');
-    });
-  });
-
-  describe('日志详情', () => {
-    it('点击日志应该展开详情', () => {
+    it('should expand entry to show full reasoning', () => {
       cy.get('[data-testid="log-entry"]').first().click();
-      cy.get('[data-testid="log-detail-expanded"]').should('be.visible');
-    });
-
-    it('详情应该显示完整的推理过程', () => {
-      cy.get('[data-testid="log-entry"]').first().click();
+      
+      cy.get('[data-testid="log-entry"]').first().should('have.class', 'expanded');
       cy.get('[data-testid="full-reasoning"]').should('be.visible');
     });
 
-    it('详情应该显示决策影响因素', () => {
+    it('should collapse expanded entry on click', () => {
       cy.get('[data-testid="log-entry"]').first().click();
-      cy.get('[data-testid="decision-factors"]').should('be.visible');
-    });
-
-    it('应该可以复制日志内容', () => {
       cy.get('[data-testid="log-entry"]').first().click();
-      cy.get('[data-testid="copy-log"]').click();
       
-      cy.window().then(win => {
-        win.navigator.clipboard.readText().then(text => {
-          expect(text).to.not.be.empty;
-        });
-      });
+      cy.get('[data-testid="log-entry"]').first().should('not.have.class', 'expanded');
     });
   });
 
-  describe('日志导出', () => {
-    it('应该显示导出按钮', () => {
-      cy.get('[data-testid="export-logs"]').should('be.visible');
-    });
-
-    it('应该可以导出为 JSON 格式', () => {
-      cy.get('[data-testid="export-logs"]').click();
-      cy.get('[data-testid="export-json"]').click();
+  describe('Log Filtering', () => {
+    it('should filter by civilization ID', () => {
+      cy.get('[data-testid="civ-filter-input"]').clear().type('civ-001');
+      cy.get('[data-testid="apply-filter-btn"]').click();
       
-      cy.readFile('cypress/downloads/decision_logs.json').should('exist');
+      cy.get('[data-testid="log-entry"]').each(($entry) => {
+        expect($entry.attr('data-civ-id')).to.equal('civ-001');
+      });
     });
 
-    it('应该可以导出为 CSV 格式', () => {
-      cy.get('[data-testid="export-logs"]').click();
-      cy.get('[data
+    it('should filter by event type', () => {
+      cy.get('[data-testid="event-type-filter"]').select('diplomacy');
+      
+      cy.get('[data-testid="log-entry"]').each(($entry) => {
+        expect($entry.attr('data-event-type')).to.equal('diplomacy');
+      });
+    });
+
+    it('should filter by action type', () => {
+      cy.get('[data-testid="action-type-filter"]').select('trade');
+      
+      cy.get('[data-testid="log-entry"]').each(($entry) => {
+        expect($entry.attr('data-action-type')).to.equal('trade');
+      });
+    });
+
+    it('should combine multiple filters', () => {
+      cy.get('[data-testid="civ-filter-input"]').clear().type('civ-001');
+      cy.get('[data-testid="event-type-filter"]').select('diplomacy');
+      cy.get('[data-testid="apply-filter-btn"]').click();
+      
+      cy.get('[data-testid="log-entry"]').each(($entry) => {
+        expect($entry.attr('data-civ-id')).to.equal('civ-001');
+        expect($entry.attr('data-event-type')).to.equal('diplomacy');
+      });
+    });
+
+    it('should clear all filters', () => {
+      cy.get('[data-testid="civ-filter-input"]').clear().type('civ-001');
+      cy.get('[data-testid="clear-all-filters-btn"]').click();
+      
+      cy.get('[data-testid="civ-filter-input"]').should('have.value', '');
+      cy.get('[data-testid="event-type-filter"]').should('have.value', 'all');
+    });
+  });
+
+  describe('Log Search', () => {
+    it('should search in decision content', () => {
+      cy.get('[data-testid="log-search-input"]').clear().type('alliance');
+      cy.get('[data-testid="log-search-btn"]').click();
+      
+      cy.get('[data-testid="log-entry"]').should('have.length.at.least', 1);
+      cy.get('[data-testid="log-entry"]').first().should('contain', 'alliance');
+    });
+
+    it('should highlight search matches', () => {
+      cy.get('[data-testid

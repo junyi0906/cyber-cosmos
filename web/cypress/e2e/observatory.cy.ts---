@@ -1,121 +1,129 @@
-/// <reference types="cypress" />
-
-describe('Observatory - 宇宙观测台', () => {
+describe('Observatory View', () => {
   beforeEach(() => {
     cy.visit('/');
     cy.waitForAppReady();
   });
 
-  describe('3D 宇宙可视化', () => {
-    it('应该正确渲染宇宙场景', () => {
+  describe('3D Universe Visualization', () => {
+    it('should render the universe canvas', () => {
       cy.get('[data-testid="universe-canvas"]').should('exist');
       cy.get('[data-testid="universe-canvas"]').should('be.visible');
     });
 
-    it('应该显示所有星球', () => {
-      cy.get('[data-testid="planet"]').should('have.length.at.least', 1);
-    });
-
-    it('星球颜色应该代表阵营', () => {
-      cy.get('[data-testid="planet"]').first().then($planet => {
-        const faction = $planet.attr('data-faction');
-        expect(faction).to.not.be.undefined;
-      });
-    });
-
-    it('星球光晕应该代表科技等级', () => {
-      cy.get('[data-testid="planet"]').first().then($planet => {
-        const techLevel = $planet.attr('data-tech-level');
-        expect(techLevel).to.not.be.undefined;
-      });
-    });
-  });
-
-  describe('星球状态渲染', () => {
-    it('应该显示灾难粒子效果', () => {
-      cy.intercept('GET', '/api/events/disasters').as('getDisasters');
-      cy.wait('@getDisasters');
+    it('should display star systems with correct colors based on faction', () => {
+      cy.get('[data-testid="star-system"]').should('have.length.at.least', 1);
       
-      cy.get('[data-testid="disaster-effect"]').should('exist');
-    });
-
-    it('应该显示星球阵营颜色', () => {
-      cy.fixture('civilizations').then((civilizations) => {
-        civilizations.forEach((civ: any) => {
-          cy.get(`[data-faction="${civ.id}"]`).should('exist');
-        });
+      // Check that star systems have faction colors applied
+      cy.get('[data-testid="star-system"]').first().then(($star) => {
+        const faction = $star.attr('data-faction');
+        expect(['red', 'blue', 'green', 'yellow', 'neutral']).to.include(faction);
       });
     });
 
-    it('应该显示科技等级光晕', () => {
-      cy.get('[data-testid="planet"]').each($planet => {
-        cy.wrap($planet).should('have.attr', 'data-tech-level');
+    it('should show technology level as glow effect', () => {
+      cy.get('[data-testid="star-system"]').first().within(() => {
+        cy.get('[data-testid="tech-glow"]').should('exist');
       });
     });
-  });
 
-  describe('宇宙航线可视化', () => {
-    it('应该显示贸易路径', () => {
+    it('should display particle effects for disasters', () => {
+      // Trigger a disaster event first
+      cy.triggerDisaster('supernova');
+      
+      cy.get('[data-testid="disaster-particles"]').should('be.visible');
+    });
+
+    it('should render trade routes between allied civilizations', () => {
       cy.get('[data-testid="trade-route"]').should('exist');
-    });
-
-    it('应该显示舰队移动轨迹', () => {
-      cy.intercept('GET', '/api/fleets').as('getFleets');
-      cy.wait('@getFleets');
       
-      cy.get('[data-testid="fleet-trajectory"]').should('exist');
-    });
-
-    it('航线应该有动画效果', () => {
+      // Trade routes should be animated
       cy.get('[data-testid="trade-route"]').first().should('have.class', 'animated');
     });
+
+    it('should show fleet movement trajectories', () => {
+      cy.get('[data-testid="fleet-trajectory"]').should('exist');
+    });
   });
 
-  describe('交互功能', () => {
-    it('应该支持鼠标旋转视角', () => {
-      cy.get('[data-testid="universe-canvas"]').trigger('mousedown', { button: 0 });
-      cy.get('[data-testid="universe-canvas"]').trigger('mousemove', { clientX: 200, clientY: 200 });
-      cy.get('[data-testid="universe-canvas"]').trigger('mouseup');
-    });
-
-    it('应该支持滚轮缩放', () => {
+  describe('Camera Controls', () => {
+    it('should allow zoom in/out with mouse wheel', () => {
       cy.get('[data-testid="universe-canvas"]').trigger('wheel', { deltaY: -100 });
+      cy.get('[data-testid="camera-zoom"]').should('have.attr', 'data-level', 'zoomed-in');
+      
       cy.get('[data-testid="universe-canvas"]').trigger('wheel', { deltaY: 100 });
+      cy.get('[data-testid="camera-zoom"]').should('have.attr', 'data-level', 'zoomed-out');
     });
 
-    it('点击星球应该显示详情面板', () => {
-      cy.get('[data-testid="planet"]').first().click();
-      cy.get('[data-testid="planet-detail-panel"]').should('be.visible');
+    it('should allow rotation with mouse drag', () => {
+      cy.get('[data-testid="universe-canvas"]')
+        .trigger('mousedown', { button: 0 })
+        .trigger('mousemove', { movementX: 100, movementY: 50 })
+        .trigger('mouseup');
+      
+      cy.get('[data-testid="camera-rotation"]').should('exist');
+    });
+
+    it('should reset camera position on double click', () => {
+      cy.get('[data-testid="universe-canvas"]').dblclick();
+      
+      cy.get('[data-testid="camera-position"]').should('have.attr', 'data-x', '0');
+      cy.get('[data-testid="camera-position"]').should('have.attr', 'data-y', '0');
+      cy.get('[data-testid="camera-position"]').should('have.attr('data-z', '0');
     });
   });
 
-  describe('文明详情面板', () => {
-    beforeEach(() => {
-      cy.get('[data-testid="planet"]').first().click();
+  describe('Star System Selection', () => {
+    it('should select a star system on click', () => {
+      cy.get('[data-testid="star-system"]').first().click();
+      
+      cy.get('[data-testid="star-detail-panel"]').should('be.visible');
     });
 
-    it('应该显示文明属性雷达图', () => {
-      cy.get('[data-testid="radar-chart"]').should('be.visible');
+    it('should display civilization details when selecting an inhabited system', () => {
+      cy.get('[data-testid="star-system"][data-inhabited="true"]').first().click();
+      
+      cy.get('[data-testid="civilization-name"]').should('be.visible');
+      cy.get('[data-testid="civilization-stats"]').should('be.visible');
     });
 
-    it('应该显示军事属性', () => {
-      cy.get('[data-testid="attribute-military"]').should('be.visible');
+    it('should highlight selected star system', () => {
+      cy.get('[data-testid="star-system"]').first().click();
+      
+      cy.get('[data-testid="star-system"]').first().should('have.class', 'selected');
     });
 
-    it('应该显示经济属性', () => {
-      cy.get('[data-testid="attribute-economy"]').should('be.visible');
+    it('should deselect when clicking empty space', () => {
+      cy.get('[data-testid="star-system"]').first().click();
+      cy.get('[data-testid="universe-canvas"]').click('bottomRight');
+      
+      cy.get('[data-testid="star-detail-panel"]').should('not.exist');
+    });
+  });
+
+  describe('Mini Map', () => {
+    it('should display mini map in corner', () => {
+      cy.get('[data-testid="mini-map"]').should('be.visible');
     });
 
-    it('应该显示科技属性', () => {
-      cy.get('[data-testid="attribute-technology"]').should('be.visible');
+    it('should show current viewport on mini map', () => {
+      cy.get('[data-testid="mini-map-viewport"]').should('exist');
     });
 
-    it('应该显示文化属性', () => {
-      cy.get('[data-testid="attribute-culture"]').should('be.visible');
+    it('should navigate to clicked location on mini map', () => {
+      cy.get('[data-testid="mini-map"]').click('center');
+      
+      cy.get('[data-testid="camera-position"]').should('exist');
     });
+  });
 
-    it('应该显示外交关系网络图', () => {
-      cy.get('[data-testid="diplomacy-network"]').should('be.visible');
+  describe('Performance', () => {
+    it('should maintain 30fps minimum with 100 star systems', () => {
+      cy.loadScenario('large-universe');
+      
+      cy.get('[data-testid="fps-counter"]').should('have.text', /\d+/).then(($fps) => {
+        const fps = parseInt($fps.text());
+        expect(fps).to.be.at.least(30);
+      });
     });
   });
 });

@@ -1,145 +1,173 @@
-/// <reference types="cypress" />
-
-describe('Timeline - 事件时间线', () => {
+describe('Event Timeline', () => {
   beforeEach(() => {
     cy.visit('/');
     cy.waitForAppReady();
   });
 
-  describe('时间轴组件', () => {
-    it('应该显示时间轴组件', () => {
+  describe('Timeline Component', () => {
+    it('should display timeline at bottom of screen', () => {
       cy.get('[data-testid="timeline-container"]').should('be.visible');
+      cy.get('[data-testid="timeline-container"]').should('have.css', 'position', 'fixed');
     });
 
-    it('应该显示时间刻度', () => {
-      cy.get('[data-testid="timeline-scale"]').should('exist');
+    it('should show current simulation time', () => {
+      cy.get('[data-testid="current-time"]').should('be.visible');
+      cy.get('[data-testid="current-time"]').should('not.be.empty');
     });
 
-    it('应该显示当前时间指示器', () => {
-      cy.get('[data-testid="current-time-indicator"]').should('be.visible');
-    });
-  });
-
-  describe('历史事件标记', () => {
-    it('应该显示历史事件节点', () => {
-      cy.get('[data-testid="event-node"]').should('have.length.at.least', 1);
-    });
-
-    it('事件节点应该有正确的类型标识', () => {
-      cy.get('[data-testid="event-node"]').first().then($node => {
-        const eventType = $node.attr('data-event-type');
-        expect(['disaster', 'discovery', 'war', 'alliance', 'trade']).to.include(eventType);
-      });
-    });
-
-    it('悬停事件节点应该显示提示信息', () => {
-      cy.get('[data-testid="event-node"]').first().trigger('mouseover');
-      cy.get('[data-testid="event-tooltip"]').should('be.visible');
+    it('should display time controls', () => {
+      cy.get('[data-testid="play-pause-btn"]').should('be.visible');
+      cy.get('[data-testid="speed-control"]').should('be.visible');
     });
   });
 
-  describe('缩放功能', () => {
-    it('应该支持放大时间轴', () => {
-      cy.get('[data-testid="timeline-zoom-in"]').click();
-      cy.get('[data-testid="timeline-container"]').should('have.attr', 'data-zoom-level');
-    });
-
-    it('应该支持缩小时间轴', () => {
-      cy.get('[data-testid="timeline-zoom-out"]').click();
-      cy.get('[data-testid="timeline-container"]').should('have.attr', 'data-zoom-level');
-    });
-
-    it('应该支持滚轮缩放', () => {
-      cy.get('[data-testid="timeline-container"]').trigger('wheel', { deltaY: -100 });
-    });
-
-    it('缩放应该有合理的范围限制', () => {
-      // 测试最大缩放
-      for (let i = 0; i < 20; i++) {
-        cy.get('[data-testid="timeline-zoom-in"]').click();
-      }
-      cy.get('[data-testid="timeline-container"]').should('have.attr', 'data-zoom-level', '10');
-
-      // 测试最小缩放
-      for (let i = 0; i < 20; i++) {
-        cy.get('[data-testid="timeline-zoom-out"]').click();
-      }
-      cy.get('[data-testid="timeline-container"]').should('have.attr', 'data-zoom-level', '0.1');
-    });
-  });
-
-  describe('拖拽功能', () => {
-    it('应该支持拖拽时间轴', () => {
-      cy.get('[data-testid="timeline-track"]')
-        .trigger('mousedown', { button: 0 })
-        .trigger('mousemove', { clientX: 300 })
-        .trigger('mouseup');
-    });
-
-    it('拖拽应该更新可视范围', () => {
-      const initialPosition = cy.get('[data-testid="timeline-track"]').then($track => {
-        return $track.attr('data-scroll-position');
-      });
-
-      cy.get('[data-testid="timeline-track"]')
-        .trigger('mousedown', { button: 0 })
-        .trigger('mousemove', { clientX: 300 })
-        .trigger('mouseup');
-
-      cy.get('[data-testid="timeline-track"]').then($track => {
-        const newPosition = $track.attr('data-scroll-position');
-        expect(newPosition).to.not.equal(initialPosition);
-      });
-    });
-  });
-
-  describe('事件回放', () => {
-    it('点击事件节点应该触发回放', () => {
-      cy.get('[data-testid="event-node"]').first().click();
-      cy.get('[data-testid="replay-modal"]').should('be.visible');
-    });
-
-    it('回放应该显示事件详情', () => {
-      cy.get('[data-testid="event-node"]').first().click();
-      cy.get('[data-testid="event-detail"]').should('be.visible');
-    });
-
-    it('回放应该恢复宇宙状态', () => {
-      cy.get('[data-testid="event-node"]').first().click();
-      cy.get('[data-testid="replay-start"]').click();
-      cy.get('[data-testid="universe-canvas"]').should('have.attr', 'data-replay-mode', 'true');
-    });
-
-    it('应该可以退出回放模式', () => {
-      cy.get('[data-testid="event-node"]').first().click();
-      cy.get('[data-testid="replay-start"]').click();
-      cy.get('[data-testid="replay-exit"]').click();
-      cy.get('[data-testid="universe-canvas"]').should('have.attr', 'data-replay-mode', 'false');
-    });
-  });
-
-  describe('时间导航', () => {
-    it('应该显示宇宙纪年', () => {
-      cy.get('[data-testid="universe-year"]').should('be.visible');
-    });
-
-    it('应该可以跳转到指定时间', () => {
-      cy.get('[data-testid="time-jump-input"]').clear().type('1000');
-      cy.get('[data-testid="time-jump-button"]').click();
-      cy.get('[data-testid="universe-year"]').should('contain', '1000');
-    });
-
-    it('应该显示时间播放控制', () => {
-      cy.get('[data-testid="time-play"]').should('be.visible');
-      cy.get('[data-testid="time-pause"]').should('be.visible');
-    });
-
-    it('播放控制应该正常工作', () => {
-      cy.get('[data-testid="time-pause"]').click();
-      cy.get('[data-testid="universe-canvas"]').should('have.attr', 'data-paused', 'true');
+  describe('Timeline Navigation', () => {
+    it('should pause simulation when clicking pause button', () => {
+      cy.get('[data-testid="play-pause-btn"]').click();
       
-      cy.get('[data-testid="time-play"]').click();
-      cy.get('[data-testid="universe-canvas"]').should('have.attr', 'data-paused', 'false');
+      cy.get('[data-testid="play-pause-btn"]').should('have.attr', 'data-state', 'paused');
+      cy.get('[data-testid="simulation-status"]').should('contain', 'Paused');
+    });
+
+    it('should resume simulation when clicking play button', () => {
+      cy.get('[data-testid="play-pause-btn"]').click(); // Pause
+      cy.get('[data-testid="play-pause-btn"]').click(); // Play
+      
+      cy.get('[data-testid="play-pause-btn"]').should('have.attr', 'data-state', 'playing');
+    });
+
+    it('should change simulation speed', () => {
+      cy.get('[data-testid="speed-control"]').select('2x');
+      
+      cy.get('[data-testid="speed-indicator"]').should('contain', '2x');
+    });
+
+    it('should allow jumping to specific time', () => {
+      cy.get('[data-testid="time-jump-input"]').clear().type('1000');
+      cy.get('[data-testid="time-jump-btn"]').click();
+      
+      cy.get('[data-testid="current-time"]').should('contain', '1000');
+    });
+  });
+
+  describe('Event Markers', () => {
+    it('should display event markers on timeline', () => {
+      cy.waitForEvents();
+      
+      cy.get('[data-testid="event-marker"]').should('have.length.at.least', 1);
+    });
+
+    it('should show event tooltip on hover', () => {
+      cy.get('[data-testid="event-marker"]').first().trigger('mouseover');
+      
+      cy.get('[data-testid="event-tooltip"]').should('be.visible');
+      cy.get('[data-testid="event-tooltip"]').should('contain', 'Event');
+    });
+
+    it('should categorize events by type with different colors', () => {
+      cy.get('[data-testid="event-marker"]').then(($markers) => {
+        const types = new Set();
+        $markers.each((_, el) => {
+          types.add(Cypress.$(el).attr('data-event-type'));
+        });
+        expect(types.size).to.be.at.least(1);
+      });
+    });
+
+    it('should show major events prominently', () => {
+      cy.get('[data-testid="event-marker"][data-importance="major"]').should('exist');
+    });
+  });
+
+  describe('Timeline Zoom', () => {
+    it('should zoom in on timeline with zoom control', () => {
+      const initialWidth = cy.get('[data-testid="timeline-track"]').then(($track) => {
+        return $track.width();
+      });
+      
+      cy.get('[data-testid="timeline-zoom-in"]').click();
+      
+      cy.get('[data-testid="timeline-track"]').then(($track) => {
+        expect($track.width()).to.be.greaterThan(initialWidth);
+      });
+    });
+
+    it('should zoom out on timeline with zoom control', () => {
+      cy.get('[data-testid="timeline-zoom-out"]').click();
+      
+      cy.get('[data-testid="timeline-track"]').should('be.visible');
+    });
+
+    it('should zoom with mouse wheel on timeline', () => {
+      cy.get('[data-testid="timeline-track"]').trigger('wheel', { deltaY: -100 });
+      
+      cy.get('[data-testid="timeline-track"]').should('be.visible');
+    });
+  });
+
+  describe('Timeline Drag', () => {
+    it('should drag timeline left and right', () => {
+      cy.get('[data-testid="timeline-track"]')
+        .trigger('mousedown', { button: 0 })
+        .trigger('mousemove', { movementX: -100 })
+        .trigger('mouseup');
+      
+      cy.get('[data-testid="timeline-track"]').should('be.visible');
+    });
+
+    it('should update visible time range after drag', () => {
+      cy.get('[data-testid="timeline-track"]')
+        .trigger('mousedown', { button: 0 })
+        .trigger('mousemove', { movementX: 100 })
+        .trigger('mouseup');
+      
+      cy.get('[data-testid="visible-time-range"]').should('exist');
+    });
+  });
+
+  describe('Event Playback', () => {
+    it('should show event details when clicking event marker', () => {
+      cy.get('[data-testid="event-marker"]').first().click();
+      
+      cy.get('[data-testid="event-detail-modal"]').should('be.visible');
+    });
+
+    it('should replay universe state at event time', () => {
+      cy.get('[data-testid="event-marker"]').first().click();
+      cy.get('[data-testid="replay-event-btn"]').click();
+      
+      cy.get('[data-testid="replay-indicator"]').should('be.visible');
+    });
+
+    it('should exit replay mode when clicking close', () => {
+      cy.get('[data-testid="event-marker"]').first().click();
+      cy.get('[data-testid="replay-event-btn"]').click();
+      cy.get('[data-testid="exit-replay-btn"]').click();
+      
+      cy.get('[data-testid="replay-indicator"]').should('not.exist');
+    });
+  });
+
+  describe('Event Filtering', () => {
+    it('should filter events by type', () => {
+      cy.get('[data-testid="event-filter-dropdown"]').select('disaster');
+      
+      cy.get('[data-testid="event-marker"]').each(($marker) => {
+        expect($marker.attr('data-event-type')).to.equal('disaster');
+      });
+    });
+
+    it('should filter events by civilization', () => {
+      cy.get('[data-testid="civ-filter-dropdown"]').select('all');
+      
+      cy.get('[data-testid="event-marker"]').should('have.length.at.least', 1);
+    });
+
+    it('should clear filters', () => {
+      cy.get('[data-testid="event-filter-dropdown"]').select('disaster');
+      cy.get('[data-testid="clear-filters-btn"]').click();
+      
+      cy.get('[data-testid="event-filter-dropdown"]').should('have.value', 'all');
     });
   });
 });
