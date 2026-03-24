@@ -1,0 +1,39 @@
+import { Controller, Post, Get, Body, Param } from '@nestjs/common';
+import { TradeService } from './trade.service';
+
+@Controller('trade')
+export class TradeController {
+  constructor(private readonly tradeService: TradeService) {}
+
+  @Post('routes')
+  async createRoute(
+    @Body() body: { fromCivId: string; toCivId: string; resourceType: 'ore' | 'energy' | 'tech'; amount: number },
+  ) {
+    return this.tradeService.createTradeRoute(
+      body.fromCivId,
+      body.toCivId,
+      body.resourceType,
+      body.amount,
+    );
+  }
+
+  @Get('routes')
+  async getAllRoutes() {
+    return this.tradeService.getAllTradeRoutes();
+  }
+
+  @Get('routes/:id')
+  async getRoute(@Param('id') id: string) {
+    return this.tradeService.getTradeRoute(id);
+  }
+
+  @Post('routes/:id/resume')
+  async resumeRoute(@Param('id') id: string) {
+    return this.tradeService.resumeRoute(id);
+  }
+
+  @Post('check-weather')
+  async checkWeatherImpact() {
+    return this.tradeService.checkWeatherImpact();
+  }
+}

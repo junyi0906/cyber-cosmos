@@ -1,320 +1,185 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, QueryRunner, IsolationLevel } from 'typeorm';
-import { InjectQueue } from '@nestjs/bull';
-import { Queue } from 'bull';
-import { v4 as uuidv4 } from 'uuid';
-import {
-  TradeJobData,
-  TradeResult,
-  TradeEvent,
-  TradeEventType,
-  ResourceType,
-  WeatherType,
-  RouteStatus,
-} from './interfaces/trade.interface';
-import {
-  TradeRecord,
-  CivilizationResource,
-  TradeRoute,
-  UniverseWeather,
-} from './entities/trade.entity';
-import { CreateTradeDto } from './dto/trade.dto';
+import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { DiplomacyService } from '../diplomacy/diplomacy.service';
+import { WeatherService } from '../weather/weather.service';
+
+export interface TradeRoute {
+  id: string;
+  fromCivilization: string;
+  toCivilization: string;
+  resourceType: 'ore' | 'energy' | 'tech';
+  amount: number;
+  status: 'active' | 'suspended' | 'interrupted';
+  efficiency: number;
+  createdAt: Date;
+  interruptedReason?: string;
+}
+
+export interface Civilization {
+  id: string;
+  name: string;
+  resources: {
+    ore: number;
+    energy: number;
+    tech: number;
+  };
+}
 
 @Injectable()
-export class TradeService implements OnModuleInit {
-  private readonly logger = new Logger(TradeService.name);
-  private readonly MAX_RETRIES = 3;
-  private readonly LOCK_TIMEOUT = 10000;
+export class TradeService {
+  private tradeRoutes: Map<string, TradeRoute> = new Map();
+  private civilizations: Map<string, Civilization> = new Map();
+  private routeIdCounter = 0;
 
   constructor(
-    @InjectRepository(TradeRecord)
-    private tradeRecordRepository: Repository<TradeRecord>,
-    @InjectRepository(CivilizationResource)
-    private civilizationResourceRepository: Repository<CivilizationResource>,
-    @InjectRepository(TradeRoute)
-    private tradeRouteRepository: Repository<TradeRoute>,
-    @InjectRepository(UniverseWeather)
-    private weatherRepository: Repository<UniverseWeather>,
-    private dataSource: DataSource,
-    @InjectQueue('trade') private tradeQueue: Queue<TradeJobData>,
+    private readonly diplomacyService: DiplomacyService,
+    private readonly weatherService: WeatherService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
-  async onModuleInit() {
-    const weather = await this.weatherRepository.findOne({ where: { id: 'current' } });
-    if (!weather) {
-      await this.weatherRepository.save({
-        id: 'current',
-        current: WeatherType.CALM,
-        duration: 100,
-        cycleCount: 0,
-      });
-    }
+  // 初始化文明（测试用）
+  initializeCivilization(id: string, name: string, resources: { ore: number; energy: number; tech: number }): Civilization {
+    const civ: Civilization = { id, name, resources: { ...resources } };
+    this.civilizations.set(id, civ);
+    return civ;
   }
 
-  async createTrade(dto: CreateTradeDto): Promise<string> {
-    const tradeId = uuidv4();
+  // 获取文明
+  getCivilization(id: string): Civilization | undefined {
+    return this.civilizations.get(id);
+  }
+
+  // 创建贸易路线
+  async createTradeRoute(
+    fromCivId: string,
+    toCivId: string,
+    resourceType: 'ore' | 'energy' | 'tech',
+    amount: number,
+  ): Promise<TradeRoute> {
+    // 验证文明存在
+    const fromCiv = this.civilizations.get(fromCivId);
+    const toCiv = this.civilizations.get(toCivId);
     
-    const route = await this.tradeRouteRepository.findOne({
-      where: { id: dto.routeId },
-    });
-
-    if (!route) {
-      throw new Error(`Trade route ${dto.routeId} not found`);
+    if (!fromCiv || !toCiv) {
+      throw new NotFoundException('Civilization not found');
     }
 
-    if (route.status !== RouteStatus.ACTIVE) {
-      throw new Error(`Trade route ${dto.routeId} is not active`);
+    // 验证外交关系（需要联盟或友好关系）
+    const relation = this.diplomacyService.getRelation(fromCivId, toCivId);
+    if (relation !== 'alliance' && relation !== 'friendly') {
+      throw new BadRequestException('Trade requires alliance or friendly diplomatic relation');
     }
 
-    const tradeRecord = this.tradeRecordRepository.create({
-      id: tradeId,
-      sourceCivilizationId: dto.sourceCivilizationId,
-      targetCivilizationId: dto.targetCivilizationId,
-      resources: dto.resources,
-      routeId: dto.routeId,
-      status: 'pending',
-      events: [],
-      result: null,
-    });
+    // 验证资源充足
+    if (fromCiv.resources[resourceType] < amount) {
+      throw new BadRequestException('Insufficient resources');
+    }
 
-    await this.tradeRecordRepository.save(tradeRecord);
+    // 计算效率（受天气影响）
+    const weatherEffect = this.weatherService.getCurrentWeatherEffect();
+    let efficiency = 1.0;
+    
+    if (weatherEffect.type === 'resource_storm') {
+      efficiency = 0.7; // 资源风暴降低效率
+    } else if (weatherEffect.type === 'dark_matter_wave') {
+      efficiency = 0.8;
+    }
 
-    const jobData: TradeJobData = {
-      tradeId,
-      sourceCivilizationId: dto.sourceCivilizationId,
-      targetCivilizationId: dto.targetCivilizationId,
-      resources: dto.resources,
-      routeId: dto.routeId,
-      timestamp: new Date(),
+    // 扣除资源
+    fromCiv.resources[resourceType] -= amount;
+    
+    // 增加资源（考虑效率）
+    const receivedAmount = Math.floor(amount * efficiency);
+    toCiv.resources[resourceType] += receivedAmount;
+
+    // 创建贸易路线
+    const routeId = `route-${++this.routeIdCounter}`;
+    const route: TradeRoute = {
+      id: routeId,
+      fromCivilization: fromCivId,
+      toCivilization: toCivId,
+      resourceType,
+      amount,
+      status: 'active',
+      efficiency,
+      createdAt: new Date(),
     };
 
-    await this.tradeQueue.add('settle', jobData, {
-      attempts: this.MAX_RETRIES,
-      backoff: {
-        type: 'exponential',
-        delay: 1000,
-      },
-      removeOnComplete: 100,
-      removeOnFail: 50,
+    this.tradeRoutes.set(routeId, route);
+
+    // 发送 WebSocket 推送
+    this.eventEmitter.emit('trade_updates', {
+      type: 'route_created',
+      route,
+      fromCivResources: fromCiv.resources,
+      toCivResources: toCiv.resources,
     });
 
-    this.logger.log(`Trade ${tradeId} created and queued for settlement`);
-    return tradeId;
+    return route;
   }
 
-  async settleTrade(data: TradeJobData): Promise<TradeResult> {
-    const { tradeId, sourceCivilizationId, targetCivilizationId, resources, routeId } = data;
+  // 获取贸易路线
+  getTradeRoute(id: string): TradeRoute | undefined {
+    return this.tradeRoutes.get(id);
+  }
 
-    this.logger.log(`Starting settlement for trade ${tradeId}`);
+  // 获取所有贸易路线
+  getAllTradeRoutes(): TradeRoute[] {
+    return Array.from(this.tradeRoutes.values());
+  }
 
-    await this.tradeRecordRepository.update(
-      { id: tradeId },
-      { status: 'processing' }
-    );
+  // 检查天气影响并中断路线
+  async checkWeatherImpact(): Promise<TradeRoute[]> {
+    const weatherEffect = this.weatherService.getCurrentWeatherEffect();
+    const interruptedRoutes: TradeRoute[] = [];
 
-    const queryRunner = this.dataSource.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction('SERIALIZABLE' as IsolationLevel);
+    for (const route of this.tradeRoutes.values()) {
+      if (route.status !== 'active') continue;
 
-    try {
-      const sourceResources = await this.lockAndGetResources(
-        queryRunner,
-        sourceCivilizationId
-      );
-      const targetResources = await this.lockAndGetResources(
-        queryRunner,
-        targetCivilizationId
-      );
+      // 资源风暴可能导致路线中断
+      if (weatherEffect.type === 'resource_storm' && weatherEffect.accidentRate > 0.5) {
+        route.status = 'interrupted';
+        route.interruptedReason = 'Severe resource storm';
+        interruptedRoutes.push(route);
 
-      const route = await queryRunner.manager.findOne(TradeRoute, {
-        where: { id: routeId },
-        lock: { mode: 'pessimistic_write' },
-      });
-
-      if (!route || route.status !== RouteStatus.ACTIVE) {
-        throw new Error('Trade route is no longer available');
+        this.eventEmitter.emit('trade_updates', {
+          type: 'route_interrupted',
+          route,
+          reason: route.interruptedReason,
+        });
       }
-
-      const weather = await this.getCurrentWeather(queryRunner);
-      const events = this.generateTradeEvents(weather, route);
-      
-      const { finalResources, eventAdjustedResources } = this.applyEventsToResources(
-        resources,
-        events
-      );
-
-      this.validateSufficientResources(sourceResources, finalResources);
-
-      await this.deductResources(
-        queryRunner,
-        sourceCivilizationId,
-        finalResources,
-        sourceResources.version
-      );
-
-      await this.addResources(
-        queryRunner,
-        targetCivilizationId,
-        eventAdjustedResources,
-        targetResources.version
-      );
-
-      await queryRunner.commitTransaction();
-
-      const result: TradeResult = {
-        success: true,
-        tradeId,
-        sourceId: sourceCivilizationId,
-        targetId: targetCivilizationId,
-        resourcesTransferred: eventAdjustedResources,
-        events,
-        timestamp: new Date(),
-      };
-
-      await this.tradeRecordRepository.update(
-        { id: tradeId },
-        {
-          status: 'completed',
-          events,
-          result: {
-            success: true,
-            transferredResources: eventAdjustedResources,
-          },
-        }
-      );
-
-      this.logger.log(`Trade ${tradeId} settled successfully`);
-      return result;
-    } catch (error) {
-      await queryRunner.rollbackTransaction();
-      
-      await this.tradeRecordRepository.update(
-        { id: tradeId },
-        {
-          status: 'failed',
-          errorMessage: error.message,
-        }
-      );
-
-      this.logger.error(`Trade ${tradeId} failed: ${error.message}`);
-      throw error;
-    } finally {
-      await queryRunner.release();
     }
+
+    return interruptedRoutes;
   }
 
-  private async lockAndGetResources(
-    queryRunner: QueryRunner,
-    civilizationId: string
-  ): Promise<CivilizationResource> {
-    const resources = await queryRunner.manager.findOne(CivilizationResource, {
-      where: { civilizationId },
-      lock: { mode: 'pessimistic_write' },
+  // 恢复中断的贸易路线
+  async resumeRoute(routeId: string): Promise<TradeRoute> {
+    const route = this.tradeRoutes.get(routeId);
+    if (!route) {
+      throw new NotFoundException('Trade route not found');
+    }
+
+    const weatherEffect = this.weatherService.getCurrentWeatherEffect();
+    if (weatherEffect.type === 'resource_storm' && weatherEffect.accidentRate > 0.5) {
+      throw new BadRequestException('Cannot resume route during severe weather');
+    }
+
+    route.status = 'active';
+    route.interruptedReason = undefined;
+
+    this.eventEmitter.emit('trade_updates', {
+      type: 'route_resumed',
+      route,
     });
 
-    if (!resources) {
-      const newResources = queryRunner.manager.create(CivilizationResource, {
-        civilizationId,
-        ore: 1000,
-        energy: 1000,
-        techPoints: 100,
-        credits: 5000,
-      });
-      return await queryRunner.manager.save(newResources);
-    }
-
-    return resources;
+    return route;
   }
 
-  private async getCurrentWeather(queryRunner: QueryRunner): Promise<WeatherType> {
-    const weather = await queryRunner.manager.findOne(UniverseWeather, {
-      where: { id: 'current' },
-    });
-    return weather?.current || WeatherType.CALM;
+  // 清除所有数据（测试用）
+  clearAll(): void {
+    this.tradeRoutes.clear();
+    this.civilizations.clear();
+    this.routeIdCounter = 0;
   }
-
-  private generateTradeEvents(weather: WeatherType, route: TradeRoute): TradeEvent[] {
-    const events: TradeEvent[] = [];
-    const baseRisk = 0.1;
-    const distanceModifier = Math.min(route.distance / 100, 0.3);
-    const weatherModifier = this.getWeatherRiskModifier(weather);
-    
-    const totalRisk = baseRisk + distanceModifier + weatherModifier;
-
-    if (Math.random() < totalRisk * 0.4) {
-      const lossPercent = 0.1 + Math.random() * 0.3;
-      events.push({
-        type: TradeEventType.PIRATE_ATTACK,
-        description: '商队遭遇海盗袭击，部分货物被劫掠',
-        impact: {
-          resourceLoss: this.calculateResourceLoss(lossPercent),
-        },
-      });
-    }
-
-    if (weather === WeatherType.RESOURCE_STORM && Math.random() < 0.3) {
-      const lossPercent = 0.05 + Math.random() * 0.15;
-      events.push({
-        type: TradeEventType.WEATHER_STORM,
-        description: '资源风暴导致航线偏离，部分货物受损',
-        impact: {
-          resourceLoss: this.calculateResourceLoss(lossPercent),
-          delay: Math.floor(Math.random() * 5) + 1,
-        },
-      });
-    }
-
-    if (weather === WeatherType.DARK_MATTER_WAVE && Math.random() < 0.2) {
-      events.push({
-        type: TradeEventType.DARK_MATTER_WAVE,
-        description: '暗物质浪潮干扰导航系统，能量消耗增加',
-        impact: {
-          resourceLoss: { [ResourceType.ENERGY]: 0.2 },
-        },
-      });
-    }
-
-    if (Math.random() < 0.05) {
-      const gainPercent = 0.1 + Math.random() * 0.2;
-      events.push({
-        type: TradeEventType.TREASURE_FOUND,
-        description: '商队发现漂流的前驱者物资舱',
-        impact: {
-          resourceGain: this.calculateResourceGain(gainPercent),
-        },
-      });
-    }
-
-    if (events.length === 0) {
-      events.push({
-        type: TradeEventType.SAFE_PASSAGE,
-        description: '商队安全抵达目的地',
-      });
-    }
-
-    return events;
-  }
-
-  private getWeatherRiskModifier(weather: WeatherType): number {
-    switch (weather) {
-      case WeatherType.RESOURCE_STORM:
-        return 0.3;
-      case WeatherType.DARK_MATTER_WAVE:
-        return 0.15;
-      case WeatherType.DARK_FLUCTUATION:
-        return 0.2;
-      default:
-        return 0;
-    }
-  }
-
-  private calculateResourceLoss(percent: number): Partial<Record<ResourceType, number>> {
-    return {
-      [ResourceType.ORE]: percent,
-      [ResourceType.ENERGY]: percent,
-      [ResourceType.CREDITS]: percent * 0.5,
-    };
-  }
-
-  private calculateResourceGain(percent: number): Partial<Record<ResourceType
+}

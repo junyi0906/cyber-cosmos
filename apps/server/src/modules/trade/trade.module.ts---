@@ -1,14 +1,14 @@
 import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { TradeRoute } from '../../entities/trade-route.entity';
-import { MarketOrder } from '../../entities/market-order.entity';
+import { TradeService } from './trade.service';
+import { TradeController } from './trade.controller';
+import { TradeGateway } from './trade.gateway';
+import { DiplomacyModule } from '../diplomacy/diplomacy.module';
+import { WeatherModule } from '../weather/weather.module';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([TradeRoute, MarketOrder]),
-  ],
-  controllers: [],
-  providers: [],
-  exports: [TypeOrmModule],
+  imports: [DiplomacyModule, WeatherModule],
+  controllers: [TradeController],
+  providers: [TradeService, TradeGateway],
+  exports: [TradeService],
 })
 export class TradeModule {}

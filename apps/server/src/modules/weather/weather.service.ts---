@@ -1,250 +1,94 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Weather } from './entities/weather.entity';
-import { EffectsService } from './effects.service';
 
 export type WeatherType = 'calm' | 'resource_storm' | 'dark_matter_wave' | 'dark_fluctuation';
 
-export interface WeatherForecast {
-  cycle: number;
+export interface WeatherEffect {
   type: WeatherType;
-  name: string;
-  description: string;
-  effects: {
-    miningEfficiency?: number;
-    tradeAccidentRate?: number;
-    researchSpeed?: number;
-    energyConsumption?: number;
-    visionRange?: number;
-    trustDecayRate?: number;
-  };
-  duration: number;
-  startTime: Date;
-  endTime: Date;
-}
-
-export interface WeatherConfig {
-  type: WeatherType;
-  name: string;
-  description: string;
-  probability: number;
-  effects: WeatherForecast['effects'];
+  miningEfficiency: number;
+  researchSpeed: number;
+  energyConsumption: number;
+  accidentRate: number;
+  visibilityRange: number;
+  trustDecay: number;
 }
 
 @Injectable()
 export class WeatherService {
-  private weatherConfigs: WeatherConfig[] = [
-    {
-      type: 'calm',
-      name: '平静期',
-      description: '宇宙处于稳定状态，各项活动正常进行',
-      probability: 0.4,
-      effects: {}
-    },
-    {
-      type: 'resource_storm',
-      name: '资源风暴',
-      description: '星际物质剧烈涌动，采矿效率大幅提升，但航行风险增加',
-      probability: 0.2,
-      effects: {
-        miningEfficiency: 1.5,
-        tradeAccidentRate: 0.3
-      }
-    },
-    {
-      type: 'dark_matter_wave',
-      name: '暗物质浪潮',
-      description: '暗物质浓度异常升高，科研突破概率增加，但能量消耗剧增',
-      probability: 0.2,
-      effects: {
-        researchSpeed: 1.5,
-        energyConsumption: 2.0
-      }
-    },
-    {
-      type: 'dark_fluctuation',
-      name: '黑暗波动',
-      description: '空间扭曲加剧，视野受限，外交信任度加速衰减',
-      probability: 0.2,
-      effects: {
-        visionRange: 0.5,
-        trustDecayRate: 2.0
-      }
-    }
-  ];
+  private currentWeather: WeatherType = 'calm';
+  private weatherHistory: { type: WeatherType; timestamp: Date }[] = [];
 
-  private currentWeather: WeatherForecast | null = null;
-  private currentCycle: number = 0;
-  private forecastCache: WeatherForecast[] = [];
-
-  constructor(
-    @InjectRepository(Weather)
-    private weatherRepository: Repository<Weather>,
-    private effectsService: EffectsService
-  ) {
-    this.initializeWeather();
+  // 获取当前天气
+  getCurrentWeather(): WeatherType {
+    return this.currentWeather;
   }
 
-  private async initializeWeather() {
-    const lastWeather = await this.weatherRepository.findOne({
-      order: { createdAt: 'DESC' }
-    });
-    
-    if (lastWeather) {
-      this.currentCycle = lastWeather.cycle;
-      this.currentWeather = this.entityToForecast(lastWeather);
-    }
-    
-    this.generateForecast();
+  // 设置天气（测试用）
+  setWeather(type: WeatherType): void {
+    this.currentWeather = type;
+    this.weatherHistory.push({ type, timestamp: new Date() });
   }
 
-  private generateForecast() {
-    this.forecastCache = [];
-    const startCycle = this.currentCycle + 1;
-    
-    for (let i = 0; i < 3; i++) {
-      const cycle = startCycle + i;
-      const config = this.selectWeatherType();
-      const duration = this.generateDuration(config.type);
-      
-      const forecast: WeatherForecast = {
-        cycle,
-        type: config.type,
-        name: config.name,
-        description: config.description,
-        effects: config.effects,
-        duration,
-        startTime: this.calculateCycleTime(cycle),
-        endTime: this.calculateCycleTime(cycle + duration)
-      };
-      
-      this.forecastCache.push(forecast);
-    }
+  // 获取天气效果
+  getCurrentWeatherEffect(): WeatherEffect {
+    return this.getWeatherEffect(this.currentWeather);
   }
 
-  private selectWeatherType(): WeatherConfig {
-    const rand = Math.random();
-    let cumulative = 0;
-    
-    for (const config of this.weatherConfigs) {
-      cumulative += config.probability;
-      if (rand <= cumulative) {
-        return config;
-      }
-    }
-    
-    return this.weatherConfigs[0];
-  }
-
-  private generateDuration(type: WeatherType): number {
+  // 根据天气类型获取效果
+  getWeatherEffect(type: WeatherType): WeatherEffect {
     switch (type) {
       case 'calm':
-        return Math.floor(Math.random() * 3) + 2;
+        return {
+          type: 'calm',
+          miningEfficiency: 1.0,
+          researchSpeed: 1.0,
+          energyConsumption: 1.0,
+          accidentRate: 0,
+          visibilityRange: 1.0,
+          trustDecay: 1.0,
+        };
       case 'resource_storm':
-        return Math.floor(Math.random() * 2) + 1;
+        return {
+          type: 'resource_storm',
+          miningEfficiency: 1.5,
+          researchSpeed: 1.0,
+          energyConsumption: 1.0,
+          accidentRate: 0.3,
+          visibilityRange: 0.8,
+          trustDecay: 1.0,
+        };
       case 'dark_matter_wave':
-        return Math.floor(Math.random() * 2) + 1;
+        return {
+          type: 'dark_matter_wave',
+          miningEfficiency: 1.0,
+          researchSpeed: 1.5,
+          energyConsumption: 2.0,
+          accidentRate: 0.1,
+          visibilityRange: 1.0,
+          trustDecay: 1.0,
+        };
       case 'dark_fluctuation':
-        return Math.floor(Math.random() * 3) + 1;
+        return {
+          type: 'dark_fluctuation',
+          miningEfficiency: 1.0,
+          researchSpeed: 1.0,
+          energyConsumption: 1.0,
+          accidentRate: 0.05,
+          visibilityRange: 0.5,
+          trustDecay: 1.5,
+        };
       default:
-        return 1;
+        return this.getWeatherEffect('calm');
     }
   }
 
-  private calculateCycleTime(cycle: number): Date {
-    const cycleDuration = 60000;
-    const baseTime = Date.now();
-    return new Date(baseTime + (cycle - this.currentCycle) * cycleDuration);
+  // 获取天气历史
+  getWeatherHistory(): { type: WeatherType; timestamp: Date }[] {
+    return this.weatherHistory;
   }
 
-  async getForecast(count: number = 3): Promise<WeatherForecast[]> {
-    return this.forecastCache.slice(0, count);
-  }
-
-  async getCurrentWeather(): Promise<WeatherForecast | null> {
-    return this.currentWeather;
-  }
-
-  async getWeatherHistory(limit: number = 10): Promise<WeatherForecast[]> {
-    const history = await this.weatherRepository.find({
-      order: { createdAt: 'DESC' },
-      take: limit
-    });
-    
-    return history.map(w => this.entityToForecast(w));
-  }
-
-  async advanceCycle(): Promise<WeatherForecast> {
-    this.currentCycle++;
-    
-    if (this.forecastCache.length > 0) {
-      this.currentWeather = this.forecastCache.shift()!;
-    } else {
-      const config = this.selectWeatherType();
-      this.currentWeather = {
-        cycle: this.currentCycle,
-        type: config.type,
-        name: config.name,
-        description: config.description,
-        effects: config.effects,
-        duration: this.generateDuration(config.type),
-        startTime: new Date(),
-        endTime: new Date(Date.now() + 60000)
-      };
-    }
-    
-    const entity = this.forecastToEntity(this.currentWeather);
-    await this.weatherRepository.save(entity);
-    
-    this.effectsService.applyEffects(this.currentWeather.effects);
-    
-    if (this.forecastCache.length < 3) {
-      this.generateForecast();
-    }
-    
-    return this.currentWeather;
-  }
-
-  private forecastToEntity(forecast: WeatherForecast): Weather {
-    const entity = new Weather();
-    entity.cycle = forecast.cycle;
-    entity.type = forecast.type;
-    entity.name = forecast.name;
-    entity.description = forecast.description;
-    entity.effects = JSON.stringify(forecast.effects);
-    entity.duration = forecast.duration;
-    entity.createdAt = new Date();
-    return entity;
-  }
-
-  private entityToForecast(entity: Weather): WeatherForecast {
-    return {
-      cycle: entity.cycle,
-      type: entity.type as WeatherType,
-      name: entity.name,
-      description: entity.description,
-      effects: JSON.parse(entity.effects || '{}'),
-      duration: entity.duration,
-      startTime: entity.createdAt,
-      endTime: new Date(entity.createdAt.getTime() + entity.duration * 60000)
-    };
-  }
-
-  isSevereWeather(type: WeatherType): boolean {
-    return type !== 'calm';
-  }
-
-  getWeatherAlert(forecast: WeatherForecast): string | null {
-    switch (forecast.type) {
-      case 'resource_storm':
-        return '⚠️ 资源风暴即将来临！采矿效率提升50%，但航线事故率增加30%';
-      case 'dark_matter_wave':
-        return '⚠️ 暗物质浪潮来袭！科研速度提升50%，能量消耗翻倍';
-      case 'dark_fluctuation':
-        return '⚠️ 黑暗波动预警！视野范围缩小，外交信任度加速衰减';
-      default:
-        return null;
-    }
+  // 清除历史（测试用）
+  clearHistory(): void {
+    this.currentWeather = 'calm';
+    this.weatherHistory = [];
   }
 }

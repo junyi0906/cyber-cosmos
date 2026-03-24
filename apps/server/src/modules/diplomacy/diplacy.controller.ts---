@@ -1,0 +1,33 @@
+import { Controller, Post, Get, Body, Param } from '@nestjs/common';
+import { DiplomacyService, DiplomaticRelation } from './diplomacy.service';
+
+@Controller('diplomacy')
+export class DiplomacyController {
+  constructor(private readonly diplomacyService: DiplomacyService) {}
+
+  @Post('relations')
+  setRelation(
+    @Body() body: { civ1Id: string; civ2Id: string; relation: DiplomaticRelation },
+  ) {
+    return this.diplomacyService.setRelation(body.civ1Id, body.civ2Id, body.relation);
+  }
+
+  @Post('alliance')
+  formAlliance(@Body() body: { civ1Id: string; civ2Id: string }) {
+    return this.diplomacyService.formAlliance(body.civ1Id, body.civ2Id);
+  }
+
+  @Post('war')
+  declareWar(@Body() body: { civ1Id: string; civ2Id: string }) {
+    return this.diplomacyService.declareWar(body.civ1Id, body.civ2Id);
+  }
+
+  @Get('relations/:civ1Id/:civ2Id')
+  getRelation(@Param('civ1Id') civ1Id: string, @Param('civ2Id') civ2Id: string) {
+    return {
+      civ1Id,
+      civ2Id,
+      relation: this.diplomacyService.getRelation(civ1Id, civ2Id),
+    };
+  }
+}

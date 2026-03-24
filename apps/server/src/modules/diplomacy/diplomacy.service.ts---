@@ -1,0 +1,80 @@
+import { Injectable } from '@nestjs/common';
+
+export type DiplomaticRelation = 'neutral' | 'friendly' | 'alliance' | 'hostile' | 'war';
+
+export interface DiplomaticState {
+  civ1Id: string;
+  civ2Id: string;
+  relation: DiplomaticRelation;
+  trust: number;
+  treaties: string[];
+}
+
+@Injectable()
+export class DiplomacyService {
+  private relations: Map<string, DiplomaticState> = new Map();
+
+  private getKey(civ1Id: string, civ2Id: string): string {
+    return [civ1Id, civ2Id].sort().join('-');
+  }
+
+  // 设置外交关系
+  setRelation(civ1Id: string, civ2Id: string, relation: DiplomaticRelation): DiplomaticState {
+    const key = this.getKey(civ1Id, civ2Id);
+    const state: DiplomaticState = {
+      civ1Id,
+      civ2Id,
+      relation,
+      trust: this.getInitialTrust(relation),
+      treaties: [],
+    };
+    this.relations.set(key, state);
+    return state;
+  }
+
+  // 获取外交关系
+  getRelation(civ1Id: string, civ2Id: string): DiplomaticRelation {
+    const key = this.getKey(civ1Id, civ2Id);
+    const state = this.relations.get(key);
+    return state?.relation || 'neutral';
+  }
+
+  // 获取完整外交状态
+  getDiplomaticState(civ1Id: string, civ2Id: string): DiplomaticState | undefined {
+    const key = this.getKey(civ1Id, civ2Id);
+    return this.relations.get(key);
+  }
+
+  // 建立联盟
+  formAlliance(civ1Id: string, civ2Id: string): DiplomaticState {
+    const state = this.setRelation(civ1Id, civ2Id, 'alliance');
+    state.treaties.push('mutual_defense');
+    state.treaties.push('trade_agreement');
+    state.trust = 80;
+    return state;
+  }
+
+  // 宣战
+  declareWar(civ1Id: string, civ2Id: string): DiplomaticState {
+    const state = this.setRelation(civ1Id, civ2Id, 'war');
+    state.trust = 0;
+    state.treaties = [];
+    return state;
+  }
+
+  // 清除所有关系（测试用）
+  clearAll(): void {
+    this.relations.clear();
+  }
+
+  private getInitialTrust(relation: DiplomaticRelation): number {
+    switch (relation) {
+      case 'alliance': return 80;
+      case 'friendly': return 60;
+      case 'neutral': return 50;
+      case 'hostile': return 20;
+      case 'war': return 0;
+      default: return 50;
+    }
+  }
+}
