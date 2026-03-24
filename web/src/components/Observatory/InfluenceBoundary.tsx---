@@ -1,21 +1,16 @@
-import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { animated, useSpring, config } from 'react-spring';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 
-// 文明接口定义
+// 文明数据接口
 interface Civilization {
   id: string;
   name: string;
   color: string;
-  position: { x: number; y: number; z: number };
-  attributes: {
-    military: number;
-    economy: number;
-    technology: number;
-    culture: number;
-    population: number;
-  };
-  level: 'tribal' | 'planetary' | 'stellar' | 'galactic' | 'interstellar';
-  influenceRadius?: number;
+  position: { x: number; y: number };
+  influence: number; // 影响力值 (0-100)
+  population: number;
+  techLevel: number;
+  militaryPower: number;
+  expansionRate: number; // 扩张速率 (-1 到 1)
 }
 
 // 影响力边界点
@@ -26,438 +21,489 @@ interface BoundaryPoint {
   radius: number;
 }
 
-// 影响力边界属性
-interface InfluenceBoundaryProps {
-  civilizations: Civilization[];
-  viewportWidth: number;
-  viewportHeight: number;
-  scale: number;
-  offset: { x: number; y: number };
-  onCivilizationHover?: (civ: Civilization | null, event: React.MouseEvent) => void;
-  onBoundaryClick?: (civ: Civilization, event: React.MouseEvent) => void;
-  showLabels?: boolean;
-  animated?: boolean;
-  opacity?: number;
+// 影响力边界配置
+interface InfluenceBoundaryConfig {
+  baseRadius: number;
+  maxRadius: number;
+  minRadius: number;
+  animationSpeed: number;
+  pulseAmplitude: number;
+  pulseFrequency: number;
+  boundaryOpacity: number;
+  fillOpacity: number;
 }
 
-// 文明等级对应的基础影响力半径
-const LEVEL_BASE_RADIUS: Record<Civilization['level'], number> = {
-  tribal: 30,
-  planetary: 60,
-  stellar: 120,
-  galactic: 200,
-  interstellar: 350,
+const defaultConfig: InfluenceBoundaryConfig = {
+  baseRadius: 50,
+  maxRadius: 200,
+  minRadius: 20,
+  animationSpeed: 0.02,
+  pulseAmplitude: 5,
+  pulseFrequency: 0.05,
+  boundaryOpacity: 0.8,
+  fillOpacity: 0.15,
 };
 
-// 属性权重配置
-const ATTRIBUTE_WEIGHTS = {
-  military: 0.15,
-  economy: 0.2,
-  technology: 0.25,
-  culture: 0.25,
-  population: 0.15,
+// 影响力范围计算算法
+const calculateInfluenceRadius = (
+  civ: Civilization,
+  config: InfluenceBoundaryConfig
+): number => {
+  // 基于多个属性计算影响力半径
+  const influenceFactor = civ.influence / 100;
+  const populationFactor = Math.log10(Math.max(1, civ.population)) / 10;
+  const techFactor = civ.techLevel / 20;
+  const militaryFactor = Math.log10(Math.max(1, civ.militaryPower)) / 8;
+
+  // 综合影响力评分
+  const score =
+    influenceFactor * 0.4 +
+    populationFactor * 0.2 +
+    techFactor * 0.25 +
+    militaryFactor * 0.15;
+
+  // 映射到半径范围
+  const radius =
+    config.minRadius + score * (config.maxRadius - config.minRadius);
+
+  return Math.max(config.minRadius, Math.min(config.maxRadius, radius));
 };
 
-/**
- * 计算文明影响力半径
- * 基于文明等级和属性综合计算
- */
-function calculateInfluenceRadius(civ: Civilization): number {
-  const baseRadius = LEVEL_BASE_RADIUS[civ.level] || 60;
-  
-  // 计算属性加成
-  const { military, economy, technology, culture, population } = civ.attributes;
-  const attributeBonus = 
-    military * ATTRIBUTE_WEIGHTS.military +
-    economy * ATTRIBUTE_WEIGHTS.economy +
-    technology * ATTRIBUTE_WEIGHTS.technology +
-    culture * ATTRIBUTE_WEIGHTS.culture +
-    population * ATTRIBUTE_WEIGHTS.population;
-  
-  // 最终半径 = 基础半径 * (1 + 属性加成/100)
-  return baseRadius * (1 + attributeBonus / 100);
-}
-
-/**
- * 生成影响力边界点
- * 使用噪声函数创建不规则边界
- */
-function generateBoundaryPoints(
+// 生成边界点（支持不规则形状）
+const generateBoundaryPoints = (
   centerX: number,
   centerY: number,
   baseRadius: number,
-  segments: number = 64,
-  noiseAmplitude: number = 0.15,
-  time: number = 0
-): BoundaryPoint[] {
+  irregularity: number = 0.1,
+  numPoints: number = 64
+): BoundaryPoint[] => {
   const points: BoundaryPoint[] = [];
-  
-  for (let i = 0; i < segments; i++) {
-    const angle = (i / segments) * Math.PI * 2;
-    
-    // 使用多层噪声创建自然边界
-    const noise1 = Math.sin(angle * 3 + time * 0.5) * 0.5;
-    const noise2 = Math.sin(angle * 5 - time * 0.3) * 0.3;
-    const noise3 = Math.sin(angle * 7 + time * 0.7) * 0.2;
-    const noiseFactor = 1 + (noise1 + noise2 + noise3) * noiseAmplitude;
-    
-    const radius = baseRadius * noiseFactor;
-    
+  const angleStep = (2 * Math.PI) / numPoints;
+
+  for (let i = 0; i < numPoints; i++) {
+    const angle = i * angleStep;
+    // 添加不规则性（基于角度的噪声）
+    const noise = 1 + irregularity * Math.sin(angle * 3) * Math.cos(angle * 5);
+    const radius = baseRadius * noise;
+
     points.push({
-      x: centerX + Math.cos(angle) * radius,
-      y: centerY + Math.sin(angle) * radius,
+      x: centerX + radius * Math.cos(angle),
+      y: centerY + radius * Math.sin(angle),
       angle,
       radius,
     });
   }
-  
+
   return points;
-}
+};
 
-/**
- * 将边界点转换为SVG路径
- */
-function pointsToPath(points: BoundaryPoint[]): string {
-  if (points.length === 0) return '';
-  
-  let path = `M ${points[0].x} ${points[0].y}`;
-  
-  // 使用贝塞尔曲线平滑连接点
-  for (let i = 1; i < points.length; i++) {
-    const prev = points[i - 1];
-    const curr = points[i];
-    const next = points[(i + 1) % points.length];
-    
-    const cp1x = prev.x + (curr.x - points[(i - 2 + points.length) % points.length].x) * 0.2;
-    const cp1y = prev.y + (curr.y - points[(i - 2 + points.length) % points.length].y) * 0.2;
-    const cp2x = curr.x - (next.x - prev.x) * 0.2;
-    const cp2y = curr.y - (next.y - prev.y) * 0.2;
-    
-    path += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${curr.x} ${curr.y}`;
-  }
-  
-  path += ' Z';
-  return path;
-}
+// 颜色处理工具
+const hexToRgba = (hex: string, alpha: number): string => {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  if (!result) return `rgba(128, 128, 128, ${alpha})`;
 
-/**
- * 解析颜色并添加透明度
- */
-function colorWithAlpha(color: string, alpha: number): string {
-  // 处理十六进制颜色
-  if (color.startsWith('#')) {
-    const hex = color.slice(1);
-    const r = parseInt(hex.slice(0, 2), 16);
-    const g = parseInt(hex.slice(2, 4), 16);
-    const b = parseInt(hex.slice(4, 6), 16);
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-  }
-  
-  // 处理 rgb/rgba 颜色
-  if (color.startsWith('rgb')) {
-    const match = color.match(/\d+/g);
-    if (match && match.length >= 3) {
-      return `rgba(${match[0]}, ${match[1]}, ${match[2]}, ${alpha})`;
-    }
-  }
-  
-  return color;
-}
+  const r = parseInt(result[1], 16);
+  const g = parseInt(result[2], 16);
+  const b = parseInt(result[3], 16);
 
-/**
- * 单个文明影响力边界组件
- */
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
+const lightenColor = (hex: string, percent: number): string => {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  if (!result) return hex;
+
+  let r = parseInt(result[1], 16);
+  let g = parseInt(result[2], 16);
+  let b = parseInt(result[3], 16);
+
+  r = Math.min(255, Math.floor(r + (255 - r) * percent));
+  g = Math.min(255, Math.floor(g + (255 - g) * percent));
+  b = Math.min(255, Math.floor(b + (255 - b) * percent));
+
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+};
+
+// 单个文明边界渲染组件
 interface CivilizationBoundaryProps {
   civilization: Civilization;
-  scale: number;
-  offset: { x: number; y: number };
-  isHovered: boolean;
-  onMouseEnter: (e: React.MouseEvent) => void;
-  onMouseLeave: (e: React.MouseEvent) => void;
-  onClick: (e: React.MouseEvent) => void;
-  showLabel: boolean;
-  animated: boolean;
-  opacity: number;
+  config: InfluenceBoundaryConfig;
   time: number;
+  onHover: (civ: Civilization | null, event: React.MouseEvent) => void;
+  isSelected: boolean;
 }
 
 const CivilizationBoundary: React.FC<CivilizationBoundaryProps> = ({
   civilization,
-  scale,
-  offset,
-  isHovered,
-  onMouseEnter,
-  onMouseLeave,
-  onClick,
-  showLabel,
-  animated,
-  opacity,
+  config,
   time,
+  onHover,
+  isSelected,
 }) => {
-  const influenceRadius = useMemo(
-    () => calculateInfluenceRadius(civilization),
-    [civilization]
-  );
-  
-  // 计算屏幕坐标
-  const screenX = civilization.position.x * scale + offset.x;
-  const screenY = civilization.position.y * scale + offset.y;
-  const scaledRadius = influenceRadius * scale;
-  
+  const baseRadius = calculateInfluenceRadius(civilization, config);
+
+  // 动态扩张/收缩效果
+  const expansionOffset =
+    civilization.expansionRate *
+    Math.sin(time * config.animationSpeed * 2) *
+    10;
+
+  // 脉冲效果
+  const pulseOffset =
+    Math.sin(time * config.pulseFrequency) * config.pulseAmplitude;
+
+  const currentRadius = baseRadius + expansionOffset + pulseOffset;
+
   // 生成边界点
-  const points = useMemo(
-    () => generateBoundaryPoints(
-      screenX,
-      screenY,
-      scaledRadius,
-      64,
-      0.15,
-      animated ? time : 0
-    ),
-    [screenX, screenY, scaledRadius, time, animated]
+  const boundaryPoints = generateBoundaryPoints(
+    civilization.position.x,
+    civilization.position.y,
+    currentRadius,
+    0.08 + (civilization.influence / 1000), // 影响力越高，边界越不规则
+    64
   );
-  
-  const path = useMemo(() => pointsToPath(points), [points]);
-  
-  // 动画效果
-  const springStyle = useSpring({
-    strokeOpacity: isHovered ? 1 : 0.7,
-    fillOpacity: isHovered ? 0.3 : 0.15,
-    strokeWidth: isHovered ? 3 : 2,
-    scale: isHovered ? 1.05 : 1,
-    config: config.gentle,
-  });
-  
-  // 脉冲动画
-  const pulseRadius = scaledRadius * (1 + Math.sin(time * 2) * 0.02);
-  
+
+  // 创建 SVG 路径
+  const createPathD = (points: BoundaryPoint[]): string => {
+    if (points.length === 0) return '';
+
+    let d = `M ${points[0].x} ${points[0].y}`;
+
+    for (let i = 1; i < points.length; i++) {
+      const prev = points[i - 1];
+      const curr = points[i];
+      const next = points[(i + 1) % points.length];
+
+      // 使用贝塞尔曲线平滑边界
+      const cp1x = prev.x + (curr.x - prev.x) * 0.5;
+      const cp1y = prev.y + (curr.y - prev.y) * 0.5;
+      const cp2x = curr.x - (next.x - curr.x) * 0.25;
+      const cp2y = curr.y - (next.y - curr.y) * 0.25;
+
+      d += ` Q ${cp1x} ${cp1y} ${curr.x} ${curr.y}`;
+    }
+
+    d += ' Z';
+    return d;
+  };
+
+  const pathD = createPathD(boundaryPoints);
+
+  // 边界颜色
+  const boundaryColor = civilization.color;
+  const fillColor = hexToRgba(civilization.color, config.fillOpacity);
+  const strokeColor = hexToRgba(
+    isSelected ? lightenColor(civilization.color, 0.3) : civilization.color,
+    config.boundaryOpacity
+  );
+
   return (
-    <g>
+    <g
+      onMouseEnter={(e) => onHover(civilization, e)}
+      onMouseLeave={(e) => onHover(null, e)}
+      style={{ cursor: 'pointer' }}
+    >
+      {/* 影响力填充区域 */}
+      <path
+        d={pathD}
+        fill={fillColor}
+        stroke="none"
+        style={{
+          transition: 'fill 0.3s ease',
+        }}
+      />
+
       {/* 外发光效果 */}
-      <animated.path
-        d={path}
+      <path
+        d={pathD}
         fill="none"
-        stroke={colorWithAlpha(civilization.color, 0.3)}
-        strokeWidth={springStyle.strokeWidth.to(v => v * 2)}
+        stroke={hexToRgba(civilization.color, 0.3)}
+        strokeWidth={isSelected ? 8 : 4}
         style={{
-          opacity: springStyle.strokeOpacity.to(v => v * 0.5),
-          filter: `blur(8px)`,
+          filter: `blur(${isSelected ? 6 : 3}px)`,
         }}
       />
-      
+
       {/* 主边界线 */}
-      <animated.path
-        d={path}
-        fill={colorWithAlpha(civilization.color, 0.15)}
-        stroke={civilization.color}
-        strokeWidth={springStyle.strokeWidth}
-        strokeDasharray={isHovered ? 'none' : '8 4'}
+      <path
+        d={pathD}
+        fill="none"
+        stroke={strokeColor}
+        strokeWidth={isSelected ? 3 : 2}
+        strokeDasharray={civilization.expansionRate > 0 ? 'none' : '5,5'}
         style={{
-          opacity: springStyle.strokeOpacity,
-          fillOpacity: springStyle.fillOpacity,
-          cursor: 'pointer',
+          transition: 'stroke 0.3s ease, stroke-width 0.3s ease',
         }}
-        onMouseEnter={onMouseEnter}
-        onMouseLeave={onMouseLeave}
-        onClick={onClick}
       />
-      
-      {/* 脉冲环 */}
-      {animated && (
-        <circle
-          cx={screenX}
-          cy={screenY}
-          r={pulseRadius}
-          fill="none"
-          stroke={colorWithAlpha(civilization.color, 0.2)}
-          strokeWidth={1}
-          strokeDasharray="4 4"
-        />
-      )}
-      
-      {/* 文明名称标签 */}
-      {showLabel && (
-        <text
-          x={screenX}
-          y={screenY - scaledRadius - 10}
-          textAnchor="middle"
-          fill={civilization.color}
-          fontSize={12}
-          fontWeight="bold"
-          style={{
-            textShadow: '0 0 4px rgba(0,0,0,0.8)',
-            pointerEvents: 'none',
-          }}
-        >
-          {civilization.name}
-        </text>
-      )}
-      
-      {/* 悬停时显示详细信息 */}
-      {isHovered && (
+
+      {/* 扩张方向指示器 */}
+      {civilization.expansionRate > 0.3 && (
         <g>
-          <rect
-            x={screenX + scaledRadius + 10}
-            y={screenY - 40}
-            width={140}
-            height={80}
-            fill="rgba(0, 0, 0, 0.85)"
-            stroke={civilization.color}
-            strokeWidth={1}
-            rx={4}
-          />
-          <text
-            x={screenX + scaledRadius + 20}
-            y={screenY - 20}
-            fill={civilization.color}
-            fontSize={11}
-            fontWeight="bold"
-          >
-            {civilization.name}
-          </text>
-          <text
-            x={screenX + scaledRadius + 20}
-            y={screenY - 2}
-            fill="#aaa"
-            fontSize={9}
-          >
-            等级: {civilization.level}
-          </text>
-          <text
-            x={screenX + scaledRadius + 20}
-            y={screenY + 14}
-            fill="#aaa"
-            fontSize={9}
-          >
-            影响力: {Math.round(influenceRadius)}
-          </text>
-          <text
-            x={screenX + scaledRadius + 20}
-            y={screenY + 30}
-            fill="#aaa"
-            fontSize={9}
-          >
-            人口: {civilization.attributes.population}M
-          </text>
+          {boundaryPoints
+            .filter((_, i) => i % 8 === 0)
+            .map((point, i) => (
+              <circle
+                key={i}
+                cx={
+                  civilization.position.x +
+                  (point.x - civilization.position.x) * 1.05
+                }
+                cy={
+                  civilization.position.y +
+                  (point.y - civilization.position.y) * 1.05
+                }
+                r={2}
+                fill={hexToRgba(civilization.color, 0.6)}
+              >
+                <animate
+                  attributeName="opacity"
+                  values="0.3;1;0.3"
+                  dur="2s"
+                  repeatCount="indefinite"
+                  begin={`${i * 0.1}s`}
+                />
+              </circle>
+            ))}
         </g>
       )}
+
+      {/* 文明中心标记 */}
+      <circle
+        cx={civilization.position.x}
+        cy={civilization.position.y}
+        r={isSelected ? 8 : 6}
+        fill={civilization.color}
+        stroke="#fff"
+        strokeWidth={2}
+        style={{
+          transition: 'r 0.3s ease',
+        }}
+      />
     </g>
   );
 };
 
-/**
- * 影响力边界主组件
- */
-const InfluenceBoundary: React.FC<InfluenceBoundaryProps> = ({
-  civilizations,
-  viewportWidth,
-  viewportHeight,
-  scale,
-  offset,
-  onCivilizationHover,
-  onBoundaryClick,
-  showLabels = true,
-  animated = true,
-  opacity = 1,
-}) => {
-  const [hoveredCiv, setHoveredCiv] = useState<string | null>(null);
-  const [time, setTime] = useState(0);
-  const animationRef = useRef<number>();
-  
-  // 动画循环
-  useEffect(() => {
-    if (!animated) return;
-    
-    const animate = () => {
-      setTime(t => t + 0.016);
-      animationRef.current = requestAnimationFrame(animate);
-    };
-    
-    animationRef.current = requestAnimationFrame(animate);
-    
-    return () => {
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
-      }
-    };
-  }, [animated]);
-  
-  // 处理悬停事件
-  const handleMouseEnter = useCallback((civ: Civilization) => (e: React.MouseEvent) => {
-    setHoveredCiv(civ.id);
-    onCivilizationHover?.(civ, e);
-  }, [onCivilizationHover]);
-  
-  const handleMouseLeave = useCallback((e: React.MouseEvent) => {
-    setHoveredCiv(null);
-    onCivilizationHover?.(null, e);
-  }, [onCivilizationHover]);
-  
-  // 处理点击事件
-  const handleClick = useCallback((civ: Civilization) => (e: React.MouseEvent) => {
-    onBoundaryClick?.(civ, e);
-  }, [onBoundaryClick]);
-  
-  // 计算可见区域内的文明
-  const visibleCivilizations = useMemo(() => {
-    return civilizations.filter(civ => {
-      const screenX = civ.position.x * scale + offset.x;
-      const screenY = civ.position.y * scale + offset.y;
-      const radius = calculateInfluenceRadius(civ) * scale;
-      
-      return (
-        screenX + radius > -100 &&
-        screenX - radius < viewportWidth + 100 &&
-        screenY + radius > -100 &&
-        screenY - radius < viewportHeight + 100
-      );
-    });
-  }, [civilizations, scale, offset, viewportWidth, viewportHeight]);
-  
+// 悬停信息面板
+interface HoverInfoProps {
+  civilization: Civilization;
+  position: { x: number; y: number };
+}
+
+const HoverInfo: React.FC<HoverInfoProps> = ({ civilization, position }) => {
   return (
-    <svg
-      width={viewportWidth}
-      height={viewportHeight}
+    <div
       style={{
         position: 'absolute',
-        top: 0,
-        left: 0,
+        left: position.x + 15,
+        top: position.y + 15,
+        backgroundColor: 'rgba(0, 0, 0, 0.9)',
+        border: `2px solid ${civilization.color}`,
+        borderRadius: '8px',
+        padding: '12px 16px',
+        color: '#fff',
+        fontSize: '14px',
+        fontFamily: 'monospace',
+        zIndex: 1000,
         pointerEvents: 'none',
-        opacity,
+        minWidth: '200px',
+        boxShadow: `0 0 20px ${hexToRgba(civilization.color, 0.5)}`,
       }}
     >
-      <g style={{ pointerEvents: 'auto' }}>
-        {visibleCivilizations.map(civ => (
-          <CivilizationBoundary
-            key={civ.id}
-            civilization={civ}
-            scale={scale}
-            offset={offset}
-            isHovered={hoveredCiv === civ.id}
-            onMouseEnter={handleMouseEnter(civ)}
-            onMouseLeave={handleMouseLeave}
-            onClick={handleClick(civ)}
-            showLabel={showLabels}
-            animated={animated}
-            opacity={opacity}
-            time={time}
-          />
-        ))}
-      </g>
-    </svg>
+      <div
+        style={{
+          fontSize: '16px',
+          fontWeight: 'bold',
+          marginBottom: '8px',
+          color: civilization.color,
+        }}
+      >
+        {civilization.name}
+      </div>
+      <div style={{ display: 'grid', gap: '4px' }}>
+        <div>
+          <span style={{ color: '#888' }}>影响力:</span>{' '}
+          <span style={{ color: '#4ade80' }}>{civilization.influence}</span>
+        </div>
+        <div>
+          <span style={{ color: '#888' }}>人口:</span>{' '}
+          {civilization.population.toLocaleString()}
+        </div>
+        <div>
+          <span style={{ color: '#888' }}>科技等级:</span>{' '}
+          <span style={{ color: '#60a5fa' }}>{civilization.techLevel}</span>
+        </div>
+        <div>
+          <span style={{ color: '#888' }}>军事力量:</span>{' '}
+          <span style={{ color: '#f87171' }}>
+            {civilization.militaryPower.toLocaleString()}
+          </span>
+        </div>
+        <div>
+          <span style={{ color: '#888' }}>扩张状态:</span>{' '}
+          <span
+            style={{
+              color:
+                civilization.expansionRate > 0
+                  ? '#4ade80'
+                  : civilization.expansionRate < 0
+                  ? '#f87171'
+                  : '#fbbf24',
+            }}
+          >
+            {civilization.expansionRate > 0.3
+              ? '快速扩张'
+              : civilization.expansionRate > 0
+              ? '缓慢扩张'
+              : civilization.expansionRate < -0.3
+              ? '快速收缩'
+              : civilization.expansionRate < 0
+              ? '缓慢收缩'
+              : '稳定'}
+          </span>
+        </div>
+      </div>
+    </div>
   );
 };
 
-export default InfluenceBoundary;
+// 主组件接口
+interface InfluenceBoundaryProps {
+  civilizations: Civilization[];
+  width?: number;
+  height?: number;
+  config?: Partial<InfluenceBoundaryConfig>;
+  onCivilizationClick?: (civ: Civilization) => void;
+}
 
-// 导出工具函数供外部使用
-export {
-  calculateInfluenceRadius,
-  generateBoundaryPoints,
-  pointsToPath,
-  colorWithAlpha,
-  LEVEL_BASE_RADIUS,
-  ATTRIBUTE_WEIGHTS,
-};
+// 主影响力边界组件
+const InfluenceBoundary: React.FC<InfluenceBoundaryProps> = ({
+  civilizations,
+  width = 800,
+  height = 600,
+  config: customConfig,
+  onCivilizationClick,
+}) => {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [time, setTime] = useState(0);
+  const [hoveredCiv, setHoveredCiv] = useState<Civilization | null>(null);
+  const [hoverPosition, setHoverPosition] = useState({ x: 0, y: 0 });
+  const [selectedCivId, setSelectedCivId] = useState<string | null>(null);
 
-export type { Civilization, InfluenceBoundaryProps, BoundaryPoint };
+  const config = { ...defaultConfig, ...customConfig };
+
+  // 动画循环
+  useEffect(() => {
+    let animationId: number;
+    const animate = () => {
+      setTime((t) => t + 1);
+      animationId = requestAnimationFrame(animate);
+    };
+    animationId = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(animationId);
+  }, []);
+
+  // 处理悬停
+  const handleHover = useCallback(
+    (civ: Civilization | null, event: React.MouseEvent) => {
+      setHoveredCiv(civ);
+      if (civ) {
+        const rect = svgRef.current?.getBoundingClientRect();
+        if (rect) {
+          setHoverPosition({
+            x: event.clientX - rect.left,
+            y: event.clientY - rect.top,
+          });
+        }
+      }
+    },
+    []
+  );
+
+  // 处理点击
+  const handleClick = useCallback(
+    (civ: Civilization) => {
+      setSelectedCivId(civ.id === selectedCivId ? null : civ.id);
+      onCivilizationClick?.(civ);
+    },
+    [selectedCivId, onCivilizationClick]
+  );
+
+  // 更新悬停位置
+  const handleMouseMove = useCallback((event: React.MouseEvent) => {
+    if (hoveredCiv) {
+      const rect = svgRef.current?.getBoundingClientRect();
+      if (rect) {
+        setHoverPosition({
+          x: event.clientX - rect.left,
+          y: event.clientY - rect.top,
+        });
+      }
+    }
+  }, [hoveredCiv]);
+
+  return (
+    <div
+      style={{
+        position: 'relative',
+        width: '100%',
+        height: '100%',
+        overflow: 'hidden',
+      }}
+    >
+      <svg
+        ref={svgRef}
+        width={width}
+        height={height}
+        viewBox={`0 0 ${width} ${height}`}
+        onMouseMove={handleMouseMove}
+        style={{
+          backgroundColor: '#0a0a0f',
+          background:
+            'radial-gradient(ellipse at center, #1a1a2e 0%, #0a0a0f 100%)',
+        }}
+      >
+        {/* 背景网格 */}
+        <defs>
+          <pattern
+            id="grid"
+            width="50"
+            height="50"
+            patternUnits="userSpaceOnUse"
+          >
+            <path
+              d="M 50 0 L 0 0 0 50"
+              fill="none"
+              stroke="rgba(255,255,255,0.03)"
+              strokeWidth="1"
+            />
+          </pattern>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#grid)" />
+
+        {/* 渲染所有文明边界 */}
+        <g>
+          {civilizations.map((civ) => (
+            <g
+              key={civ.id}
+              onClick={() => handleClick(civ)}
+              style={{ cursor: 'pointer' }}
+            >
+              <CivilizationBoundary
+                civilization={civ}
+                config={config}
+                time={time}
+                onHover={handleHover}
+                isSelected={selectedCivId === civ.id}
+              />
+            </g>
+          ))}
+        </g>
+
+        {/* 边界重叠区域高亮 */}
+        {civilizations.length > 1 && (
+          <g style={{ pointerEvents: 'none' }}>
+            {civilizations.flatMap((civ1, i) =>
+              civilizations.slice(i + 1).map((civ2, j) => {
+                const distance = Math.sqrt(
+                  Math.pow(civ1.position.x - civ2.position.x, 2) +
+                    Math.pow
