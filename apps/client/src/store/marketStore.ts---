@@ -1,0 +1,123 @@
+import { create } from 'zustand';
+
+export interface PriceData {
+  resourceId: string;
+  resourceName: string;
+  currentPrice: number;
+  previousPrice: number;
+  changePercent: number;
+  supply: number;
+  demand: number;
+  timestamp: Date;
+}
+
+export interface PriceHistory {
+  timestamp: Date;
+  price: number;
+}
+
+export interface TradeRoute {
+  id: string;
+  fromCivilizationId: string;
+  toCivilizationId: string;
+  fromCivilizationName: string;
+  toCivilizationName: string;
+  resourceId: string;
+  resourceName: string;
+  quantity: number;
+  status: 'active' | 'paused' | 'disrupted';
+  efficiency: number;
+  createdAt: Date;
+}
+
+export interface MarketState {
+  prices: PriceData[];
+  priceHistory: Record<string, PriceHistory[]>;
+  tradeRoutes: TradeRoute[];
+  isConnected: boolean;
+  lastUpdate: Date | null;
+  
+  setPrices: (prices: PriceData[]) => void;
+  updatePrice: (price: PriceData) => void;
+  setTradeRoutes: (routes: TradeRoute[]) => void;
+  addTradeRoute: (route: TradeRoute) => void;
+  updateTradeRoute: (id: string, updates: Partial<TradeRoute>) => void;
+  removeTradeRoute: (id: string) => void;
+  setConnected: (connected: boolean) => void;
+  addPriceHistory: (resourceId: string, history: PriceHistory) => void;
+}
+
+export const useMarketStore = create<MarketState>((set, get) => ({
+  prices: [],
+  priceHistory: {},
+  tradeRoutes: [],
+  isConnected: false,
+  lastUpdate: null,
+
+  setPrices: (prices) => set({ 
+    prices, 
+    lastUpdate: new Date() 
+  }),
+
+  updatePrice: (priceData) => set((state) => {
+    const existingIndex = state.prices.findIndex(
+      (p) => p.resourceId === priceData.resourceId
+    );
+    
+    const newPrices = [...state.prices];
+    if (existingIndex >= 0) {
+      newPrices[existingIndex] = priceData;
+    } else {
+      newPrices.push(priceData);
+    }
+
+    const newHistory = { ...state.priceHistory };
+    if (!newHistory[priceData.resourceId]) {
+      newHistory[priceData.resourceId] = [];
+    }
+    newHistory[priceData.resourceId].push({
+      timestamp: priceData.timestamp,
+      price: priceData.currentPrice,
+    });
+    // Keep only last 100 data points
+    if (newHistory[priceData.resourceId].length > 100) {
+      newHistory[priceData.resourceId] = newHistory[priceData.resourceId].slice(-100);
+    }
+
+    return { 
+      prices: newPrices, 
+      priceHistory: newHistory,
+      lastUpdate: new Date() 
+    };
+  }),
+
+  setTradeRoutes: (routes) => set({ tradeRoutes: routes }),
+
+  addTradeRoute: (route) => set((state) => ({
+    tradeRoutes: [...state.tradeRoutes, route]
+  })),
+
+  updateTradeRoute: (id, updates) => set((state) => ({
+    tradeRoutes: state.tradeRoutes.map((route) =>
+      route.id === id ? { ...route, ...updates } : route
+    )
+  })),
+
+  removeTradeRoute: (id) => set((state) => ({
+    tradeRoutes: state.tradeRoutes.filter((route) => route.id !== id)
+  })),
+
+  setConnected: (connected) => set({ isConnected: connected }),
+
+  addPriceHistory: (resourceId, history) => set((state) => {
+    const newHistory = { ...state.priceHistory };
+    if (!newHistory[resourceId]) {
+      newHistory[resourceId] = [];
+    }
+    newHistory[resourceId].push(history);
+    if (newHistory[resourceId].length > 100) {
+      newHistory[resourceId] = newHistory[resourceId].slice(-100);
+    }
+    return { priceHistory: newHistory };
+  }),
+}));
