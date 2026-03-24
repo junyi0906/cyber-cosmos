@@ -405,9 +405,10 @@
       "depends_on": [
         "feat-005"
       ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "需安装 Artillery: npm install -g artillery"
+      "passes": true,
+      "last_attempt": "2026-03-24T22:31:59.903117",
+      "notes": "需安装 Artillery: npm install -g artillery",
+      "retry_count": 0
     }
   ]
 }
