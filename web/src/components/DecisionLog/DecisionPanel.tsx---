@@ -1,0 +1,442 @@
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { ThoughtChain } from './ThoughtChain';
+import { WeightChart } from './WeightChart';
+import { ConsequenceTracker } from './ConsequenceTracker';
+import { useDecisionLog } from '../../hooks/useDecisionLog';
+import type { DecisionLogEntry, DecisionPanelProps } from './types';
+
+const DecisionPanel: React.FC<DecisionPanelProps> = ({
+  agentId,
+  decisionType,
+  maxEntries = 50,
+  autoScroll = true,
+  onDecisionClick,
+}) => {
+  const [selectedEntry, setSelectedEntry] = useState<DecisionLogEntry | null>(null);
+  const [filterAgent, setFilterAgent] = useState<string>(agentId || '');
+  const [filterType, setFilterType] = useState<string>(decisionType || '');
+  const [isPaused, setIsPaused] = useState(false);
+  const logContainerRef = useRef<HTMLDivElement>(null);
+
+  const { entries, loading, error, agents, decisionTypes } = useDecisionLog({
+    agentId: filterAgent,
+    decisionType: filterType,
+    maxEntries,
+    paused: isPaused,
+  });
+
+  const handleEntryClick = useCallback((entry: DecisionLogEntry) => {
+    setSelectedEntry(entry);
+    onDecisionClick?.(entry);
+  }, [onDecisionClick]);
+
+  useEffect(() => {
+    if (autoScroll && logContainerRef.current && !isPaused) {
+      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+    }
+  }, [entries, autoScroll, isPaused]);
+
+  const getStatusColor = (status: DecisionLogEntry['status']) => {
+    const colors = {
+      pending: '#f59e0b',
+      executing: '#3b82f6',
+      completed: '#10b981',
+      failed: '#ef4444',
+    };
+    return colors[status];
+  };
+
+  const formatTimestamp = (timestamp: number) => {
+    const date = new Date(timestamp);
+    return date.toLocaleTimeString('zh-CN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+  };
+
+  const getTypeIcon = (type: string) => {
+    const icons: Record<string, string> = {
+      diplomacy: '🤝',
+      war: '⚔️',
+      trade: '💰',
+      exploration: '🚀',
+      research: '🔬',
+      expansion: '🌍',
+      crisis: '⚠️',
+    };
+    return icons[type] || '📋';
+  };
+
+  return (
+    <div className="decision-panel">
+      <div className="decision-panel-header">
+        <h2>决策日志</h2>
+        <div className="decision-panel-controls">
+          <select
+            value={filterAgent}
+            onChange={(e) => setFilterAgent(e.target.value)}
+            className="filter-select"
+          >
+            <option value="">所有文明</option>
+            {agents.map((agent) => (
+              <option key={agent.id} value={agent.id}>
+                {agent.name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={filterType}
+            onChange={(e) => setFilterType(e.target.value)}
+            className="filter-select"
+          >
+            <option value="">所有类型</option>
+            {decisionTypes.map((type) => (
+              <option key={type} value={type}>
+                {type}
+              </option>
+            ))}
+          </select>
+          <button
+            className={`pause-btn ${isPaused ? 'paused' : ''}`}
+            onClick={() => setIsPaused(!isPaused)}
+          >
+            {isPaused ? '▶️ 继续' : '⏸️ 暂停'}
+          </button>
+        </div>
+      </div>
+
+      <div className="decision-panel-content">
+        <div className="decision-log-stream" ref={logContainerRef}>
+          {loading && entries.length === 0 ? (
+            <div className="loading-state">
+              <div className="loading-spinner"></div>
+              <span>加载决策日志...</span>
+            </div>
+          ) : error ? (
+            <div className="error-state">
+              <span>❌ {error}</span>
+            </div>
+          ) : entries.length === 0 ? (
+            <div className="empty-state">
+              <span>暂无决策记录</span>
+            </div>
+          ) : (
+            entries.map((entry) => (
+              <div
+                key={entry.id}
+                className={`decision-entry ${selectedEntry?.id === entry.id ? 'selected' : ''}`}
+                onClick={() => handleEntryClick(entry)}
+              >
+                <div className="entry-header">
+                  <span className="entry-icon">{getTypeIcon(entry.decisionType)}</span>
+                  <span className="entry-agent">{entry.agentName}</span>
+                  <span className="entry-type">{entry.decisionType}</span>
+                  <span
+                    className="entry-status"
+                    style={{ backgroundColor: getStatusColor(entry.status) }}
+                  />
+                  <span className="entry-time">{formatTimestamp(entry.timestamp)}</span>
+                </div>
+                <div className="entry-preview">
+                  {entry.thoughtChain.content.substring(0, 80)}...
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {selectedEntry && (
+          <div className="decision-detail">
+            <div className="detail-header">
+              <h3>决策详情</h3>
+              <button
+                className="close-btn"
+                onClick={() => setSelectedEntry(null)}
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className="detail-section">
+              <h4>思考链</h4>
+              <ThoughtChain
+                data={selectedEntry.thoughtChain}
+                onNodeClick={(node) => console.log('Node clicked:', node)}
+              />
+            </div>
+
+            <div className="detail-section">
+              <h4>决策权重</h4>
+              <WeightChart
+                data={selectedEntry.weights}
+                size={280}
+                animated={true}
+              />
+            </div>
+
+            <div className="detail-section">
+              <h4>后果追踪</h4>
+              <ConsequenceTracker
+                events={selectedEntry.consequences}
+                onEventClick={(event) => console.log('Event clicked:', event)}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      <style>{`
+        .decision-panel {
+          display: flex;
+          flex-direction: column;
+          height: 100%;
+          background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+          border-radius: 12px;
+          overflow: hidden;
+          font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+
+        .decision-panel-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 16px 20px;
+          background: rgba(30, 41, 59, 0.8);
+          border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+        }
+
+        .decision-panel-header h2 {
+          margin: 0;
+          font-size: 18px;
+          font-weight: 600;
+          color: #f1f5f9;
+        }
+
+        .decision-panel-controls {
+          display: flex;
+          gap: 12px;
+          align-items: center;
+        }
+
+        .filter-select {
+          padding: 8px 12px;
+          background: rgba(15, 23, 42, 0.6);
+          border: 1px solid rgba(148, 163, 184, 0.2);
+          border-radius: 8px;
+          color: #e2e8f0;
+          font-size: 13px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .filter-select:hover {
+          border-color: rgba(99, 102, 241, 0.5);
+        }
+
+        .filter-select:focus {
+          outline: none;
+          border-color: #6366f1;
+          box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+        }
+
+        .pause-btn {
+          padding: 8px 16px;
+          background: rgba(99, 102, 241, 0.2);
+          border: 1px solid rgba(99, 102, 241, 0.3);
+          border-radius: 8px;
+          color: #a5b4fc;
+          font-size: 13px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .pause-btn:hover {
+          background: rgba(99, 102, 241, 0.3);
+        }
+
+        .pause-btn.paused {
+          background: rgba(16, 185, 129, 0.2);
+          border-color: rgba(16, 185, 129, 0.3);
+          color: #6ee7b7;
+        }
+
+        .decision-panel-content {
+          display: flex;
+          flex: 1;
+          overflow: hidden;
+        }
+
+        .decision-log-stream {
+          flex: 1;
+          overflow-y: auto;
+          padding: 12px;
+          scrollbar-width: thin;
+          scrollbar-color: rgba(148, 163, 184, 0.3) transparent;
+        }
+
+        .decision-log-stream::-webkit-scrollbar {
+          width: 6px;
+        }
+
+        .decision-log-stream::-webkit-scrollbar-track {
+          background: transparent;
+        }
+
+        .decision-log-stream::-webkit-scrollbar-thumb {
+          background: rgba(148, 163, 184, 0.3);
+          border-radius: 3px;
+        }
+
+        .decision-entry {
+          padding: 12px 16px;
+          margin-bottom: 8px;
+          background: rgba(30, 41, 59, 0.5);
+          border: 1px solid rgba(148, 163, 184, 0.1);
+          border-radius: 10px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .decision-entry:hover {
+          background: rgba(30, 41, 59, 0.8);
+          border-color: rgba(99, 102, 241, 0.3);
+          transform: translateX(4px);
+        }
+
+        .decision-entry.selected {
+          background: rgba(99, 102, 241, 0.15);
+          border-color: rgba(99, 102, 241, 0.5);
+        }
+
+        .entry-header {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          margin-bottom: 8px;
+        }
+
+        .entry-icon {
+          font-size: 16px;
+        }
+
+        .entry-agent {
+          font-weight: 600;
+          color: #f1f5f9;
+          font-size: 14px;
+        }
+
+        .entry-type {
+          padding: 2px 8px;
+          background: rgba(99, 102, 241, 0.2);
+          border-radius: 4px;
+          font-size: 11px;
+          color: #a5b4fc;
+          text-transform: uppercase;
+        }
+
+        .entry-status {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          margin-left: auto;
+        }
+
+        .entry-time {
+          font-size: 12px;
+          color: #64748b;
+        }
+
+        .entry-preview {
+          font-size: 13px;
+          color: #94a3b8;
+          line-height: 1.5;
+        }
+
+        .decision-detail {
+          width: 400px;
+          background: rgba(15, 23, 42, 0.6);
+          border-left: 1px solid rgba(148, 163, 184, 0.1);
+          overflow-y: auto;
+          padding: 16px;
+        }
+
+        .detail-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 16px;
+        }
+
+        .detail-header h3 {
+          margin: 0;
+          font-size: 16px;
+          font-weight: 600;
+          color: #f1f5f9;
+        }
+
+        .close-btn {
+          width: 28px;
+          height: 28px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: rgba(239, 68, 68, 0.1);
+          border: 1px solid rgba(239, 68, 68, 0.2);
+          border-radius: 6px;
+          color: #fca5a5;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .close-btn:hover {
+          background: rgba(239, 68, 68, 0.2);
+        }
+
+        .detail-section {
+          margin-bottom: 20px;
+        }
+
+        .detail-section h4 {
+          margin: 0 0 12px 0;
+          font-size: 13px;
+          font-weight: 500;
+          color: #94a3b8;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+
+        .loading-state,
+        .error-state,
+        .empty-state {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          height: 200px;
+          color: #64748b;
+          gap: 12px;
+        }
+
+        .loading-spinner {
+          width: 32px;
+          height: 32px;
+          border: 3px solid rgba(99, 102, 241, 0.2);
+          border-top-color: #6366f1;
+          border-radius: 50%;
+          animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+
+        .error-state {
+          color: #fca5a5;
+        }
+      `}</style>
+    </div>
+  );
+};
+
+export { DecisionPanel };

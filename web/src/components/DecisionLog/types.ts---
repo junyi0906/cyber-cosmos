@@ -1,20 +1,18 @@
-// Decision Log Types for Cyber-Cosmos
-
 export interface ThoughtNode {
   id: string;
-  type: 'input' | 'reasoning' | 'decision' | 'action';
+  type: 'input' | 'reasoning' | 'action' | 'decision';
   content: string;
   timestamp: number;
   children?: ThoughtNode[];
   metadata?: {
     confidence?: number;
+    duration?: number;
     source?: string;
-    tags?: string[];
   };
 }
 
-export interface DecisionWeight {
-  dimension: string;
+export interface WeightData {
+  label: string;
   value: number;
   maxValue: number;
   description?: string;
@@ -23,43 +21,51 @@ export interface DecisionWeight {
 export interface ConsequenceEvent {
   id: string;
   timestamp: number;
-  type: 'immediate' | 'short_term' | 'long_term';
-  category: 'military' | 'economic' | 'technological' | 'cultural' | 'diplomatic';
+  type: 'positive' | 'negative' | 'neutral';
   title: string;
   description: string;
-  impact: number; // -100 to 100
-  relatedDecisionId: string;
-  affectedEntities?: string[];
+  impact: {
+    resource?: number;
+    population?: number;
+    technology?: number;
+    diplomacy?: number;
+  };
+  relatedDecisionId?: string;
 }
 
-export interface DecisionLog {
+export interface DecisionLogEntry {
   id: string;
   agentId: string;
   agentName: string;
   timestamp: number;
   decisionType: string;
-  input: string;
-  reasoning: ThoughtNode[];
-  decision: string;
-  action: string;
-  weights: DecisionWeight[];
+  thoughtChain: ThoughtNode;
+  weights: WeightData[];
   consequences: ConsequenceEvent[];
-  confidence: number;
-  tags: string[];
+  status: 'pending' | 'executing' | 'completed' | 'failed';
 }
 
-export interface DecisionLogFilter {
+export interface DecisionPanelProps {
   agentId?: string;
   decisionType?: string;
-  startTime?: number;
-  endTime?: number;
-  tags?: string[];
+  maxEntries?: number;
+  autoScroll?: boolean;
+  onDecisionClick?: (entry: DecisionLogEntry) => void;
 }
 
-export interface DecisionLogState {
-  logs: DecisionLog[];
-  selectedLog: DecisionLog | null;
-  loading: boolean;
-  error: string | null;
-  filter: DecisionLogFilter;
+export interface ThoughtChainProps {
+  data: ThoughtNode;
+  expanded?: boolean;
+  onNodeClick?: (node: ThoughtNode) => void;
+}
+
+export interface WeightChartProps {
+  data: WeightData[];
+  size?: number;
+  animated?: boolean;
+}
+
+export interface ConsequenceTrackerProps {
+  events: ConsequenceEvent[];
+  onEventClick?: (event: ConsequenceEvent) => void;
 }
