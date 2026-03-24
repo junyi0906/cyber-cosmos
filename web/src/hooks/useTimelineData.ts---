@@ -1,0 +1,276 @@
+import { useState, useEffect, useCallback, useRef } from 'react';
+import type { TimelineEvent, Civilization, Galaxy, TimelineFilter, TimelineState } from '../types/timeline';
+
+const API_BASE = '/api';
+
+// Mock data generator for development
+const generateMockEvents = (count: number): TimelineEvent[] => {
+  const eventTypes: TimelineEvent['type'][] = [
+    'supernova', 'tech_breakthrough', 'diplomacy_treaty', 'civil_war',
+    'first_contact', 'alliance_formed', 'resource_depletion', 'migration'
+  ];
+  const severities: TimelineEvent['severity'][] = ['low', 'medium', 'high', 'critical'];
+  const civilizations = ['阿尔法文明', '贝塔联邦', '伽马帝国', '德尔塔联盟', '艾普西隆共和国'];
+  const galaxies = ['仙女座', '银河系', '三角座', '大麦哲伦云'];
+
+  const events: TimelineEvent[] = [];
+  const now = Date.now();
+  const yearInMs = 365.25 * 24 * 60 * 60 * 1000;
+
+  for (let i = 0; i < count; i++) {
+    const type = eventTypes[Math.floor(Math.random() * eventTypes.length)];
+    const severity = severities[Math.floor(Math.random() * severities.length)];
+    const civIndex = Math.floor(Math.random() * civilizations.length);
+    const galaxyIndex = Math.floor(Math.random() * galaxies.length);
+
+    events.push({
+      id: `event-${i}-${Date.now()}`,
+      timestamp: now - Math.random() * 100 * yearInMs,
+      type,
+      title: `${civilizations[civIndex]} ${type.replace(/_/g, ' ')} 事件`,
+      description: `这是一个关于${civilizations[civIndex]}在${galaxies[galaxyIndex]}星系发生的${type}事件的详细描述。该事件对周边区域产生了深远影响。`,
+      civilizationId: `civ-${civIndex}`,
+      civilizationName: civilizations[civIndex],
+      galaxyId: `galaxy-${galaxyIndex}`,
+      galaxyName: galaxies[galaxyIndex],
+      severity,
+      metadata: {
+        impactRadius: Math.random() * 100,
+        casualties: Math.floor(Math.random() * 1000000),
+        resourcesAffected: Math.random() * 10000,
+      },
+      consequences: [
+        '资源分配重新调整',
+        '外交关系发生变化',
+        '科技发展加速',
+      ].slice(0, Math.floor(Math.random() * 3) + 1),
+    });
+  }
+
+  return events.sort((a, b) => b.timestamp - a.timestamp);
+};
+
+const generateMockCivilizations = (): Civilization[] => [
+  { id: 'civ-0', name: '阿尔法文明', color: '#FF6B6B', status: 'active' },
+  { id: 'civ-1', name: '贝塔联邦', color: '#4ECDC4', status: 'active' },
+  { id: 'civ-2', name: '伽马帝国', color: '#45B7D1', status: 'active' },
+  { id: 'civ-3', name: '德尔塔联盟', color: '#96CEB4', status: 'dormant' },
+  { id: 'civ-4', name: '艾普西隆共和国', color: '#FFEAA7', status: 'extinct' },
+];
+
+const generateMockGalaxies = (): Galaxy[] => [
+  { id: 'galaxy-0', name: '仙女座', coordinates: { x: 0, y: 0, z: 0 } },
+  { id: 'galaxy-1', name: '银河系', coordinates: { x: 100, y: 50, z: 25 } },
+  { id: 'galaxy-2', name: '三角座', coordinates: { x: -50, y: 100, z: 75 } },
+  { id: 'galaxy-3', name: '大麦哲伦云', coordinates: { x: 200, y: -30, z: 50 } },
+];
+
+export interface UseTimelineDataReturn extends TimelineState {
+  fetchEvents: (filter?: Partial<TimelineFilter>) => Promise<void>;
+  setFilter: (filter: Partial<TimelineFilter>) => void;
+  selectEvent: (event: TimelineEvent | null) => void;
+  hoverEvent: (event: TimelineEvent | null) => void;
+  setZoomLevel: (level: number) => void;
+  setVisibleTimeRange: (range: { start: number; end: number }) => void;
+  filter: TimelineFilter;
+  replayEvent: (eventId: string) => Promise<void>;
+}
+
+export function useTimelineData(initialFilter?: Partial<TimelineFilter>): UseTimelineDataReturn {
+  const [state, setState] = useState<TimelineState>({
+    events: [],
+    civilizations: [],
+    galaxies: [],
+    isLoading: false,
+    error: null,
+    selectedEvent: null,
+    hoveredEvent: null,
+    zoomLevel: 1,
+    visibleTimeRange: {
+      start: Date.now() - 100 * 365.25 * 24 * 60 * 60 * 1000,
+      end: Date.now(),
+    },
+  });
+
+  const [filter, setFilterState] = useState<TimelineFilter>({
+    civilizations: [],
+    galaxies: [],
+    eventTypes: [],
+    severity: [],
+    timeRange: {
+      start: Date.now() - 100 * 365.25 * 24 * 60 * 60 * 1000,
+      end: Date.now(),
+    },
+    ...initialFilter,
+  });
+
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const fetchEvents = useCallback(async (newFilter?: Partial<TimelineFilter>) => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+
+    setState(prev => ({ ...prev, isLoading: true, error: null }));
+
+    try {
+      // Try to fetch from API first
+      let events: TimelineEvent[];
+      let civilizations: Civilization[];
+      let galaxies: Galaxy[];
+
+      try {
+        const params = new URLSearchParams();
+        const effectiveFilter = { ...filter, ...newFilter };
+        
+        if (effectiveFilter.civilizations.length > 0) {
+          params.set('civilizations', effectiveFilter.civilizations.join(','));
+        }
+        if (effectiveFilter.galaxies.length > 0) {
+          params.set('galaxies', effectiveFilter.galaxies.join(','));
+        }
+        if (effectiveFilter.eventTypes.length > 0) {
+          params.set('types', effectiveFilter.eventTypes.join(','));
+        }
+        params.set('start', effectiveFilter.timeRange.start.toString());
+        params.set('end', effectiveFilter.timeRange.end.toString());
+
+        const response = await fetch(`${API_BASE}/timeline/events?${params}`, {
+          signal: abortControllerRef.current.signal,
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          events = data.events || [];
+          civilizations = data.civilizations || [];
+          galaxies = data.galaxies || [];
+        } else {
+          throw new Error('API not available');
+        }
+      } catch {
+        // Fallback to mock data
+        console.log('Using mock data for timeline');
+        events = generateMockEvents(50);
+        civilizations = generateMockCivilizations();
+        galaxies = generateMockGalaxies();
+      }
+
+      // Apply client-side filtering
+      let filteredEvents = events;
+      
+      if (filter.civilizations.length > 0) {
+        filteredEvents = filteredEvents.filter(e => 
+          e.civilizationId && filter.civilizations.includes(e.civilizationId)
+        );
+      }
+      
+      if (filter.galaxies.length > 0) {
+        filteredEvents = filteredEvents.filter(e => 
+          e.galaxyId && filter.galaxies.includes(e.galaxyId)
+        );
+      }
+      
+      if (filter.eventTypes.length > 0) {
+        filteredEvents = filteredEvents.filter(e => 
+          filter.eventTypes.includes(e.type)
+        );
+      }
+      
+      if (filter.severity.length > 0) {
+        filteredEvents = filteredEvents.filter(e => 
+          filter.severity.includes(e.severity)
+        );
+      }
+
+      setState(prev => ({
+        ...prev,
+        events: filteredEvents,
+        civilizations,
+        galaxies,
+        isLoading: false,
+      }));
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        return;
+      }
+      setState(prev => ({
+        ...prev,
+        isLoading: false,
+        error: error instanceof Error ? error.message : 'Failed to fetch events',
+      }));
+    }
+  }, [filter]);
+
+  const setFilter = useCallback((newFilter: Partial<TimelineFilter>) => {
+    setFilterState(prev => {
+      const updated = { ...prev, ...newFilter };
+      if (newFilter.timeRange) {
+        updated.timeRange = { ...prev.timeRange, ...newFilter.timeRange };
+      }
+      return updated;
+    });
+  }, []);
+
+  const selectEvent = useCallback((event: TimelineEvent | null) => {
+    setState(prev => ({ ...prev, selectedEvent: event }));
+  }, []);
+
+  const hoverEvent = useCallback((event: TimelineEvent | null) => {
+    setState(prev => ({ ...prev, hoveredEvent: event }));
+  }, []);
+
+  const setZoomLevel = useCallback((level: number) => {
+    setState(prev => ({ ...prev, zoomLevel: Math.max(0.1, Math.min(10, level)) }));
+  }, []);
+
+  const setVisibleTimeRange = useCallback((range: { start: number; end: number }) => {
+    setState(prev => ({ ...prev, visibleTimeRange: range }));
+  }, []);
+
+  const replayEvent = useCallback(async (eventId: string) => {
+    try {
+      const response = await fetch(`${API_BASE}/timeline/events/${eventId}/replay`, {
+        method: 'POST',
+      });
+      
+      if (!response.ok) {
+        console.log('Replay API not available, simulating replay');
+      }
+      
+      // Simulate replay animation
+      const event = state.events.find(e => e.id === eventId);
+      if (event) {
+        setState(prev => ({ ...prev, selectedEvent: event }));
+      }
+    } catch (error) {
+      console.error('Failed to replay event:', error);
+    }
+  }, [state.events]);
+
+  // Initial fetch
+  useEffect(() => {
+    fetchEvents();
+  }, [fetchEvents]);
+
+  // Cleanup
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
+  return {
+    ...state,
+    fetchEvents,
+    setFilter,
+    selectEvent,
+    hoverEvent,
+    setZoomLevel,
+    setVisibleTimeRange,
+    filter,
+    replayEvent,
+  };
+}

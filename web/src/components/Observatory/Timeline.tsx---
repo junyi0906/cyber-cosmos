@@ -1,0 +1,55 @@
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import * as d3 from 'd3';
+import type { TimelineEvent, TimelineFilter, EventType, Civilization, Galaxy } from '../../types/timeline';
+import { EVENT_TYPE_CONFIG, SEVERITY_CONFIG } from '../../types/timeline';
+import { useTimelineData } from '../../hooks/useTimelineData';
+import './Timeline.css';
+
+interface TimelineProps {
+  initialFilter?: Partial<TimelineFilter>;
+  onEventSelect?: (event: TimelineEvent) => void;
+  onTimeRangeChange?: (range: { start: number; end: number }) => void;
+  height?: number;
+  showFilters?: boolean;
+}
+
+const Timeline: React.FC<TimelineProps> = ({
+  initialFilter,
+  onEventSelect,
+  onTimeRangeChange,
+  height = 400,
+  showFilters = true,
+}) => {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const brushRef = useRef<SVGGElement>(null);
+  
+  const {
+    events,
+    civilizations,
+    galaxies,
+    isLoading,
+    error,
+    selectedEvent,
+    hoveredEvent,
+    zoomLevel,
+    visibleTimeRange,
+    fetchEvents,
+    setFilter,
+    selectEvent,
+    hoverEvent,
+    setZoomLevel,
+    setVisibleTimeRange,
+    filter,
+    replayEvent,
+  } = useTimelineData(initialFilter);
+
+  const [containerWidth, setContainerWidth] = useState(800);
+  const [showEventModal, setShowEventModal] = useState(false);
+  const [localFilter, setLocalFilter] = useState<{
+    civilizations: string[];
+    galaxies: string[];
+    eventTypes: EventType[];
+    severity: string[];
+  }>({
+    civilizations: [],

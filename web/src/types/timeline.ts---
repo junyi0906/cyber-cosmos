@@ -1,0 +1,100 @@
+export interface TimelineEvent {
+  id: string;
+  timestamp: number;
+  type: EventType;
+  title: string;
+  description: string;
+  civilizationId?: string;
+  civilizationName?: string;
+  galaxyId?: string;
+  galaxyName?: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  metadata?: Record<string, unknown>;
+  consequences?: string[];
+  relatedEvents?: string[];
+}
+
+export type EventType = 
+  | 'supernova'
+  | 'blackhole_formation'
+  | 'nebula_collapse'
+  | 'resource_depletion'
+  | 'tech_breakthrough'
+  | 'cultural_renaissance'
+  | 'civil_war'
+  | 'extinction'
+  | 'gamma_ray_burst'
+  | 'plague'
+  | 'void_invasion'
+  | 'diplomacy_treaty'
+  | 'alliance_formed'
+  | 'alliance_dissolved'
+  | 'broadcast'
+  | 'first_contact'
+  | 'migration';
+
+export interface Civilization {
+  id: string;
+  name: string;
+  color: string;
+  status: 'active' | 'extinct' | 'dormant';
+}
+
+export interface Galaxy {
+  id: string;
+  name: string;
+  coordinates: { x: number; y: number; z: number };
+}
+
+export interface TimelineFilter {
+  civilizations: string[];
+  galaxies: string[];
+  eventTypes: EventType[];
+  severity: ('low' | 'medium' | 'high' | 'critical')[];
+  timeRange: {
+    start: number;
+    end: number;
+  };
+}
+
+export interface TimelineState {
+  events: TimelineEvent[];
+  civilizations: Civilization[];
+  galaxies: Galaxy[];
+  isLoading: boolean;
+  error: string | null;
+  selectedEvent: TimelineEvent | null;
+  hoveredEvent: TimelineEvent | null;
+  zoomLevel: number;
+  visibleTimeRange: {
+    start: number;
+    end: number;
+  };
+}
+
+export const EVENT_TYPE_CONFIG: Record<EventType, { label: string; color: string; icon: string }> = {
+  supernova: { label: '超新星爆发', color: '#FFD700', icon: '💥' },
+  blackhole_formation: { label: '黑洞形成', color: '#1a1a2e', icon: '🕳️' },
+  nebula_collapse: { label: '星云坍缩', color: '#9B59B6', icon: '🌌' },
+  resource_depletion: { label: '资源枯竭', color: '#8B4513', icon: '⚠️' },
+  tech_breakthrough: { label: '科技突破', color: '#00CED1', icon: '🔬' },
+  cultural_renaissance: { label: '文化复兴', color: '#FF69B4', icon: '🎭' },
+  civil_war: { label: '内战分裂', color: '#DC143C', icon: '⚔️' },
+  extinction: { label: '文明灭绝', color: '#2F4F4F', icon: '💀' },
+  gamma_ray_burst: { label: '伽马射线暴', color: '#00FF00', icon: '⚡' },
+  plague: { label: '星际瘟疫', color: '#556B2F', icon: '🦠' },
+  void_invasion: { label: '虚空入侵', color: '#4B0082', icon: '👁️' },
+  diplomacy_treaty: { label: '外交条约', color: '#4682B4', icon: '📜' },
+  alliance_formed: { label: '联盟组建', color: '#32CD32', icon: '🤝' },
+  alliance_dissolved: { label: '联盟解散', color: '#CD5C5C', icon: '💔' },
+  broadcast: { label: '文明广播', color: '#87CEEB', icon: '📡' },
+  first_contact: { label: '首次接触', color: '#FFA500', icon: '👋' },
+  migration: { label: '文明迁徙', color: '#DEB887', icon: '🚀' },
+};
+
+export const SEVERITY_CONFIG = {
+  low: { color: '#4CAF50', label: '低' },
+  medium: { color: '#FFC107', label: '中' },
+  high: { color: '#FF9800', label: '高' },
+  critical: { color: '#F44336', label: '严重' },
+};
