@@ -1,0 +1,58 @@
+import React, { useState } from 'react';
+import { Relic, RelicType } from './types';
+
+interface RelicDetailProps {
+  relic: Relic;
+  onClose: () => void;
+  onExplore?: (relicId: string) => void;
+}
+
+const getRelicTypeLabel = (type: RelicType): string => {
+  const labels: Record<RelicType, string> = {
+    pioneer_factory: '先驱者工厂',
+    war_graveyard: '战争坟场',
+    knowledge_base: '知识库',
+  };
+  return labels[type] || type;
+};
+
+const getRelicTypeIcon = (type: RelicType): string => {
+  const icons: Record<RelicType, string> = {
+    pioneer_factory: '⚙️',
+    war_graveyard: '⚔️',
+    knowledge_base: '📚',
+  };
+  return icons[type] || '🏛️';
+};
+
+const getRelicTypeDescription = (type: RelicType): string => {
+  const descriptions: Record<RelicType, string> = {
+    pioneer_factory: '古代先驱者留下的生产设施，可提供产能加成。',
+    war_graveyard: '古老战争的遗址，蕴含军事科技与战略资源。',
+    knowledge_base: '保存完好的知识存储设施，蕴含大量科技数据。',
+  };
+  return descriptions[type] || '';
+};
+
+const getStatusColor = (status: Relic['status']): string => {
+  const colors: Record<Relic['status'], string> = {
+    unclaimed: '#4ade80',
+    contested: '#fbbf24',
+    occupied: '#60a5fa',
+  };
+  return colors[status] || '#9ca3af';
+};
+
+const getStatusLabel = (status: Relic['status']): string => {
+  const labels: Record<Relic['status'], string> = {
+    unclaimed: '未占领',
+    contested: '争夺中',
+    occupied: '已占领',
+  };
+  return labels[status] || status;
+};
+
+const getRewardIcon = (type: Relic['rewards'][0]['type']): string => {
+  const icons: Record<Relic['rewards'][0]['type'], string> = {
+    production: '⚙️',
+    military: '⚔️

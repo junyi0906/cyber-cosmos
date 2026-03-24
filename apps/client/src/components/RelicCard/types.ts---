@@ -1,0 +1,38 @@
+export type RelicType = 'pioneer_factory' | 'war_graveyard' | 'knowledge_base';
+
+export type RelicStatus = 'unclaimed' | 'contested' | 'occupied';
+
+export interface RelicReward {
+  type: 'production' | 'military' | 'technology' | 'resource';
+  amount: number;
+  resourceType?: 'ore' | 'energy' | 'tech_points';
+  description: string;
+}
+
+export interface Relic {
+  id: string;
+  name: string;
+  type: RelicType;
+  status: RelicStatus;
+  coordinates: {
+    x: number;
+    y: number;
+  };
+  owner?: {
+    id: string;
+    name: string;
+  };
+  rewards: RelicReward[];
+  description: string;
+  discoveredAt: number;
+  expiresAt?: number;
+  explorationCost: {
+    military: number;
+    energy: number;
+  };
+}
+
+export interface RelicDiscoveredEvent {
+  relic: Relic;
+  timestamp: number;
+}

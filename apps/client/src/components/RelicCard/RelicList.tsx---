@@ -1,0 +1,439 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { Relic, RelicDiscoveredEvent, RelicType } from './types';
+import { RelicDetail } from './RelicDetail';
+
+interface RelicListProps {
+  relics: Relic[];
+  onExplore?: (relicId: string) => void;
+  onSelectRelic?: (relic: Relic) => void;
+  socket?: WebSocket | null;
+}
+
+const getRelicTypeLabel = (type: RelicType): string => {
+  const labels: Record<RelicType, string> = {
+    pioneer_factory: '先驱者工厂',
+    war_graveyard: '战争坟场',
+    knowledge_base: '知识库',
+  };
+  return labels[type] || type;
+};
+
+const getRelicTypeIcon = (type: RelicType): string => {
+  const icons: Record<RelicType, string> = {
+    pioneer_factory: '⚙️',
+    war_graveyard: '⚔️',
+    knowledge_base: '📚',
+  };
+  return icons[type] || '🏛️';
+};
+
+const getStatusColor = (status: Relic['status']): string => {
+  const colors: Record<Relic['status'], string> = {
+    unclaimed: '#4ade80',
+    contested: '#fbbf24',
+    occupied: '#60a5fa',
+  };
+  return colors[status] || '#9ca3af';
+};
+
+const getStatusLabel = (status: Relic['status']): string => {
+  const labels: Record<Relic['status'], string> = {
+    unclaimed: '未占领',
+    contested: '争夺中',
+    occupied: '已占领',
+  };
+  return labels[status] || status;
+};
+
+export const RelicList: React.FC<RelicListProps> = ({
+  relics: initialRelics,
+  onExplore,
+  onSelectRelic,
+  socket,
+}) => {
+  const [relics, setRelics] = useState<Relic[]>(initialRelics);
+  const [selectedRelic, setSelectedRelic] = useState<Relic | null>(null);
+  const [notification, setNotification] = useState<RelicDiscoveredEvent | null>(null);
+  const [filter, setFilter] = useState<RelicType | 'all'>('all');
+
+  useEffect(() => {
+    setRelics(initialRelics);
+  }, [initialRelics]);
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleMessage = (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.channel === 'relic_discovered') {
+          const discoveryEvent: RelicDiscoveredEvent = data.payload;
+          setRelics((prev) => {
+            const exists = prev.some((r) => r.id === discoveryEvent.relic.id);
+            if (exists) return prev;
+            return [discoveryEvent.relic, ...prev];
+          });
+          setNotification(discoveryEvent);
+          setTimeout(() => setNotification(null), 5000);
+        }
+      } catch (err) {
+        console.error('Failed to parse WebSocket message:', err);
+      }
+    };
+
+    socket.addEventListener('message', handleMessage);
+    return () => socket.removeEventListener('message', handleMessage);
+  }, [socket]);
+
+  const handleSelectRelic = useCallback((relic: Relic) => {
+    setSelectedRelic(relic);
+    onSelectRelic?.(relic);
+  }, [onSelectRelic]);
+
+  const handleCloseDetail = useCallback(() => {
+    setSelectedRelic(null);
+  }, []);
+
+  const handleExplore = useCallback((relicId: string) => {
+    onExplore?.(relicId);
+    setSelectedRelic(null);
+  }, [onExplore]);
+
+  const filteredRelics = filter === 'all'
+    ? relics
+    : relics.filter((r) => r.type === filter);
+
+  return (
+    <div className="relic-list-container">
+      {/* Discovery Notification */}
+      {notification && (
+        <div className="relic-notification">
+          <div className="notification-icon">🏛️</div>
+          <div className="notification-content">
+            <div className="notification-title">新遗迹发现!</div>
+            <div className="notification-name">{notification.relic.name}</div>
+            <div className="notification-type">
+              {getRelicTypeLabel(notification.relic.type)}
+            </div>
+          </div>
+          <button
+            className="notification-close"
+            onClick={() => setNotification(null)}
+          >
+            ×
+          </button>
+        </div>
+      )}
+
+      {/* Filter Bar */}
+      <div className="relic-filter-bar">
+        <span className="filter-label">筛选:</span>
+        <button
+          className={`filter-btn ${filter === 'all' ? 'active' : ''}`}
+          onClick={() => setFilter('all')}
+        >
+          全部
+        </button>
+        <button
+          className={`filter-btn ${filter === 'pioneer_factory' ? 'active' : ''}`}
+          onClick={() => setFilter('pioneer_factory')}
+        >
+          ⚙️ 先驱者工厂
+        </button>
+        <button
+          className={`filter-btn ${filter === 'war_graveyard' ? 'active' : ''}`}
+          onClick={() => setFilter('war_graveyard')}
+        >
+          ⚔️ 战争坟场
+        </button>
+        <button
+          className={`filter-btn ${filter === 'knowledge_base' ? 'active' : ''}`}
+          onClick={() => setFilter('knowledge_base')}
+        >
+          📚 知识库
+        </button>
+      </div>
+
+      {/* Relic Count */}
+      <div className="relic-count">
+        共 {filteredRelics.length} 个遗迹
+      </div>
+
+      {/* Relic Grid */}
+      <div className="relic-grid">
+        {filteredRelics.map((relic) => (
+          <div
+            key={relic.id}
+            className="relic-card"
+            onClick={() => handleSelectRelic(relic)}
+          >
+            <div className="relic-card-header">
+              <span className="relic-icon">{getRelicTypeIcon(relic.type)}</span>
+              <span
+                className="relic-status"
+                style={{ backgroundColor: getStatusColor(relic.status) }}
+              >
+                {getStatusLabel(relic.status)}
+              </span>
+            </div>
+            <h3 className="relic-name">{relic.name}</h3>
+            <p className="relic-type">{getRelicTypeLabel(relic.type)}</p>
+            <div className="relic-coordinates">
+              坐标: ({relic.coordinates.x.toFixed(2)}, {relic.coordinates.y.toFixed(2)})
+            </div>
+            {relic.owner && (
+              <div className="relic-owner">
+                占领者: {relic.owner.name}
+              </div>
+            )}
+            <div className="relic-rewards-preview">
+              {relic.rewards.slice(0, 2).map((reward, idx) => (
+                <span key={idx} className="reward-tag">
+                  +{reward.amount} {reward.type}
+                </span>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Empty State */}
+      {filteredRelics.length === 0 && (
+        <div className="relic-empty-state">
+          <span className="empty-icon">🔭</span>
+          <p>暂无遗迹发现</p>
+          <p className="empty-hint">探索宇宙以发现古代文明的遗迹</p>
+        </div>
+      )}
+
+      {/* Detail Modal */}
+      {selectedRelic && (
+        <RelicDetail
+          relic={selectedRelic}
+          onClose={handleCloseDetail}
+          onExplore={handleExplore}
+        />
+      )}
+
+      <style>{`
+        .relic-list-container {
+          padding: 16px;
+          position: relative;
+        }
+
+        .relic-notification {
+          position: fixed;
+          top: 20px;
+          right: 20px;
+          background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+          border: 1px solid #3b82f6;
+          border-radius: 12px;
+          padding: 16px;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          z-index: 1000;
+          animation: slideIn 0.3s ease-out;
+          box-shadow: 0 10px 40px rgba(59, 130, 246, 0.3);
+        }
+
+        @keyframes slideIn {
+          from {
+            transform: translateX(100%);
+            opacity: 0;
+          }
+          to {
+            transform: translateX(0);
+            opacity: 1;
+          }
+        }
+
+        .notification-icon {
+          font-size: 32px;
+          animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.1); }
+        }
+
+        .notification-content {
+          flex: 1;
+        }
+
+        .notification-title {
+          color: #60a5fa;
+          font-weight: bold;
+          font-size: 14px;
+        }
+
+        .notification-name {
+          color: #f1f5f9;
+          font-size: 18px;
+          font-weight: bold;
+          margin: 4px 0;
+        }
+
+        .notification-type {
+          color: #94a3b8;
+          font-size: 12px;
+        }
+
+        .notification-close {
+          background: transparent;
+          border: none;
+          color: #94a3b8;
+          font-size: 24px;
+          cursor: pointer;
+          padding: 0;
+          line-height: 1;
+        }
+
+        .notification-close:hover {
+          color: #f1f5f9;
+        }
+
+        .relic-filter-bar {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-bottom: 16px;
+          flex-wrap: wrap;
+        }
+
+        .filter-label {
+          color: #94a3b8;
+          font-size: 14px;
+        }
+
+        .filter-btn {
+          background: #1e293b;
+          border: 1px solid #334155;
+          color: #94a3b8;
+          padding: 6px 12px;
+          border-radius: 6px;
+          cursor: pointer;
+          font-size: 13px;
+          transition: all 0.2s;
+        }
+
+        .filter-btn:hover {
+          border-color: #3b82f6;
+          color: #f1f5f9;
+        }
+
+        .filter-btn.active {
+          background: #3b82f6;
+          border-color: #3b82f6;
+          color: white;
+        }
+
+        .relic-count {
+          color: #64748b;
+          font-size: 13px;
+          margin-bottom: 16px;
+        }
+
+        .relic-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+          gap: 16px;
+        }
+
+        .relic-card {
+          background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+          border: 1px solid #334155;
+          border-radius: 12px;
+          padding: 16px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .relic-card:hover {
+          border-color: #3b82f6;
+          transform: translateY(-2px);
+          box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+        }
+
+        .relic-card-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 12px;
+        }
+
+        .relic-icon {
+          font-size: 28px;
+        }
+
+        .relic-status {
+          font-size: 11px;
+          padding: 4px 8px;
+          border-radius: 4px;
+          color: white;
+          font-weight: 500;
+        }
+
+        .relic-name {
+          color: #f1f5f9;
+          font-size: 16px;
+          margin: 0 0 4px 0;
+          font-weight: 600;
+        }
+
+        .relic-type {
+          color: #94a3b8;
+          font-size: 13px;
+          margin: 0 0 8px 0;
+        }
+
+        .relic-coordinates {
+          color: #64748b;
+          font-size: 12px;
+          margin-bottom: 4px;
+        }
+
+        .relic-owner {
+          color: #60a5fa;
+          font-size: 12px;
+          margin-bottom: 8px;
+        }
+
+        .relic-rewards-preview {
+          display: flex;
+          gap: 6px;
+          flex-wrap: wrap;
+          margin-top: 8px;
+        }
+
+        .reward-tag {
+          background: rgba(59, 130, 246, 0.2);
+          color: #60a5fa;
+          font-size: 11px;
+          padding: 3px 8px;
+          border-radius: 4px;
+        }
+
+        .relic-empty-state {
+          text-align: center;
+          padding: 48px 16px;
+          color: #64748b;
+        }
+
+        .empty-icon {
+          font-size: 48px;
+          display: block;
+          margin-bottom: 16px;
+        }
+
+        .empty-hint {
+          font-size: 13px;
+          color: #475569;
+        }
+      `}</style>
+    </div>
+  );
+};
+
+export default RelicList;
