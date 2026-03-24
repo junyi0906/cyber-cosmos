@@ -1,21 +1,59 @@
-import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
-import { RelicType, RelicEffect } from '../interfaces/relic.interface';
-import { MajorEvent } from '../../events/interfaces/event.interface';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+
+export enum RelicType {
+  CIVILIZATION_RUINS = 'civilization_ruins',
+  TITAN_BATTLEFIELD = 'titan_battlefield',
+  TECH_SINGULARITY = 'tech_singularity',
+  SUPERNOVA_REMNANT = 'supernova_remnant',
+  ANCIENT_GATE = 'ancient_gate',
+}
+
+export enum RelicRarity {
+  COMMON = 'common',
+  RARE = 'rare',
+  EPIC = 'epic',
+  LEGENDARY = 'legendary',
+}
+
+export enum RelicStatus {
+  DORMANT = 'dormant',
+  EXPLORED = 'explored',
+  EXCAVATED = 'excavated',
+  CONTESTED = 'contested',
+  DEPLETED = 'depleted',
+}
 
 @Entity('relics')
-export class RelicEntity {
+export class Relic {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
   @Column({ type: 'varchar', length: 100 })
   name: string;
 
+  @Column({ type: 'text', nullable: true })
+  description: string;
+
   @Column({
     type: 'enum',
     enum: RelicType,
-    default: RelicType.RUINS
+    default: RelicType.CIVILIZATION_RUINS,
   })
   type: RelicType;
+
+  @Column({
+    type: 'enum',
+    enum: RelicRarity,
+    default: RelicRarity.COMMON,
+  })
+  rarity: RelicRarity;
+
+  @Column({
+    type: 'enum',
+    enum: RelicStatus,
+    default: RelicStatus.DORMANT,
+  })
+  status: RelicStatus;
 
   @Column({ type: 'float' })
   coordinateX: number;
@@ -26,28 +64,51 @@ export class RelicEntity {
   @Column({ type: 'float' })
   coordinateZ: number;
 
-  @Column({ type: 'jsonb' })
-  effects: RelicEffect[];
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  galaxy: string;
 
-  @Column({ type: 'uuid' })
-  sourceEventId: string;
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  starSystem: string;
+
+  @Column({ type: 'int', default: 0 })
+  exploreCount: number;
+
+  @Column({ type: 'int', default: 0 })
+  excavateCount: number;
 
   @Column({ type: 'jsonb', nullable: true })
-  sourceEventData: MajorEvent;
+  rewards: {
+    resources?: { ore?: number; energy?: number; techPoints?: number };
+    technologies?: string[];
+    artifacts?: string[];
+  };
+
+  @Column({ type: 'jsonb', nullable: true })
+  auraEffects: {
+    type: string;
+    value: number;
+    scope: string;
+  }[];
+
+  @Column({ type: 'uuid', nullable: true })
+  originCivilizationId: string;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  originEventId: string;
+
+  @Column({ type: 'int', default: 100 })
+  remainingResources: number;
+
+  @Column({ type: 'jsonb', nullable: true })
+  currentContest: {
+    participants: string[];
+    startTime: Date;
+    endTime: Date;
+  };
 
   @CreateDateColumn()
   createdAt: Date;
 
-  @Column({ type: 'simple-array', default: [] })
-  discoveredBy: string[];
-
-  @Column({
-    type: 'enum',
-    enum: ['ACTIVE', 'DEPLETED', 'DORMANT'],
-    default: 'ACTIVE'
-  })
-  status: 'ACTIVE' | 'DEPLETED' | 'DORMANT';
-
-  @Column({ type: 'int', default: 0 })
-  explorationCount: number;
+  @UpdateDateColumn()
+  updatedAt: Date;
 }

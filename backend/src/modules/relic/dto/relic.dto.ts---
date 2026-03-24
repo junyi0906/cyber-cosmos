@@ -1,0 +1,210 @@
+import { IsString, IsOptional, IsEnum, IsNumber, IsObject, Min, Max, IsUUID } from 'class-validator';
+import { RelicType, RelicRarity, RelicStatus } from '../entities/relic.entity';
+
+export class CreateRelicDto {
+  @IsString()
+  name: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @IsEnum(RelicType)
+  type: RelicType;
+
+  @IsOptional()
+  @IsEnum(RelicRarity)
+  rarity?: RelicRarity;
+
+  @IsNumber()
+  coordinateX: number;
+
+  @IsNumber()
+  coordinateY: number;
+
+  @IsNumber()
+  coordinateZ: number;
+
+  @IsOptional()
+  @IsString()
+  galaxy?: string;
+
+  @IsOptional()
+  @IsString()
+  starSystem?: string;
+
+  @IsOptional()
+  @IsObject()
+  rewards?: {
+    resources?: { ore?: number; energy?: number; techPoints?: number };
+    technologies?: string[];
+    artifacts?: string[];
+  };
+
+  @IsOptional()
+  @IsObject()
+  auraEffects?: {
+    type: string;
+    value: number;
+    scope: string;
+  }[];
+
+  @IsOptional()
+  @IsUUID()
+  originCivilizationId?: string;
+
+  @IsOptional()
+  @IsString()
+  originEventId?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  remainingResources?: number;
+}
+
+export class QueryRelicDto {
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  page?: number = 1;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(100)
+  limit?: number = 20;
+
+  @IsOptional()
+  @IsEnum(RelicType)
+  type?: RelicType;
+
+  @IsOptional()
+  @IsEnum(RelicRarity)
+  rarity?: RelicRarity;
+
+  @IsOptional()
+  @IsEnum(RelicStatus)
+  status?: RelicStatus;
+
+  @IsOptional()
+  @IsString()
+  galaxy?: string;
+
+  @IsOptional()
+  @IsNumber()
+  minResources?: number;
+
+  @IsOptional()
+  @IsNumber()
+  maxResources?: number;
+}
+
+export class ExploreRelicDto {
+  @IsUUID()
+  civilizationId: string;
+
+  @IsOptional()
+  @IsNumber()
+  fleetSize?: number = 1;
+}
+
+export class ExcavateRelicDto {
+  @IsUUID()
+  civilizationId: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(10)
+  intensity?: number = 1;
+}
+
+export class ContestRelicDto {
+  @IsUUID()
+  civilizationId: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  fleetPower?: number = 100;
+}
+
+export class RelicResponseDto {
+  id: string;
+  name: string;
+  description: string;
+  type: RelicType;
+  rarity: RelicRarity;
+  status: RelicStatus;
+  coordinates: { x: number; y: number; z: number };
+  galaxy: string;
+  starSystem: string;
+  exploreCount: number;
+  excavateCount: number;
+  rewards: {
+    resources?: { ore?: number; energy?: number; techPoints?: number };
+    technologies?: string[];
+    artifacts?: string[];
+  };
+  auraEffects: {
+    type: string;
+    value: number;
+    scope: string;
+  }[];
+  originCivilizationId: string;
+  originEventId: string;
+  remainingResources: number;
+  currentContest: {
+    participants: string[];
+    startTime: Date;
+    endTime: Date;
+  };
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export class PaginatedRelicResponseDto {
+  data: RelicResponseDto[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+export class ExploreResultDto {
+  success: boolean;
+  relicId: string;
+  discoveries: {
+    type: 'resource' | 'technology' | 'artifact' | 'information';
+    name: string;
+    description: string;
+    value?: number;
+  }[];
+  experienceGained: number;
+  message: string;
+}
+
+export class ExcavateResultDto {
+  success: boolean;
+  relicId: string;
+  resourcesCollected: {
+    ore?: number;
+    energy?: number;
+    techPoints?: number;
+  };
+  technologiesFound: string[];
+  artifactsFound: string[];
+  relicDepleted: boolean;
+  message: string;
+}
+
+export class ContestResultDto {
+  success: boolean;
+  relicId: string;
+  contestId: string;
+  currentLeader: string;
+  participants: string[];
+  endTime: Date;
+  message: string;
+}

@@ -1,0 +1,221 @@
+import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, Between, In } from 'typeorm';
+import { Relic, RelicStatus, RelicRarity } from './entities/relic.entity';
+import {
+  CreateRelicDto,
+  QueryRelicDto,
+  ExploreRelicDto,
+  ExcavateRelicDto,
+  ContestRelicDto,
+  RelicResponseDto,
+  PaginatedRelicResponseDto,
+  ExploreResultDto,
+  ExcavateResultDto,
+  ContestResultDto,
+} from './dto/relic.dto';
+import { v4 as uuidv4 } from 'uuid';
+
+@Injectable()
+export class RelicService {
+  constructor(
+    @InjectRepository(Relic)
+    private readonly relicRepository: Repository<Relic>,
+  ) {}
+
+  async create(createRelicDto: CreateRelicDto): Promise<Relic> {
+    const relic = this.relicRepository.create({
+      ...createRelicDto,
+      remainingResources: createRelicDto.remainingResources ?? this.calculateInitialResources(createRelicDto.rarity),
+    });
+    return this.relicRepository.save(relic);
+  }
+
+  private calculateInitialResources(rarity?: RelicRarity): number {
+    const baseResources = {
+      [RelicRarity.COMMON]: 100,
+      [RelicRarity.RARE]: 250,
+      [RelicRarity.EPIC]: 500,
+      [RelicRarity.LEGENDARY]: 1000,
+    };
+    return baseResources[rarity || RelicRarity.COMMON];
+  }
+
+  async findAll(query: QueryRelicDto): Promise<PaginatedRelicResponseDto> {
+    const { page = 1, limit = 20, type, rarity, status, galaxy, minResources, maxResources } = query;
+    
+    const queryBuilder = this.relicRepository.createQueryBuilder('relic');
+
+    if (type) {
+      queryBuilder.andWhere('relic.type = :type', { type });
+    }
+    if (rarity) {
+      queryBuilder.andWhere('relic.rarity = :rarity', { rarity });
+    }
+    if (status) {
+      queryBuilder.andWhere('relic.status = :status', { status });
+    }
+    if (galaxy) {
+      queryBuilder.andWhere('relic.galaxy = :galaxy', { galaxy });
+    }
+    if (minResources !== undefined) {
+      queryBuilder.andWhere('relic.remainingResources >= :minResources', { minResources });
+    }
+    if (maxResources !== undefined) {
+      queryBuilder.andWhere('relic.remainingResources <= :maxResources', { maxResources });
+    }
+
+    queryBuilder
+      .orderBy('relic.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    const [relics, total] = await queryBuilder.getManyAndCount();
+
+    return {
+      data: relics.map(this.toResponseDto),
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  async findOne(id: string): Promise<RelicResponseDto> {
+    const relic = await this.relicRepository.findOne({ where: { id } });
+    if (!relic) {
+      throw new NotFoundException(`Relic with ID ${id} not found`);
+    }
+    return this.toResponseDto(relic);
+  }
+
+  async explore(id: string, exploreDto: ExploreRelicDto): Promise<ExploreResultDto> {
+    const relic = await this.relicRepository.findOne({ where: { id } });
+    if (!relic) {
+      throw new NotFoundException(`Relic with ID ${id} not found`);
+    }
+
+    if (relic.status === RelicStatus.DEPLETED) {
+      throw new BadRequestException('This relic has been depleted and cannot be explored');
+    }
+
+    if (relic.currentContest) {
+      throw new ConflictException('This relic is currently being contested');
+    }
+
+    const discoveries = this.generateDiscoveries(relic, exploreDto.fleetSize || 1);
+    const experienceGained = this.calculateExploreExperience(relic, discoveries.length);
+
+    relic.exploreCount += 1;
+    if (relic.status === RelicStatus.DORMANT) {
+      relic.status = RelicStatus.EXPLORED;
+    }
+    await this.relicRepository.save(relic);
+
+    return {
+      success: true,
+      relicId: relic.id,
+      discoveries,
+      experienceGained,
+      message: `Exploration of ${relic.name} completed. Found ${discoveries.length} discoveries.`,
+    };
+  }
+
+  async excavate(id: string, excavateDto: ExcavateRelicDto): Promise<ExcavateResultDto> {
+    const relic = await this.relicRepository.findOne({ where: { id } });
+    if (!relic) {
+      throw new NotFoundException(`Relic with ID ${id} not found`);
+    }
+
+    if (relic.status === RelicStatus.DEPLETED) {
+      throw new BadRequestException('This relic has been depleted and cannot be excavated');
+    }
+
+    if (relic.currentContest) {
+      throw new ConflictException('This relic is currently being contested');
+    }
+
+    const intensity = excavateDto.intensity || 1;
+    const extractionRate = this.calculateExtractionRate(relic.rarity, intensity);
+    const resourcesCollected = this.extractResources(relic, extractionRate);
+    const technologiesFound = this.findTechnologies(relic, intensity);
+    const artifactsFound = this.findArtifacts(relic, intensity);
+
+    relic.excavateCount += 1;
+    relic.status = RelicStatus.EXCAVATED;
+    
+    const isDepleted = relic.remainingResources <= 0;
+    if (isDepleted) {
+      relic.status = RelicStatus.DEPLETED;
+    }
+
+    await this.relicRepository.save(relic);
+
+    return {
+      success: true,
+      relicId: relic.id,
+      resourcesCollected,
+      technologiesFound,
+      artifactsFound,
+      relicDepleted: isDepleted,
+      message: isDepleted 
+        ? `Excavation depleted ${relic.name}. Final resources collected.`
+        : `Excavation of ${relic.name} successful. Resources collected.`,
+    };
+  }
+
+  async contest(id: string, contestDto: ContestRelicDto): Promise<ContestResultDto> {
+    const relic = await this.relicRepository.findOne({ where: { id } });
+    if (!relic) {
+      throw new NotFoundException(`Relic with ID ${id} not found`);
+    }
+
+    if (relic.status === RelicStatus.DEPLETED) {
+      throw new BadRequestException('This relic has been depleted and cannot be contested');
+    }
+
+    const now = new Date();
+    const contestDuration = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+
+    if (!relic.currentContest) {
+      relic.currentContest = {
+        participants: [contestDto.civilizationId],
+        startTime: now,
+        endTime: new Date(now.getTime() + contestDuration),
+      };
+      relic.status = RelicStatus.CONTESTED;
+    } else {
+      if (relic.currentContest.participants.includes(contestDto.civilizationId)) {
+        throw new BadRequestException('Civilization is already participating in this contest');
+      }
+      relic.currentContest.participants.push(contestDto.civilizationId);
+    }
+
+    await this.relicRepository.save(relic);
+
+    const contestId = uuidv4();
+
+    return {
+      success: true,
+      relicId: relic.id,
+      contestId,
+      currentLeader: relic.currentContest.participants[0],
+      participants: relic.currentContest.participants,
+      endTime: relic.currentContest.endTime,
+      message: `Civilization ${contestDto.civilizationId} has entered the contest for ${relic.name}`,
+    };
+  }
+
+  async remove(id: string): Promise<void> {
+    const relic = await this.relicRepository.findOne({ where: { id } });
+    if (!relic) {
+      throw new NotFoundException(`Relic with ID ${id} not found`);
+    }
+    await this.relicRepository.remove(relic);
+  }
+
+  private toResponseDto(relic: Relic): RelicResponseDto {
+    return {
+      id: relic.id,
+      name: relic.name,
+      description: relic.description || '',
