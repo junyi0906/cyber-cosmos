@@ -1,59 +1,56 @@
 """
 Redis Pub/Sub 通道定义
-用于 Python 核心与 Node.js 服务之间的通信
+Python 端与 Node.js 服务通信的通道常量
 """
 
 from enum import Enum
 from typing import Final
 
 
-class ChannelType(str, Enum):
-    """Redis Pub/Sub 通道类型枚举"""
+class Channel(str, Enum):
+    """
+    Redis Pub/Sub 通道枚举
+    与 Node.js 端 channels.ts 保持同步
+    """
     
-    UNIVERSE_TICK: Final[str] = "cyber_cosmos:universe:tick"
-    MAJOR_EVENT: Final[str] = "cyber_cosmos:universe:major_event"
-    AGENT_DECISION: Final[str] = "cyber_cosmos:agent:decision"
+    # 宇宙 Tick 通道
+    # 每个模拟周期发送一次，包含当前宇宙状态快照
+    UNIVERSE_TICK: Final[str] = "universe:tick"
+    
+    # 重大事件通道
+    # 当发生影响宇宙格局的重大事件时发送
+    MAJOR_EVENT: Final[str] = "universe:major_event"
+    
+    # Agent 决策通道
+    # 记录 Agent 的决策过程和结果
+    AGENT_DECISION: Final[str] = "agent:decision"
 
 
-# 通道常量
-UNIVERSE_TICK: Final[str] = "cyber_cosmos:universe:tick"
-MAJOR_EVENT: Final[str] = "cyber_cosmos:universe:major_event"
-AGENT_DECISION: Final[str] = "cyber_cosmos:agent:decision"
-
-
-# 通道描述
+# 通道描述信息
 CHANNEL_DESCRIPTIONS: dict[str, str] = {
-    UNIVERSE_TICK: "宇宙时间推进事件，每个 tick 广播当前宇宙状态",
-    MAJOR_EVENT: "重大宇宙事件，如超新星爆发、文明毁灭、联盟形成等",
-    AGENT_DECISION: "Agent 决策事件，记录 Agent 的思考过程和行动决策",
+    Channel.UNIVERSE_TICK: "宇宙模拟周期更新，包含当前宇宙状态",
+    Channel.MAJOR_EVENT: "重大宇宙事件通知，影响文明或宇宙格局",
+    Channel.AGENT_DECISION: "Agent 决策记录，包含推理过程和行动",
 }
 
 
-# 所有通道列表
-ALL_CHANNELS: list[str] = [
-    UNIVERSE_TICK,
-    MAJOR_EVENT,
-    AGENT_DECISION,
-]
-
-
-def get_channel_name(channel: str) -> str:
-    """获取通道的友好名称"""
-    return channel.split(":")[-1] if ":" in channel else channel
-
-
-def is_valid_channel(channel: str) -> bool:
-    """检查通道是否有效"""
-    return channel in ALL_CHANNELS
+class MessageType(str, Enum):
+    """消息类型枚举"""
+    
+    TICK_UPDATE = "TICK_UPDATE"
+    CIVILIZATION_BORN = "CIVILIZATION_BORN"
+    CIVILIZATION_DESTROYED = "CIVILIZATION_DESTROYED"
+    WAR_DECLARED = "WAR_DECLARED"
+    ALLIANCE_FORMED = "ALLIANCE_FORMED"
+    TRADE_ESTABLISHED = "TRADE_ESTABLISHED"
+    DISASTER_OCCURRED = "DISASTER_OCCURRED"
+    TECHNOLOGY_BREAKTHROUGH = "TECHNOLOGY_BREAKTHROUGH"
+    AGENT_THINKING = "AGENT_THINKING"
+    AGENT_ACTION = "AGENT_ACTION"
 
 
 __all__ = [
-    "ChannelType",
-    "UNIVERSE_TICK",
-    "MAJOR_EVENT",
-    "AGENT_DECISION",
+    "Channel",
     "CHANNEL_DESCRIPTIONS",
-    "ALL_CHANNELS",
-    "get_channel_name",
-    "is_valid_channel",
+    "MessageType",
 ]

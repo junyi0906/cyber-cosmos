@@ -1,23 +1,32 @@
-import Redis, { Redis as RedisClient } from 'ioredis';
-import { redisConfig } from '../config/redis.config';
-import { CHANNELS } from '../constants/channels';
+/**
+ * Redis 服务封装
+ * 提供 Pub/Sub 发布订阅功能
+ */
 
-export interface PubSubMessage {
-  channel: string;
-  data: unknown;
+import Redis from 'ioredis';
+import { redisConfig } from '../config/redis.config';
+import { CHANNELS, ChannelName } from '../constants/channels';
+
+export interface MessagePayload {
+  type: string;
   timestamp: number;
+  data: unknown;
 }
 
-type MessageHandler = (message: PubSubMessage) => void;
+export type MessageHandler = (channel: ChannelName, message: MessagePayload) => void;
 
 class RedisService {
-  private publisher: RedisClient | null = null;
-  private subscriber: RedisClient | null = null;
+  private publisher: Redis | null = null;
+  private subscriber: Redis | null = null;
+  private handlers: Map<ChannelName, Set<MessageHandler>> = new Map();
   private isConnected: boolean = false;
-  private messageHandlers: Map<string, Set<MessageHandler>> = new Map();
 
+  /**
+   * 初始化 Redis 连接
+   */
   async connect(): Promise<void> {
     try {
+      // 创建发布者客户端
       this.publisher = new Redis({
         host: redisConfig.host,
         port: redisConfig.port,
@@ -27,9 +36,10 @@ class RedisService {
         retryStrategy: redisConfig.retryStrategy,
         maxRetriesPerRequest: redisConfig.maxRetriesPerRequest,
         enableReadyCheck: redisConfig.enableReadyCheck,
-        enableOfflineQueue: redisConfig.enableOfflineQueue,
+        lazyConnect: redisConfig.lazyConnect,
       });
 
+      // 创建订阅者客户端
       this.subscriber = new Redis({
         host: redisConfig.host,
         port: redisConfig.port,
@@ -39,156 +49,219 @@ class RedisService {
         retryStrategy: redisConfig.retryStrategy,
         maxRetriesPerRequest: redisConfig.maxRetriesPerRequest,
         enableReadyCheck: redisConfig.enableReadyCheck,
-        enableOfflineQueue: redisConfig.enableOfflineQueue,
+        lazyConnect: redisConfig.lazyConnect,
       });
 
+      // 设置连接事件监听
+      this.setupEventListeners();
+
+      // 等待连接就绪
       await Promise.all([
-        new Promise<void>((resolve, reject) => {
-          this.publisher!.once('ready', () => {
-            console.log('[Redis] Publisher connected');
-            resolve();
-          });
-          this.publisher!.once('error', reject);
+        new Promise<void>((resolve) => {
+          this.publisher!.once('ready', () => resolve());
         }),
-        new Promise<void>((resolve, reject) => {
-          this.subscriber!.once('ready', () => {
-            console.log('[Redis] Subscriber connected');
-            resolve();
-          });
-          this.subscriber!.once('error', reject);
+        new Promise<void>((resolve) => {
+          this.subscriber!.once('ready', () => resolve());
         }),
       ]);
 
+      // 设置消息监听
+      this.subscriber.on('message', this.handleMessage.bind(this));
+
       this.isConnected = true;
-      this.setupMessageHandler();
-      console.log('[Redis] Service initialized successfully');
+      console.log('[RedisService] 连接成功');
     } catch (error) {
-      console.error('[Redis] Connection failed:', error);
+      console.error('[RedisService] 连接失败:', error);
       throw error;
     }
   }
 
-  private setupMessageHandler(): void {
+  /**
+   * 设置 Redis 事件监听器
+   */
+  private setupEventListeners(): void {
+    const clients = [
+      { client: this.publisher, name: 'Publisher' },
+      { client: this.subscriber, name: 'Subscriber' },
+    ];
+
+    clients.forEach(({ client, name }) => {
+      if (!client) return;
+
+      client.on('connect', () => {
+        console.log(`[RedisService] ${name} 正在连接...`);
+      });
+
+      client.on('ready', () => {
+        console.log(`[RedisService] ${name} 连接就绪`);
+      });
+
+      client.on('error', (err) => {
+        console.error(`[RedisService] ${name} 错误:`, err.message);
+      });
+
+      client.on('close', () => {
+        console.log(`[RedisService] ${name} 连接关闭`);
+      });
+
+      client.on('reconnecting', () => {
+        console.log(`[RedisService] ${name} 正在重连...`);
+      });
+    });
+  }
+
+  /**
+   * 处理接收到的消息
+   */
+  private handleMessage(channel: string, message: string): void {
+    try {
+      const payload: MessagePayload = JSON.parse(message);
+      const channelName = channel.replace(redisConfig.keyPrefix, '') as ChannelName;
+      
+      const handlers = this.handlers.get(channelName);
+      if (handlers) {
+        handlers.forEach((handler) => {
+          try {
+            handler(channelName, payload);
+          } catch (err) {
+            console.error(`[RedisService] 处理器执行错误 [${channelName}]:`, err);
+          }
+        });
+      }
+    } catch (error) {
+      console.error('[RedisService] 消息解析错误:', error);
+    }
+  }
+
+  /**
+   * 订阅通道
+   */
+  async subscribe(channel: ChannelName, handler: MessageHandler): Promise<void> {
+    if (!this.subscriber) {
+      throw new Error('[RedisService] 订阅者客户端未初始化');
+    }
+
+    // 添加处理器
+    if (!this.handlers.has(channel)) {
+      this.handlers.set(channel, new Set());
+      // 首次订阅该通道
+      await this.subscriber.subscribe(channel);
+      console.log(`[RedisService] 订阅通道: ${channel}`);
+    }
+    this.handlers.get(channel)!.add(handler);
+  }
+
+  /**
+   * 取消订阅
+   */
+  async unsubscribe(channel: ChannelName, handler?: MessageHandler): Promise<void> {
     if (!this.subscriber) return;
 
-    this.subscriber.on('message', (channel: string, message: string) => {
-      try {
-        const parsedMessage: PubSubMessage = {
-          channel,
-          data: JSON.parse(message),
-          timestamp: Date.now(),
-        };
-        this.handleMessage(channel, parsedMessage);
-      } catch (error) {
-        console.error(`[Redis] Failed to parse message on channel ${channel}:`, error);
-      }
-    });
-  }
-
-  private handleMessage(channel: string, message: PubSubMessage): void {
-    const handlers = this.messageHandlers.get(channel);
-    if (handlers) {
-      handlers.forEach((handler) => {
-        try {
-          handler(message);
-        } catch (error) {
-          console.error(`[Redis] Handler error on channel ${channel}:`, error);
-        }
-      });
-    }
-  }
-
-  async publish(channel: string, data: unknown): Promise<void> {
-    if (!this.publisher || !this.isConnected) {
-      throw new Error('[Redis] Publisher not connected');
-    }
-
-    const message = JSON.stringify({
-      ...data,
-      _meta: {
-        publishedAt: Date.now(),
-        source: 'nodejs',
-      },
-    });
-
-    try {
-      await this.publisher.publish(channel, message);
-      console.log(`[Redis] Published to ${channel}`);
-    } catch (error) {
-      console.error(`[Redis] Failed to publish to ${channel}:`, error);
-      throw error;
-    }
-  }
-
-  async subscribe(channel: string, handler: MessageHandler): Promise<void> {
-    if (!this.subscriber || !this.isConnected) {
-      throw new Error('[Redis] Subscriber not connected');
-    }
-
-    if (!this.messageHandlers.has(channel)) {
-      this.messageHandlers.set(channel, new Set());
-      await this.subscriber.subscribe(channel);
-      console.log(`[Redis] Subscribed to ${channel}`);
-    }
-
-    this.messageHandlers.get(channel)!.add(handler);
-  }
-
-  async unsubscribe(channel: string, handler?: MessageHandler): Promise<void> {
-    if (!this.subscriber || !this.isConnected) {
-      return;
-    }
+    const handlers = this.handlers.get(channel);
+    if (!handlers) return;
 
     if (handler) {
-      const handlers = this.messageHandlers.get(channel);
-      if (handlers) {
-        handlers.delete(handler);
-        if (handlers.size === 0) {
-          await this.subscriber.unsubscribe(channel);
-          this.messageHandlers.delete(channel);
-          console.log(`[Redis] Unsubscribed from ${channel}`);
-        }
+      handlers.delete(handler);
+      if (handlers.size === 0) {
+        await this.subscriber.unsubscribe(channel);
+        this.handlers.delete(channel);
+        console.log(`[RedisService] 取消订阅通道: ${channel}`);
       }
     } else {
       await this.subscriber.unsubscribe(channel);
-      this.messageHandlers.delete(channel);
-      console.log(`[Redis] Unsubscribed from ${channel}`);
+      this.handlers.delete(channel);
+      console.log(`[RedisService] 取消订阅通道: ${channel}`);
     }
   }
 
-  async publishUniverseTick(tickData: unknown): Promise<void> {
+  /**
+   * 发布消息
+   */
+  async publish(channel: ChannelName, data: unknown): Promise<void> {
+    if (!this.publisher) {
+      throw new Error('[RedisService] 发布者客户端未初始化');
+    }
+
+    const payload: MessagePayload = {
+      type: channel,
+      timestamp: Date.now(),
+      data,
+    };
+
+    const message = JSON.stringify(payload);
+    await this.publisher.publish(channel, message);
+  }
+
+  /**
+   * 发布宇宙 Tick 事件
+   */
+  async publishTick(tickData: {
+    tick: number;
+    year: number;
+    civilizations: number;
+    events: string[];
+  }): Promise<void> {
     await this.publish(CHANNELS.UNIVERSE_TICK, tickData);
   }
 
-  async publishMajorEvent(eventData: unknown): Promise<void> {
+  /**
+   * 发布重大事件
+   */
+  async publishMajorEvent(eventData: {
+    eventId: string;
+    eventType: string;
+    description: string;
+    affectedEntities: string[];
+    impact: Record<string, unknown>;
+  }): Promise<void> {
     await this.publish(CHANNELS.MAJOR_EVENT, eventData);
   }
 
-  async publishAgentDecision(decisionData: unknown): Promise<void> {
+  /**
+   * 发布 Agent 决策
+   */
+  async publishAgentDecision(decisionData: {
+    agentId: string;
+    civilizationId: string;
+    decision: string;
+    reasoning: string;
+    outcome?: string;
+  }): Promise<void> {
     await this.publish(CHANNELS.AGENT_DECISION, decisionData);
   }
 
-  async disconnect(): Promise<void> {
-    if (this.publisher) {
-      await this.publisher.quit();
-      this.publisher = null;
-    }
-    if (this.subscriber) {
-      await this.subscriber.quit();
-      this.subscriber = null;
-    }
-    this.isConnected = false;
-    this.messageHandlers.clear();
-    console.log('[Redis] Disconnected');
+  /**
+   * 获取连接状态
+   */
+  getConnectionStatus(): boolean {
+    return this.isConnected;
   }
 
-  getStatus(): { connected: boolean; channels: string[] } {
-    return {
-      connected: this.isConnected,
-      channels: Array.from(this.messageHandlers.keys()),
-    };
+  /**
+   * 断开连接
+   */
+  async disconnect(): Promise<void> {
+    const disconnectPromises: Promise<void>[] = [];
+
+    if (this.publisher) {
+      disconnectPromises.push(this.publisher.quit().then(() => {}));
+    }
+
+    if (this.subscriber) {
+      disconnectPromises.push(this.subscriber.quit().then(() => {}));
+    }
+
+    await Promise.all(disconnectPromises);
+
+    this.publisher = null;
+    this.subscriber = null;
+    this.handlers.clear();
+    this.isConnected = false;
+
+    console.log('[RedisService] 已断开连接');
   }
 }
 
+// 导出单例
 export const redisService = new RedisService();
 export default redisService;

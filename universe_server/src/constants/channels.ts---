@@ -1,15 +1,55 @@
+/**
+ * Redis Pub/Sub 通道常量定义
+ * 定义 Python 核心与 Node.js 服务之间的通信通道
+ */
+
 export const CHANNELS = {
-  UNIVERSE_TICK: 'cyber_cosmos:universe:tick',
-  MAJOR_EVENT: 'cyber_cosmos:universe:major_event',
-  AGENT_DECISION: 'cyber_cosmos:agent:decision',
+  /**
+   * 宇宙 Tick 通道
+   * 每个模拟周期发送一次，包含当前宇宙状态快照
+   */
+  UNIVERSE_TICK: 'universe:tick',
+
+  /**
+   * 重大事件通道
+   * 当发生影响宇宙格局的重大事件时发送
+   * 如：超新星爆发、文明毁灭、星际战争等
+   */
+  MAJOR_EVENT: 'universe:major_event',
+
+  /**
+   * Agent 决策通道
+   * 记录 Agent 的决策过程和结果
+   * 用于决策日志可视化和行为分析
+   */
+  AGENT_DECISION: 'agent:decision',
 } as const;
 
-export type ChannelName = (typeof CHANNELS)[keyof typeof CHANNELS];
+export type ChannelName = typeof CHANNELS[keyof typeof CHANNELS];
 
+/**
+ * 通道描述信息
+ */
 export const CHANNEL_DESCRIPTIONS: Record<ChannelName, string> = {
-  [CHANNELS.UNIVERSE_TICK]: '宇宙时间推进事件，每个 tick 广播当前宇宙状态',
-  [CHANNELS.MAJOR_EVENT]: '重大宇宙事件，如超新星爆发、文明毁灭、联盟形成等',
-  [CHANNELS.AGENT_DECISION]: 'Agent 决策事件，记录 Agent 的思考过程和行动决策',
+  [CHANNELS.UNIVERSE_TICK]: '宇宙模拟周期更新，包含当前宇宙状态',
+  [CHANNELS.MAJOR_EVENT]: '重大宇宙事件通知，影响文明或宇宙格局',
+  [CHANNELS.AGENT_DECISION]: 'Agent 决策记录，包含推理过程和行动',
 };
+
+/**
+ * 消息类型枚举
+ */
+export enum MessageType {
+  TICK_UPDATE = 'TICK_UPDATE',
+  CIVILIZATION_BORN = 'CIVILIZATION_BORN',
+  CIVILIZATION_DESTROYED = 'CIVILIZATION_DESTROYED',
+  WAR_DECLARED = 'WAR_DECLARED',
+  ALLIANCE_FORMED = 'ALLIANCE_FORMED',
+  TRADE_ESTABLISHED = 'TRADE_ESTABLISHED',
+  DISASTER_OCCURRED = 'DISASTER_OCCURRED',
+  TECHNOLOGY_BREAKTHROUGH = 'TECHNOLOGY_BREAKTHROUGH',
+  AGENT_THINKING = 'AGENT_THINKING',
+  AGENT_ACTION = 'AGENT_ACTION',
+}
 
 export default CHANNELS;

@@ -1,3 +1,8 @@
+/**
+ * Redis 连接配置
+ * 用于 Python 核心与 Node.js 服务之间的 Pub/Sub 通信
+ */
+
 export interface RedisConfig {
   host: string;
   port: number;
@@ -7,7 +12,7 @@ export interface RedisConfig {
   retryStrategy: (times: number) => number | null;
   maxRetriesPerRequest: number;
   enableReadyCheck: boolean;
-  enableOfflineQueue: boolean;
+  lazyConnect: boolean;
 }
 
 export const redisConfig: RedisConfig = {
@@ -18,16 +23,16 @@ export const redisConfig: RedisConfig = {
   keyPrefix: 'cyber_cosmos:',
   retryStrategy: (times: number): number | null => {
     if (times > 10) {
-      console.error('[Redis] Connection retry limit exceeded');
+      console.error('[Redis] 连接重试次数超过限制，停止重试');
       return null;
     }
     const delay = Math.min(times * 100, 3000);
-    console.log(`[Redis] Retrying connection in ${delay}ms (attempt ${times})`);
+    console.log(`[Redis] 第 ${times} 次重试连接，延迟 ${delay}ms`);
     return delay;
   },
   maxRetriesPerRequest: 3,
   enableReadyCheck: true,
-  enableOfflineQueue: true,
+  lazyConnect: false,
 };
 
 export default redisConfig;
