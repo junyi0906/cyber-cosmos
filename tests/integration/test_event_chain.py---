@@ -1,0 +1,59 @@
+"""
+Integration tests for event chain system - testing event propagation and effects
+"""
+import pytest
+import sys
+import os
+import json
+from unittest.mock import Mock, MagicMock, patch
+from datetime import datetime
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+
+from universe.state import UniverseState
+from universe.events import EventSystem
+
+
+class TestEventChain:
+    """Test event chain propagation and effects"""
+    
+    @pytest.fixture
+    def event_setup(self, sample_civilization, sample_civilization_2):
+        """Set up event testing environment"""
+        state = UniverseState()
+        state.civilizations = {
+            sample_civilization["id"]: sample_civilization,
+            sample_civilization_2["id"]: sample_civilization_2
+        }
+        state.current_tick = 0
+        state.history = []
+        
+        event_system = EventSystem()
+        
+        return {
+            "state": state,
+            "events": event_system
+        }
+    
+    def test_single_event_creation(self, event_setup):
+        """Test creating a single event"""
+        events = event_setup["events"]
+        
+        event = events.create_event(
+            event_type="supernova",
+            position={"x": 100, "y": 200, "z": 50},
+            severity=7
+        )
+        
+        assert event is not None
+        assert event["type"] == "supernova"
+        assert event["severity"] == 7
+    
+    def test_event_chain_propagation(self, event_setup):
+        """Test that events can trigger chain reactions"""
+        events = event_setup["events"]
+        state = event_setup["state"]
+        
+        # Create primary event
+        primary_event = {
+            "id
