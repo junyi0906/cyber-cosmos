@@ -7,89 +7,160 @@ import os
 import json
 import asyncio
 from typing import Optional, Dict, Any, List
-from contextlib import contextmanager
 from datetime import datetime
 
 import asyncpg
 import redis.asyncio as redis
-
-# Database configuration from environment
-DATABASE_URL = os.getenv(
-    'DATABASE_URL',
-    'postgresql://cosmos_user:cosmos_pass@localhost:5432/cyber_cosmos'
-)
-REDIS_URL = os.getenv(
-    'REDIS_URL',
-    'redis://localhost:6379/0'
-)
-
-# Connection pools
-_db_pool: Optional[asyncpg.Pool] = None
-_redis_client: Optional[redis.Redis] = None
+from dataclasses import dataclass, field, asdict
+from uuid import UUID, uuid4
 
 
-async def init_db(pool_size: int = 10) -> asyncpg.Pool:
-    """
-    Initialize PostgreSQL connection pool.
+@dataclass
+class DatabaseConfig:
+    """Database configuration settings"""
+    postgres_host: str = os.getenv('POSTGRES_HOST', 'localhost')
+    postgres_port: int = int(os.getenv('POSTGRES_PORT', '5432'))
+    postgres_user: str = os.getenv('POSTGRES_USER', 'cyber_cosmos')
+    postgres_password: str = os.getenv('POSTGRES_PASSWORD', 'cyber_cosmos_pass')
+    postgres_database: str = os.getenv('POSTGRES_DATABASE', 'cyber_cosmos')
     
-    Args:
-        pool_size: Maximum number of connections in the pool
+    redis_host: str = os.getenv('REDIS_HOST', 'localhost')
+    redis_port: int = int(os.getenv('REDIS_PORT', '6379'))
+    redis_password: Optional[str] = os.getenv('REDIS_PASSWORD', None)
+    redis_db: int = int(os.getenv('REDIS_DB', '0'))
+
+
+class DatabaseManager:
+    """
+    Manages database connections and operations
+    Implements singleton pattern for connection pooling
+    """
+    
+    _instance: Optional['DatabaseManager'] = None
+    _pool: Optional[asyncpg.Pool] = None
+    _redis: Optional[redis.Redis] = None
+    
+    def __new__(cls, config: Optional[DatabaseConfig] = None):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._config = config or DatabaseConfig()
+        return cls._instance
+    
+    async def initialize(self) -> None:
+        """Initialize database connections"""
+        await self._init_postgres()
+        await self._init_redis()
+        await self._ensure_redis_keys()
+    
+    async def _init_postgres(self) -> None:
+        """Initialize PostgreSQL connection pool"""
+        if self._pool is None:
+            self._pool = await asyncpg.create_pool(
+                host=self._config.postgres_host,
+                port=self._config.postgres_port,
+                user=self._config.postgres_user,
+                password=self._config.postgres_password,
+                database=self._config.postgres_database,
+                min_size=5,
+                max_size=20
+            )
+    
+    async def _init_redis(self) -> None:
+        """Initialize Redis connection"""
+        if self._redis is None:
+            self._redis = redis.Redis(
+                host=self._config.redis_host,
+                port=self._config.redis_port,
+                password=self._config.redis_password,
+                db=self._config.redis_db,
+                decode_responses=True
+            )
+    
+    async def _ensure_redis_keys(self) -> None:
+        """Ensure required Redis keys are available"""
+        # Initialize universe:state if not exists
+        universe_state_exists = await self._redis.exists('universe:state')
+        if not universe_state_exists:
+            initial_state = {
+                'tick': 0,
+                'status': 'initialized',
+                'civilization_count': 0,
+                'last_update': datetime.utcnow().isoformat(),
+                'active_events': []
+            }
+            await self._redis.set('universe:state', json.dumps(initial_state))
         
-    Returns:
-        asyncpg.Pool: Database connection pool
-    """
-    global _db_pool
+        # Initialize event_queue if not exists
+        event_queue_exists = await self._redis.exists('event_queue')
+        if not event_queue_exists:
+            await self._redis.delete('event_queue')
+            # Create empty list
+            await self._redis.rpush('event_queue', '__init__')
+            await self._redis.lpop('event_queue')
     
-    if _db_pool is None:
-        _db_pool = await asyncpg.create_pool(
-            DATABASE_URL,
-            min_size=2,
-            max_size=pool_size,
-            command_timeout=60
-        )
+    @property
+    def pool(self) -> asyncpg.Pool:
+        """Get PostgreSQL connection pool"""
+        if self._pool is None:
+            raise RuntimeError("Database not initialized. Call initialize() first.")
+        return self._pool
     
-    return _db_pool
+    @property
+    def redis(self) -> redis.Redis:
+        """Get Redis client"""
+        if self._redis is None:
+            raise RuntimeError("Redis not initialized. Call initialize() first.")
+        return self._redis
+    
+    async def close(self) -> None:
+        """Close all database connections"""
+        if self._pool:
+            await self._pool.close()
+            self._pool = None
+        if self._redis:
+            await self._redis.close()
+            self._redis = None
+    
+    async def execute_migration(self, sql_path: str) -> None:
+        """Execute SQL migration file"""
+        with open(sql_path, 'r') as f:
+            sql = f.read()
+        async with self.pool.acquire() as conn:
+            await conn.execute(sql)
+    
+    async def execute_seed(self, sql_path: str) -> None:
+        """Execute SQL seed file"""
+        with open(sql_path, 'r') as f:
+            sql = f.read()
+        async with self.pool.acquire() as conn:
+            await conn.execute(sql)
 
 
-async def init_redis() -> redis.Redis:
-    """
-    Initialize Redis connection.
-    
-    Ensures required keys 'universe:state' and 'event_queue' are available.
-    
-    Returns:
-        redis.Redis: Redis client instance
-    """
-    global _redis_client
-    
-    if _redis_client is None:
-        _redis_client = redis.from_url(
-            REDIS_URL,
-            encoding='utf-8',
-            decode_responses=True
-        )
-        
-        # Initialize required keys if they don't exist
-        await _ensure_redis_keys(_redis_client)
-    
-    return _redis_client
+# Global database manager instance
+_db_manager: Optional[DatabaseManager] = None
 
 
-async def _ensure_redis_keys(client: redis.Redis) -> None:
+async def get_db() -> DatabaseManager:
+    """Get or create database manager instance"""
+    global _db_manager
+    if _db_manager is None:
+        _db_manager = DatabaseManager()
+        await _db_manager.initialize()
+    return _db_manager
+
+
+async def get_redis() -> redis.Redis:
+    """Get Redis client"""
+    db = await get_db()
+    return db.redis
+
+
+class RedisClient:
     """
-    Ensure required Redis keys exist with initial values.
+    Redis client wrapper for universe state and event queue operations
+    """
     
-    Args:
-        client: Redis client instance
-    """
-    # Initialize universe:state if not exists
-    universe_state_exists = await client.exists('universe:state')
-    if not universe_state_exists:
-        initial_state = {
-            'tick': 0,
-            'status': 'initialized',
-            'civilization_count': 0,
-            'last_update': datetime.utcnow().isoformat(),
-            'version': '1.0.0'
-        }
-        await client.set
+    UNIVERSE_STATE_KEY = 'universe:state'
+    EVENT_QUEUE_KEY = 'event_queue'
+    
+    def __init__(self, redis_client

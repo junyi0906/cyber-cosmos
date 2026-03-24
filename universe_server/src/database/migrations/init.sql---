@@ -1,15 +1,13 @@
 -- Cyber-Cosmos Database Schema Initialization
 -- Version: 1.0.0
--- Description: Initialize database tables for universe simulation
 
--- Enable UUID extension
+-- Enable required extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
--- Enable JSONB support (native in PostgreSQL 9.4+)
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- ============================================
--- Table: civilizations
--- Description: Stores all civilization entities in the universe
+-- Civilizations Table
+-- Stores information about each civilization in the universe
 -- ============================================
 CREATE TABLE IF NOT EXISTS civilizations (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -17,8 +15,12 @@ CREATE TABLE IF NOT EXISTS civilizations (
     attributes JSONB NOT NULL DEFAULT '{}',
     tech_level INTEGER NOT NULL DEFAULT 1,
     status VARCHAR(50) NOT NULL DEFAULT 'active',
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    
+    -- Constraints
+    CONSTRAINT valid_status CHECK (status IN ('active', 'dormant', 'destroyed', 'ascended', 'collapsed')),
+    CONSTRAINT valid_tech_level CHECK (tech_level >= 1 AND tech_level <= 10)
 );
 
 -- Create indexes for civilizations
@@ -27,23 +29,27 @@ CREATE INDEX IF NOT EXISTS idx_civilizations_tech_level ON civilizations(tech_le
 CREATE INDEX IF NOT EXISTS idx_civilizations_created_at ON civilizations(created_at);
 CREATE INDEX IF NOT EXISTS idx_civilizations_attributes ON civilizations USING GIN (attributes);
 
--- Add constraints
-ALTER TABLE civilizations ADD CONSTRAINT chk_tech_level_range 
-    CHECK (tech_level >= 1 AND tech_level <= 100);
-ALTER TABLE civilizations ADD CONSTRAINT chk_status_valid 
-    CHECK (status IN ('active', 'dormant', 'destroyed', 'ascended', 'collapsed'));
-
 -- ============================================
--- Table: universe_events
--- Description: Records all events occurring in the universe simulation
+-- Universe Events Table
+-- Records all cosmic events that occur in the simulation
 -- ============================================
 CREATE TABLE IF NOT EXISTS universe_events (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     event_type VARCHAR(100) NOT NULL,
-    description TEXT,
+    description TEXT NOT NULL,
     impact_data JSONB NOT NULL DEFAULT '{}',
     tick BIGINT NOT NULL DEFAULT 0,
-    timestamp TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+    timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    
+    -- Constraints
+    CONSTRAINT valid_event_type CHECK (event_type IN (
+        'supernova', 'black_hole_formation', 'nebula_collision',
+        'cosmic_radiation_wave', 'resource_depletion', 'environmental_crisis',
+        'tech_singularity', 'first_contact', 'war_declaration', 'peace_treaty',
+        'alliance_formation', 'trade_agreement', 'civilization_birth',
+        'civilization_collapse', 'civilization_ascension', 'discovery',
+        'migration', 'custom'
+    ))
 );
 
 -- Create indexes for universe_events
@@ -52,22 +58,34 @@ CREATE INDEX IF NOT EXISTS idx_universe_events_tick ON universe_events(tick);
 CREATE INDEX IF NOT EXISTS idx_universe_events_timestamp ON universe_events(timestamp);
 CREATE INDEX IF NOT EXISTS idx_universe_events_impact_data ON universe_events USING GIN (impact_data);
 
--- Add constraints
-ALTER TABLE universe_events ADD CONSTRAINT chk_event_type_not_empty 
-    CHECK (event_type <> '');
-
 -- ============================================
--- Table: diplomacy_logs
--- Description: Records all diplomatic interactions between civilizations
+-- Diplomacy Logs Table
+-- Records all diplomatic interactions between civilizations
 -- ============================================
 CREATE TABLE IF NOT EXISTS diplomacy_logs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     from_civ_id UUID NOT NULL,
     to_civ_id UUID NOT NULL,
-    action_type VARCHAR(100) NOT NULL,
-    result VARCHAR(100) NOT NULL DEFAULT 'pending',
-    timestamp TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    details JSONB DEFAULT '{}'
+    action_type VARCHAR(50) NOT NULL,
+    result VARCHAR(50) NOT NULL DEFAULT 'pending',
+    timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    details JSONB DEFAULT '{}',
+    
+    -- Foreign keys
+    CONSTRAINT fk_diplomacy_from_civ FOREIGN KEY (from_civ_id) 
+        REFERENCES civilizations(id) ON DELETE CASCADE,
+    CONSTRAINT fk_diplomacy_to_civ FOREIGN KEY (to_civ_id) 
+        REFERENCES civilizations(id) ON DELETE CASCADE,
+    
+    -- Constraints
+    CONSTRAINT valid_action_type CHECK (action_type IN (
+        'declare_war', 'ceasefire', 'alliance', 'trade_pact',
+        'non_aggression_pact', 'embassy', 'sanctions', 'tribute',
+        'cultural_exchange', 'technology_transfer', 'broadcast'
+    )),
+    CONSTRAINT valid_result CHECK (result IN (
+        'pending', 'accepted', 'rejected', 'expired', 'broken'
+    ))
 );
 
 -- Create indexes for diplomacy_logs
@@ -76,111 +94,52 @@ CREATE INDEX IF NOT EXISTS idx_diplomacy_logs_to_civ ON diplomacy_logs(to_civ_id
 CREATE INDEX IF NOT EXISTS idx_diplomacy_logs_action_type ON diplomacy_logs(action_type);
 CREATE INDEX IF NOT EXISTS idx_diplomacy_logs_timestamp ON diplomacy_logs(timestamp);
 
--- Add foreign key constraints
-ALTER TABLE diplomacy_logs ADD CONSTRAINT fk_diplomacy_from_civ 
-    FOREIGN KEY (from_civ_id) REFERENCES civilizations(id) ON DELETE CASCADE;
-ALTER TABLE diplomacy_logs ADD CONSTRAINT fk_diplomacy_to_civ 
-    FOREIGN KEY (to_civ_id) REFERENCES civilizations(id) ON DELETE CASCADE;
-
--- Add constraints
-ALTER TABLE diplomacy_logs ADD CONSTRAINT chk_action_type_valid 
-    CHECK (action_type IN (
-        'declare_war', 'sue_peace', 'form_alliance', 'break_alliance',
-        'trade_agreement', 'non_aggression_pact', 'embargo', 'diplomatic_note',
-        'first_contact', 'cultural_exchange', 'technology_transfer', 'broadcast'
-    ));
-ALTER TABLE diplomacy_logs ADD CONSTRAINT chk_result_valid 
-    CHECK (result IN ('pending', 'accepted', 'rejected', 'failed', 'expired'));
-ALTER TABLE diplomacy_logs ADD CONSTRAINT chk_different_civs 
-    CHECK (from_civ_id <> to_civ_id);
-
 -- ============================================
--- Table: decision_logs
--- Description: Records AI agent decision-making processes
+-- Decision Logs Table
+-- Records AI Agent decision-making processes
 -- ============================================
 CREATE TABLE IF NOT EXISTS decision_logs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     civ_id UUID NOT NULL,
     context JSONB NOT NULL DEFAULT '{}',
-    reasoning TEXT,
+    reasoning TEXT NOT NULL,
     action VARCHAR(255) NOT NULL,
     tick BIGINT NOT NULL DEFAULT 0,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    
+    -- Foreign key
+    CONSTRAINT fk_decision_civ FOREIGN KEY (civ_id) 
+        REFERENCES civilizations(id) ON DELETE CASCADE
 );
 
 -- Create indexes for decision_logs
 CREATE INDEX IF NOT EXISTS idx_decision_logs_civ_id ON decision_logs(civ_id);
 CREATE INDEX IF NOT EXISTS idx_decision_logs_tick ON decision_logs(tick);
-CREATE INDEX IF NOT EXISTS idx_decision_logs_action ON decision_logs(action);
 CREATE INDEX IF NOT EXISTS idx_decision_logs_created_at ON decision_logs(created_at);
-CREATE INDEX IF NOT EXISTS idx_decision_logs_context ON decision_logs USING GIN (context);
-
--- Add foreign key constraint
-ALTER TABLE decision_logs ADD CONSTRAINT fk_decision_civ 
-    FOREIGN KEY (civ_id) REFERENCES civilizations(id) ON DELETE CASCADE;
+CREATE INDEX IF NOT EXISTS idx_decision_logs_action ON decision_logs(action);
 
 -- ============================================
--- Create update timestamp trigger function
+-- Trigger for updated_at timestamp
 -- ============================================
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
-    NEW.updated_at = NOW();
+    NEW.updated_at = CURRENT_TIMESTAMP;
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$ language 'plpgsql';
 
--- Apply trigger to civilizations table
-DROP TRIGGER IF EXISTS update_civilizations_updated_at ON civilizations;
-CREATE TRIGGER update_civilizations_updated_at
-    BEFORE UPDATE ON civilizations
-    FOR EACH ROW
+CREATE TRIGGER update_civilizations_updated_at 
+    BEFORE UPDATE ON civilizations 
+    FOR EACH ROW 
     EXECUTE FUNCTION update_updated_at_column();
 
 -- ============================================
--- Create utility views
+-- Initial Schema Version Record
 -- ============================================
-
--- View: Active civilizations summary
-CREATE OR REPLACE VIEW v_active_civilizations AS
-SELECT 
-    id,
-    name,
-    tech_level,
-    status,
-    attributes->>'ideology' as ideology,
-    attributes->>'population' as population,
-    attributes->>'military_power' as military_power,
-    created_at
-FROM civilizations
-WHERE status = 'active'
-ORDER BY tech_level DESC;
-
--- View: Recent universe events
-CREATE OR REPLACE VIEW v_recent_events AS
-SELECT 
-    id,
-    event_type,
-    description,
-    tick,
-    timestamp
-FROM universe_events
-ORDER BY timestamp DESC
-LIMIT 100;
-
--- ============================================
--- Grant permissions (adjust as needed)
--- ============================================
--- GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO cosmos_user;
--- GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO cosmos_user;
-
--- Schema version tracking
-CREATE TABLE IF NOT EXISTS schema_version (
-    version VARCHAR(50) PRIMARY KEY,
-    applied_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    description TEXT
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    version VARCHAR(255) PRIMARY KEY,
+    applied_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
-INSERT INTO schema_version (version, description) 
-VALUES ('1.0.0', 'Initial schema creation') 
-ON CONFLICT (version) DO NOTHING;
+INSERT INTO schema_migrations (version) VALUES ('1.0.0') ON CONFLICT DO NOTHING;

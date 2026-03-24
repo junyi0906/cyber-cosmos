@@ -3,16 +3,15 @@ Cyber-Cosmos Database Module
 Handles PostgreSQL and Redis connections
 """
 
-from .connection import get_db_connection, get_redis_connection, init_db, init_redis
+from .connection import DatabaseManager, get_db, redis_client
 from .models import Civilization, UniverseEvent, DiplomacyLog, DecisionLog
 
 __all__ = [
-    'get_db_connection',
-    'get_redis_connection',
-    'init_db',
-    'init_redis',
+    'DatabaseManager',
+    'get_db',
+    'redis_client',
     'Civilization',
     'UniverseEvent',
     'DiplomacyLog',
-    'DecisionLog',
+    'DecisionLog'
 ]

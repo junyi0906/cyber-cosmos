@@ -1,7 +1,7 @@
--- Cyber-Cosmos Database Seed Data
--- Description: Insert initial mother civilizations for universe simulation
+-- Cyber-Cosmos Initial Seed Data
+-- Inserts 3 initial mother civilizations
 
--- Clear existing data (optional, comment out if not needed)
+-- Clear existing data (optional, for clean seeding)
 -- TRUNCATE TABLE decision_logs CASCADE;
 -- TRUNCATE TABLE diplomacy_logs CASCADE;
 -- TRUNCATE TABLE universe_events CASCADE;
@@ -11,177 +11,146 @@
 -- Insert Initial Mother Civilizations
 -- ============================================
 
--- Civilization 1: The Aethor Collective
--- A highly advanced, peaceful civilization focused on knowledge and exploration
+-- Civilization 1: The Aethon Collective
 INSERT INTO civilizations (id, name, attributes, tech_level, status, created_at) VALUES (
     uuid_generate_v4(),
-    'Aethor Collective',
+    'Aethon Collective',
     '{
-        "ideology": "knowledge_seeking",
-        "population": 85000000000,
-        "military_power": 35,
-        "economic_power": 85,
-        "technology_focus": "quantum_computing",
-        "home_system": "Aethor Prime",
-        "government_type": "technocratic_council",
-        "primary_values": ["knowledge", "exploration", "cooperation"],
-        "trust_base": 0.7,
-        "threat_tolerance": 0.3,
-        "expansion_drive": 0.5,
+        "military": 7,
+        "economy": 6,
+        "technology": 8,
+        "culture": 5,
+        "population": 8500000000,
+        "home_planet": "Aethon Prime",
+        "ideology": "technocratic_collectivism",
+        "traits": ["curious", "expansionist", "scientific"],
         "color": "#4A90D9",
-        "symbol": "crystal_star"
+        "coordinates": {"x": 120, "y": 85, "z": -30},
+        "resources": {
+            "energy": 9500,
+            "minerals": 7200,
+            "food": 8100,
+            "research": 12000
+        },
+        "trust_matrix": {},
+        "threat_assessment": {}
     }'::jsonb,
-    42,
+    5,
     'active',
-    NOW()
-) ON CONFLICT DO NOTHING;
+    CURRENT_TIMESTAMP
+);
 
--- Civilization 2: The Vorthan Empire
--- A militaristic, expansionist civilization with strong industrial base
+-- Civilization 2: The Vorthan Dominion
 INSERT INTO civilizations (id, name, attributes, tech_level, status, created_at) VALUES (
     uuid_generate_v4(),
-    'Vorthan Empire',
+    'Vorthan Dominion',
     '{
-        "ideology": "militaristic_expansion",
-        "population": 120000000000,
-        "military_power": 92,
-        "economic_power": 65,
-        "technology_focus": "weapons_systems",
-        "home_system": "Vorthan Major",
-        "government_type": "imperial_dynasty",
-        "primary_values": ["strength", "honor", "conquest"],
-        "trust_base": 0.25,
-        "threat_tolerance": 0.8,
-        "expansion_drive": 0.95,
+        "military": 9,
+        "economy": 5,
+        "technology": 6,
+        "culture": 3,
+        "population": 12000000000,
+        "home_planet": "Vortha",
+        "ideology": "militaristic_imperialism",
+        "traits": ["aggressive", "territorial", "honor_bound"],
         "color": "#D94A4A",
-        "symbol": "iron_crown"
+        "coordinates": {"x": -80, "y": 150, "z": 45},
+        "resources": {
+            "energy": 6000,
+            "minerals": 15000,
+            "food": 5500,
+            "research": 4500
+        },
+        "trust_matrix": {},
+        "threat_assessment": {}
     }'::jsonb,
-    38,
+    4,
     'active',
-    NOW()
-) ON CONFLICT DO NOTHING;
+    CURRENT_TIMESTAMP
+);
 
 -- Civilization 3: The Sylphid Harmony
--- A nature-aligned, diplomatic civilization focused on balance and harmony
 INSERT INTO civilizations (id, name, attributes, tech_level, status, created_at) VALUES (
     uuid_generate_v4(),
     'Sylphid Harmony',
     '{
-        "ideology": "harmonic_balance",
-        "population": 45000000000,
-        "military_power": 25,
-        "economic_power": 70,
-        "technology_focus": "bio_engineering",
-        "home_system": "Sylphid Garden",
-        "government_type": "council_elders",
-        "primary_values": ["harmony", "preservation", "diplomacy"],
-        "trust_base": 0.85,
-        "threat_tolerance": 0.15,
-        "expansion_drive": 0.2,
+        "military": 3,
+        "economy": 7,
+        "technology": 7,
+        "culture": 9,
+        "population": 4200000000,
+        "home_planet": "Sylphis",
+        "ideology": "pacifist_cooperation",
+        "traits": ["diplomatic", "peaceful", "cultural"],
         "color": "#4AD98A",
-        "symbol": "living_tree"
+        "coordinates": {"x": 200, "y": -60, "z": 90},
+        "resources": {
+            "energy": 8000,
+            "minerals": 5000,
+            "food": 11000,
+            "research": 9000
+        },
+        "trust_matrix": {},
+        "threat_assessment": {}
     }'::jsonb,
-    35,
+    4,
     'active',
-    NOW()
-) ON CONFLICT DO NOTHING;
+    CURRENT_TIMESTAMP
+);
 
 -- ============================================
 -- Insert Initial Universe Events
 -- ============================================
 
 INSERT INTO universe_events (event_type, description, impact_data, tick, timestamp) VALUES (
-    'universe_initialization',
-    'The Cyber-Cosmos universe has been initialized. Three mother civilizations emerge from the cosmic dawn.',
+    'civilization_birth',
+    'The universe awakens as three great civilizations emerge from the cosmic void, each with their own vision for the future.',
     '{
-        "event_category": "meta",
-        "severity": "info",
-        "affected_systems": ["Aethor Prime", "Vorthan Major", "Sylphid Garden"]
+        "significance": "major",
+        "affected_civilizations": ["Aethon Collective", "Vorthan Dominion", "Sylphid Harmony"],
+        "narrative_weight": 10
     }'::jsonb,
     0,
-    NOW()
-) ON CONFLICT DO NOTHING;
-
-INSERT INTO universe_events (event_type, description, impact_data, tick, timestamp) VALUES (
-    'civilization_emergence',
-    'The Aethor Collective achieves faster-than-light communication capabilities.',
-    '{
-        "event_category": "technological",
-        "severity": "major",
-        "civ_name": "Aethor Collective",
-        "tech_unlock": "ftl_communication"
-    }'::jsonb,
-    1,
-    NOW() + INTERVAL '1 second'
-) ON CONFLICT DO NOTHING;
-
-INSERT INTO universe_events (event_type, description, impact_data, tick, timestamp) VALUES (
-    'civilization_emergence',
-    'The Vorthan Empire completes construction of their first stellar fleet.',
-    '{
-        "event_category": "military",
-        "severity": "major",
-        "civ_name": "Vorthan Empire",
-        "military_boost": 15
-    }'::jsonb,
-    2,
-    NOW() + INTERVAL '2 seconds'
-) ON CONFLICT DO NOTHING;
-
-INSERT INTO universe_events (event_type, description, impact_data, tick, timestamp) VALUES (
-    'civilization_emergence',
-    'The Sylphid Harmony establishes the first inter-species diplomatic protocol.',
-    '{
-        "event_category": "diplomatic",
-        "severity": "major",
-        "civ_name": "Sylphid Harmony",
-        "diplomacy_boost": 20
-    }'::jsonb,
-    3,
-    NOW() + INTERVAL '3 seconds'
-) ON CONFLICT DO NOTHING;
+    CURRENT_TIMESTAMP
+);
 
 -- ============================================
 -- Insert Initial Diplomacy State
 -- ============================================
 
--- First contact between Aethor and Sylphid (friendly)
+-- Create initial diplomatic awareness between civilizations
 INSERT INTO diplomacy_logs (from_civ_id, to_civ_id, action_type, result, timestamp, details)
 SELECT 
     c1.id,
     c2.id,
     'first_contact',
     'accepted',
-    NOW(),
-    '{
-        "initiator_message": "Greetings, fellow seekers of knowledge. We come in peace.",
-        "response_message": "Welcome, travelers. The Harmony embraces new friends.",
-        "relation_change": 15
-    }'::jsonb
-FROM civilizations c1, civilizations c2
-WHERE c1.name = 'Aethor Collective' AND c2.name = 'Sylphid Harmony'
-ON CONFLICT DO NOTHING;
+    CURRENT_TIMESTAMP,
+    '{"description": "Initial detection and establishment of communication protocols"}'::jsonb
+FROM civilizations c1
+CROSS JOIN civilizations c2
+WHERE c1.name = 'Aethon Collective' AND c2.name = 'Vorthan Dominion';
 
--- First contact between Vorthan and Aethor (tense)
 INSERT INTO diplomacy_logs (from_civ_id, to_civ_id, action_type, result, timestamp, details)
 SELECT 
     c1.id,
     c2.id,
     'first_contact',
     'accepted',
-    NOW(),
-    '{
-        "initiator_message": "We are the Vorthan. Your territory is now of interest to us.",
-        "response_message": "We acknowledge your presence. Let us discuss peaceful coexistence.",
-        "relation_change": -5
-    }'::jsonb
-FROM civilizations c1, civilizations c2
-WHERE c1.name = 'Vorthan Empire' AND c2.name = 'Aethor Collective'
-ON CONFLICT DO NOTHING;
+    CURRENT_TIMESTAMP,
+    '{"description": "Peaceful exchange of cultural information"}'::jsonb
+FROM civilizations c1
+CROSS JOIN civilizations c2
+WHERE c1.name = 'Aethon Collective' AND c2.name = 'Sylphid Harmony';
 
--- ============================================
--- Verification Query (can be removed in production)
--- ============================================
--- SELECT 'Civilizations seeded: ' || COUNT(*)::text FROM civilizations;
--- SELECT 'Universe events seeded: ' || COUNT(*)::text FROM universe_events;
--- SELECT 'Diplomacy logs seeded: ' || COUNT(*)::text FROM diplomacy_logs;
+INSERT INTO diplomacy_logs (from_civ_id, to_civ_id, action_type, result, timestamp, details)
+SELECT 
+    c1.id,
+    c2.id,
+    'first_contact',
+    'pending',
+    CURRENT_TIMESTAMP,
+    '{"description": "Tense initial contact, monitoring situation"}'::jsonb
+FROM civilizations c1
+CROSS JOIN civilizations c2
+WHERE c1.name = 'Vorthan Dominion' AND c2.name = 'Sylphid Harmony';
