@@ -1,89 +1,110 @@
-# SPEC.md: Cyber-Cosmos 第二轮自主进化
+# SPEC.md - Cyber Cosmos 第二轮进化规格书
 
 ## 1. 项目概述
 
 ### 1.1 项目名称
-**Cyber-Cosmos v2.0: Galactic Echoes (银河回响)**
+**Cyber Cosmos v2.0: Echoes of Eternity (永恒回响)**
 
 ### 1.2 项目目标
-在现有的叙事引擎与外交系统基础上，通过引入**动态经济系统**、**环境不确定性**与**历史沉淀机制**，将宇宙模拟从“静态事件触发”升级为“复杂系统涌现”。目标是创造一个具有内生经济循环、历史厚度和可视化深度的赛博宇宙。
+在现有的叙事引擎与外交系统基础上，通过引入**经济流动**、**历史沉淀**与**宏观周期**机制，将宇宙模拟从"静态事件驱动"升级为"动态生态演化"。重点实现文明的长期经济博弈、历史痕迹的实体化以及宇宙宏观节奏的周期性变化。
 
 ### 1.3 核心技术栈
-*   **后端**: Node.js + TypeScript + NestJS (模块化架构)
-*   **数据库**: PostgreSQL (关系数据) + Redis (实时行情/天气缓存) + TimescaleDB (时序数据)
-*   **前端**: React + TypeScript + TailwindCSS + ECharts (数据可视化)
-*   **通信**: REST API + WebSocket (实时推送贸易/天气事件)
-*   **测试**: Jest + Supertest
+- **后端框架**: NestJS (TypeScript) - 模块化架构，依赖注入
+- **前端框架**: Vue 3 + TypeScript + Pinia (状态管理)
+- **可视化引擎**: PixiJS (星际地图) + ECharts (数据图表)
+- **数据库**: PostgreSQL (关系数据) + Redis (实时状态/缓存)
+- **通信协议**: REST API (CRUD) + WebSocket (实时推演广播)
+- **测试框架**: Jest (单元/集成测试) + Supertest (API测试)
 
 ---
 
 ## 2. 功能列表
 
-经过架构分析，本轮进化选择以下 4 个核心方向实施：
+经过架构分析，本次进化选取以下四个核心方向实施：
 
-### 2.1 【核心】星际贸易系统
-*   **资源定义**：矿石、能源、技术点，每种资源具有基础价值与波动范围。
-*   **动态定价引擎**：基于供需关系算法，文明资源过剩则价格下跌，稀缺则上涨。
-*   **贸易路线**：文明间建立贸易协定后生成“贸易路线”实体，路线受“宇宙天气”影响效率。
-*   **商队事件**：贸易路线上随机触发海盗袭击、走私获利等叙事事件。
+### 2.1 【核心经济】星际贸易系统
+*目标：建立文明间的资源流动机制，使资源不再仅是数值，而是可博弈的资产。*
 
-### 2.2 【环境】宇宙天气预报
-*   **天气类型**：
-    *   *资源风暴*：特定区域矿石产出翻倍，但消耗能源增加。
-    *   *黑暗波动*：降低传感器范围，外交视野受限。
-    *   *暗物质浪潮*：科研速度提升，但可能引发文明变异。
-*   **影响机制**：天气作为全局/区域 Modifier，实时影响贸易效率、资源产出和事件触发概率。
-*   **预警系统**：通过 WebSocket 向所有客户端推送天气预警和实时状态。
+- **F-1.1 贸易市场**: 
+  - 文明可挂单出售/购买资源（矿石、能源、技术点）。
+  - 支持限价单和市价单。
+- **F-1.2 贸易路线**:
+  - 基于星际距离计算物流时间与损耗。
+  - 贸易路线可能遭遇"星际海盗"（随机事件）或被敌对文明截断。
+- **F-1.3 经济制裁**:
+  - 外交状态（战争/敌对）自动阻断贸易路线。
+  - 联盟内部享受关税减免。
 
-### 2.3 【历史】文明遗迹系统
-*   **遗迹生成**：监听重大事件（如“文明毁灭”、“超新星爆发”、“科技突破”），自动生成遗迹实体。
-*   **遗迹属性**：包含历史描述、遗留资源、可研究科技碎片。
-*   **交互机制**：文明可派遣舰队“探索”、“争夺”或“研究”遗迹，触发专属叙事链。
+### 2.2 【历史沉淀】文明遗迹系统
+*目标：将叙事引擎产生的"重大事件"实体化，影响后续地缘政治。*
 
-### 2.4 【观测】观测台增强
-*   **宇宙演化时间线**：基于 TimescaleDB 记录关键指标，前端展示可缩放的时间轴。
-*   **文明发展对比图**：雷达图展示各文明的军事、经济、科技、文化维度对比。
-*   **势力范围热力图**：在 2D/3D 星图上根据文明影响力渲染动态热力图。
+- **F-2.1 遗迹生成**:
+  - 监听叙事引擎的 `MajorEvent`（如：超新星爆发、泰坦陨落、星际大战）。
+  - 在事件坐标生成"遗迹"实体，包含独特属性（如：高能辐射、古代科技残骸）。
+- **F-2.2 遗迹探索与争夺**:
+  - 文明可派遣舰队进行探索（消耗时间与燃料）。
+  - 遗迹可能提供一次性科技加成、永久Buff或灾难性陷阱。
+  - 多文明同时探索触发"争夺战"。
+
+### 2.3 【宏观节奏】宇宙赛季机制
+*目标：增加重玩价值与周期性目标，解决后期模拟枯燥问题。*
+
+- **F-3.1 赛季周期**:
+  - 每个赛季持续固定周期（如：模拟时间100年）。
+  - 赛季末进行结算，评选"霸主"、"首富"、"科技巅峰"。
+- **F-3.2 赛季规则变异**:
+  - 每赛季随机生成"宇宙法则"（如：资源枯竭期-矿石产出-50%；狂暴星系-事件频率+200%）。
+- **F-3.3 赛季传承**:
+  - 赛季结算时，文明可保留部分"遗产"（如：核心科技蓝图）带入下一赛季（Roguelike元素）。
+
+### 2.4 【数据感知】观测台增强
+*目标：将复杂的模拟数据可视化，提供上帝视角的分析工具。*
+
+- **F-4.1 宇宙演化时间线**:
+  - 可拖动的时间轴，回放历史重大事件与疆域变迁。
+- **F-4.2 势力范围热力图**:
+  - 在星图上叠加半透明图层，实时显示各文明的影响力范围与军事密度。
+- **F-4.3 文明发展雷达图**:
+  - 多维度对比（军事、经济、科技、人口、疆域）不同文明的综合国力。
 
 ---
 
 ## 3. 目录结构
 
+采用 Monorepo 结构，便于前后端代码复用与统一部署。
+
 ```text
-~/cyber-cosmos/
-├── server/                      # 后端服务
-│   ├── src/
-│   │   ├── modules/
-│   │   │   ├── trade/           # 新增：贸易模块
-│   │   │   │   ├── trade.service.ts
-│   │   │   │   ├── market.engine.ts    # 动态定价引擎
-│   │   │   │   └── trade.route.entity.ts
-│   │   │   ├── weather/         # 新增：天气模块
-│   │   │   │   ├── weather.service.ts
-│   │   │   │   └── weather.effects.ts
-│   │   │   ├── relics/          # 新增：遗迹模块
-│   │   │   │   ├── relic.service.ts
-│   │   │   │   └── relic.generator.ts
-│   │   │   ├── timeline/        # 新增：时序数据模块
-│   │   │   └── civilization/    # 现有：文明模块 (需更新)
-│   │   ├── events/              # 事件总线
-│   │   └── main.ts
-│   └── test/
-├── client/                      # 前端应用
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── TradeDashboard/  # 贸易看板
-│   │   │   ├── WeatherOverlay/  # 天气特效层
-│   │   │   ├── RelicViewer/     # 遗迹详情
-│   │   │   └── Observatory/     # 增强版观测台
-│   │   ├── hooks/
-│   │   └── App.tsx
-├── database/                    # 数据库迁移脚本
-│   └── migrations/
-│       └── v2.0_add_trade_relics.sql
-├── docs/
-│   └── API.md
-└── SPEC.md
+cyber-cosmos/
+├── apps/
+│   ├── server/                # NestJS 后端
+│   │   ├── src/
+│   │   │   ├── modules/
+│   │   │   │   ├── trade/     # 新增：贸易系统
+│   │   │   │   ├── relic/     # 新增：遗迹系统
+│   │   │   │   ├── season/    # 新增：赛季系统
+│   │   │   │   ├── timeline/  # 新增：时间线服务
+│   │   │   │   ├── event/     # 现有：事件系统
+│   │   │   │   ├── narrative/ # 现有：叙事引擎
+│   │   │   │   └── diplomacy/ # 现有：外交系统
+│   │   │   ├── entities/      # TypeORM 实体
+│   │   │   ├── common/        # 公共模块
+│   │   │   └── main.ts
+│   │   └── test/
+│   ├── client/                # Vue 3 前端
+│   │   ├── src/
+│   │   │   ├── views/
+│   │   │   │   ├── GalaxyMap/ # 星图组件（集成热力图）
+│   │   │   │   ├── TradeHub/  # 新增：贸易中心页面
+│   │   │   │   ├── RelicLab/  # 新增：遗迹探索页面
+│   │   │   │   └── Observatory/ # 增强：观测台页面
+│   │   │   ├── components/
+│   │   │   ├── stores/        # Pinia 状态管理
+│   │   │   └── utils/
+├── packages/                  # 共享包
+│   └── types/                 # 共享类型定义
+├── docker-compose.yml
+├── SPEC.md
+└── README.md
 ```
 
 ---
@@ -91,97 +112,142 @@
 ## 4. 技术方案
 
 ### 4.1 后端架构
-采用 NestJS 模块化设计，利用其依赖注入和生命周期钩子。
 
-*   **贸易引擎**:
-    *   使用 Redis 存储实时行情 (`market:prices`)。
-    *   实现简单的线性回归模型：`Price = BasePrice * (1 + DemandFactor - SupplyFactor)`。
-    *   贸易路线使用有向图结构存储，节点为文明，边为路线。
+采用**模块化单体**架构，利用 NestJS 的 Module 机制解耦。
 
-*   **天气系统**:
-    *   基于 Cron Job 每 30 分钟进行一次全局天气结算。
-    *   使用策略模式 处理不同天气对游戏逻辑的影响。
+#### 4.1.1 贸易系统
+- **设计模式**: 发布订阅模式。
+- **核心逻辑**:
+  - `TradeService`: 处理订单撮合逻辑。
+  - `LogisticsService`: 计算路线耗时，利用 `setTimeout` 或 BullMQ 队列延迟任务处理货物到达。
+  - **数据库设计**:
+    - `TradeOrder`: 订单表。
+    - `TradeRoute`: 路线表。
 
-*   **遗迹生成**:
-    *   监听 `GameEvent` 总线。
-    *   当事件严重程度 > 阈值时，触发 `RelicGenerator`，将事件元数据转化为遗迹实体。
+#### 4.1.2 遗迹系统
+- **事件驱动**: 监听 `NarrativeEngine` 抛出的 `narrative.major_event` 事件。
+- **状态机**: 遗迹状态流转 `未发现 -> 探索中 -> 已占领 -> 枯竭`。
+- **数据库设计**:
+  - `Relic`: 遗迹实体。
+
+#### 4.1.3 赛季系统
+- **全局中间件**: 在请求层注入当前赛季上下文，所有资源计算需乘以赛季修正系数。
+- **数据隔离**: 利用 PostgreSQL Schema 或 `season_id` 字段进行数据软隔离。
 
 ### 4.2 前端架构
-*   **状态管理**: 使用 Zustand 管理全局状态（当前天气、选中文明）。
-*   **可视化**:
-    *   引入 ECharts 实现雷达图和时间轴。
-    *   使用 HTML5 Canvas 绘制势力范围热力图，叠加在星图之上。
-*   **实时通信**: 封装 WebSocket Hook，监听 `weather_update` 和 `trade_alert` 频道。
+
+#### 4.2.1 星图可视化
+- **技术**: PixiJS。
+- **实现**: 
+  - 底层渲染星系背景与恒星。
+  - 中层渲染文明疆域（使用 `Graphics` 绘制多边形或热力图 Shader）。
+  - 顶层渲染遗迹图标、贸易路线动画（流动粒子效果）。
+
+#### 4.2.2 数据图表
+- **技术**: ECharts。
+- **实现**: 
+  - 封装 `<RadarChart />` 组件用于文明对比。
+  - 封装 `<TimelineSlider />` 组件控制历史回放。
 
 ### 4.3 数据库设计
-新增以下核心表：
 
-1.  **trade_routes**
-    *   `id`, `source_civ_id`, `target_civ_id`, `resource_type`, `volume`, `status`, `created_at`.
-2.  **market_history** (TimescaleDB 超级表)
-    *   `time`, `resource_type`, `price`, `volume`.
-3.  **relics**
-    *   `id`, `name`, `description`, `location_x`, `location_y`, `type`, `bonus_data` (JSONB), `discovered_by`.
-4.  **cosmic_weather**
-    *   `id`, `type`, `intensity`, `start_time`, `end_time`, `affected_regions` (JSONB).
+新增关键表结构：
+
+```sql
+-- 贸易订单表
+CREATE TABLE trade_orders (
+  id UUID PRIMARY KEY,
+  seller_id UUID REFERENCES civilizations(id),
+  resource_type VARCHAR(50), -- 'ORE', 'ENERGY', 'TECH'
+  quantity INT,
+  price_per_unit INT,
+  status VARCHAR(20), -- 'OPEN', 'FILLED', 'CANCELLED'
+  created_at TIMESTAMP
+);
+
+-- 遗迹表
+CREATE TABLE relics (
+  id UUID PRIMARY KEY,
+  name VARCHAR(100),
+  type VARCHAR(50), -- 'BATTLEFIELD', 'SUPERNOVA'
+  coordinate JSONB, -- {x, y}
+  bonus JSONB, -- { "tech": 0.1 }
+  status VARCHAR(20),
+  linked_event_id UUID
+);
+
+-- 赛季表
+CREATE TABLE seasons (
+  id UUID PRIMARY KEY,
+  season_number INT,
+  rules_modifiers JSONB, -- { "ore_rate": 0.8 }
+  started_at TIMESTAMP,
+  ended_at TIMESTAMP
+);
+```
 
 ### 4.4 接口设计
-*   `GET /api/market/prices`: 获取当前全市场行情。
-*   `POST /api/trade/routes`: 建立新贸易路线。
-*   `GET /api/weather/current`: 获取当前宇宙天气。
-*   `GET /api/relics`: 获取已发现的遗迹列表。
-*   `POST /api/relics/:id/explore`: 探索遗迹。
-*   `GET /api/timeline?range=7d`: 获取演化时间线数据。
+
+| 模块 | 方法 | 路径 | 描述 |
+| :--- | :--- | :--- | :--- |
+| **贸易** | POST | `/api/trade/orders` | 创建贸易订单 |
+| | GET | `/api/trade/market` | 获取当前市场行情 |
+| **遗迹** | GET | `/api/relics` | 获取所有已发现遗迹列表 |
+| | POST | `/api/relics/:id/explore` | 派遣舰队探索遗迹 |
+| **赛季** | GET | `/api/seasons/current` | 获取当前赛季信息与规则 |
+| | POST | `/api/seasons/settle` | (Admin) 触发赛季结算 |
+| **观测台**| GET | `/api/observatory/timeline` | 获取历史事件时间轴数据 |
+| | GET | `/api/observatory/heatmap` | 获取势力范围热力图数据 |
 
 ---
 
 ## 5. 测试方案
 
 ### 5.1 单元测试
-*   **定价算法测试**: 模拟极端供需情况，验证价格波动在合理区间。
-*   **天气效果测试**: 验证不同天气对资源产出的 Modifier 计算是否正确。
-*   **遗迹生成逻辑**: Mock 重大事件，验证遗迹是否正确生成并包含正确的 Lore。
+- **贸易逻辑**: 测试订单撮合算法，确保价格优先、时间优先。
+- **遗迹生成**: Mock 叙事事件，验证遗迹是否正确生成及属性计算。
+- **赛季修正**: 验证资源产出公式在不同赛季规则下的计算正确性。
 
 ### 5.2 集成测试
-*   **贸易全流程**: 文明 A 发起贸易 -> 扣除资源 -> 文明 B 增加资源 -> 市场价格波动。
-*   **天气影响链**: 天气变更 -> WebSocket 推送 -> 前端状态更新 -> 贸易效率计算变更。
+- **贸易闭环**: 模拟两个文明进行交易，验证资源扣除、增加及物流延迟。
+- **遗迹争夺**: 模拟两个文明同时探索遗迹，验证冲突解决逻辑。
 
-### 5.3 性能测试
-*   使用 k6 模拟 1000 个文明同时请求市场数据，验证 Redis 缓存命中率及响应时间 (目标 < 100ms)。
+### 5.3 E2E 测试
+- 使用 Cypress 或 Playwright 模拟用户操作：
+  1. 登录观测台。
+  2. 查看热力图。
+  3. 发起一笔贸易。
+  4. 查看赛季倒计时。
 
 ---
 
 ## 6. 运行与部署
 
 ### 6.1 环境要求
-*   Node.js >= 18
-*   Docker & Docker Compose
-*   PostgreSQL 15 + TimescaleDB 扩展
+- Node.js >= 18
+- PostgreSQL >= 14
+- Redis >= 6
+- Docker & Docker Compose (推荐)
 
 ### 6.2 本地开发启动
-```bash
-# 1. 启动基础设施
-docker-compose up -d db redis
 
-# 2. 安装依赖
+```bash
+# 1. 安装依赖
 npm install
 
-# 3. 运行数据库迁移
-npm run db:migrate
+# 2. 启动基础服务
+docker-compose up -d postgres redis
 
-# 4. 启动后端服务 (热重载)
+# 3. 运行数据库迁移
+npm run migration:run
+
+# 4. 启动后端服务 (开发模式)
 npm run dev:server
 
-# 5. 启动前端服务
+# 5. 启动前端服务 (开发模式)
 npm run dev:client
 ```
 
 ### 6.3 生产部署
-*   使用 GitHub Actions 构建 CI/CD 流水线。
-*   后端打包为 Docker 镜像，部署至 K8s 集群。
-*   前端构建静态资源，上传至 CDN/OSS。
-*   配置 Nginx 反向代理，开启 WebSocket 长连接支持。
 
-### 6.4 监控与日志
-*   集成 Prometheus + Grafana 监控贸易交易量和 API 延迟。
-*   使用 ELK 栈收集叙事引擎生成的日志，用于后续分析叙事逻辑的合理性。
+采用 Docker 容器
