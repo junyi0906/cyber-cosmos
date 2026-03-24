@@ -1,0 +1,67 @@
+.PHONY: help infra-up infra-down infra-logs infra-ps infra-clean env-setup
+
+# Default target
+help:
+	@echo "Cyber-Cosmos Infrastructure Management"
+	@echo ""
+	@echo "Usage: make [target]"
+	@echo ""
+	@echo "Targets:"
+	@echo "  infra-up      Start all infrastructure services"
+	@echo "  infra-down    Stop all infrastructure services"
+	@echo "  infra-logs    View logs of all services"
+	@echo "  infra-ps      List running services"
+	@echo "  infra-clean   Remove all containers, volumes and networks"
+	@echo "  env-setup     Copy .env.example to .env"
+
+# Start infrastructure services
+infra-up:
+	@echo "Starting Cyber-Cosmos infrastructure..."
+	@if [ ! -f deployments/.env ]; then \
+		cp deployments/.env.example deployments/.env; \
+		echo "Created deployments/.env from template"; \
+	fi
+	cd deployments && docker-compose --env-file .env up -d
+	@echo "Infrastructure started successfully!"
+	@echo ""
+	@echo "Services available at:"
+	@echo "  PostgreSQL: localhost:5432"
+	@echo "  Redis:      localhost:6379"
+	@echo "  Neo4j HTTP: localhost:7474"
+	@echo "  Neo4j Bolt: localhost:7687"
+	@echo "  Milvus:     localhost:19530"
+	@echo "  MinIO:      localhost:9000 (Console: localhost:9001)"
+
+# Stop infrastructure services
+infra-down:
+	@echo "Stopping Cyber-Cosmos infrastructure..."
+	cd deployments && docker-compose --env-file .env down
+	@echo "Infrastructure stopped."
+
+# View logs
+infra-logs:
+	cd deployments && docker-compose --env-file .env logs -f
+
+# List running services
+infra-ps:
+	cd deployments && docker-compose --env-file .env ps
+
+# Clean up all resources (including volumes)
+infra-clean:
+	@echo "WARNING: This will remove all data volumes!"
+	@read -p "Are you sure? [y/N] " confirm; \
+	if [ "$$confirm" = "y" ] || [ "$$confirm" = "Y" ]; then \
+		cd deployments && docker-compose --env-file .env down -v --remove-orphans; \
+		echo "All infrastructure resources removed."; \
+	else \
+		echo "Operation cancelled."; \
+	fi
+
+# Setup environment file
+env-setup:
+	@if [ -f deployments/.env ]; then \
+		echo "deployments/.env already exists. Backing up..."; \
+		cp deployments/.env deployments/.env.backup.$(shell date +%Y%m%d%H%M%S); \
+	fi
+	cp deployments/.env.example deployments/.env
+	@echo "Environment file created at deployments/.env"

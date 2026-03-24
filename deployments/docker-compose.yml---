@@ -1,0 +1,157 @@
+version: '3.8'
+
+services:
+  # PostgreSQL - 主数据库
+  postgres:
+    image: postgres:15-alpine
+    container_name: cyber-cosmos-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-cyber}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cosmos123}
+      POSTGRES_DB: ${POSTGRES_DB:-cyber_cosmos}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init/postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cyber} -d ${POSTGRES_DB:-cyber_cosmos}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cyber-cosmos-network
+
+  # Redis - 缓存与实时状态
+  redis:
+    image: redis:7-alpine
+    container_name: cyber-cosmos-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-cosmos123}
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-cosmos123}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cyber-cosmos-network
+
+  # Neo4j - 图数据库（文明关系网络）
+  neo4j:
+    image: neo4j:5-community
+    container_name: cyber-cosmos-neo4j
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-cosmos123}
+      NEO4J_server_memory_heap_initial__size: "512m"
+      NEO4J_server_memory_heap_max__size: "1G"
+      NEO4J_server_memory_pagecache_size: "512m"
+      NEO4J_dbms_security_procedures_unrestricted: "apoc.*"
+      NEO4J_dbms_security_allow__csv__import__from__file__urls: "true"
+    ports:
+      - "${NEO4J_HTTP_PORT:-7474}:7474"
+      - "${NEO4J_BOLT_PORT:-7687}:7687"
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - neo4j_import:/var/lib/neo4j/import
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:7474 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    networks:
+      - cyber-cosmos-network
+
+  # Milvus - 向量数据库（AI/嵌入存储）
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.5
+    container_name: cyber-cosmos-etcd
+    restart: unless-stopped
+    environment:
+      ETCD_AUTO_COMPACTION_MODE: revision
+      ETCD_AUTO_COMPACTION_RETENTION: "1000"
+      ETCD_QUOTA_BACKEND_BYTES: "4294967296"
+      ETCD_SNAPSHOT_COUNT: "50000"
+    volumes:
+      - etcd_data:/etcd
+    command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - cyber-cosmos-network
+
+  minio:
+    image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+    container_name: cyber-cosmos-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/minio_data
+    command: minio server /minio_data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - cyber-cosmos-network
+
+  milvus:
+    image: milvusdb/milvus:v2.3.3
+    container_name: cyber-cosmos-milvus
+    restart: unless-stopped
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+      MINIO_ACCESS_KEY_ID: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_ACCESS_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+    ports:
+      - "${MILVUS_PORT:-19530}:19530"
+    volumes:
+      - milvus_data:/var/lib/milvus
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    depends_on:
+      - etcd
+      - minio
+    networks:
+      - cyber-cosmos-network
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  neo4j_data:
+    driver: local
+  neo4j_logs:
+    driver: local
+  neo4j_import:
+    driver: local
+  etcd_data:
+    driver: local
+  minio_data:
+    driver: local
+  milvus_data:
+    driver: local
+
+networks:
+  cyber-cosmos-network:
+    driver: bridge
