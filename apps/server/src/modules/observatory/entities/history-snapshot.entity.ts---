@@ -1,0 +1,60 @@
+import { Entity, Column, PrimaryGeneratedColumn, Index } from 'typeorm';
+
+@Entity('history_snapshots')
+export class HistorySnapshot {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ type: 'timestamptz' })
+  @Index()
+  timestamp: Date;
+
+  @Column()
+  civilizationId: string;
+
+  @Column()
+  civilizationName: string;
+
+  @Column({ type: 'bigint' })
+  population: number;
+
+  @Column({ type: 'bigint' })
+  militaryPower: number;
+
+  @Column({ type: 'bigint' })
+  technologyLevel: number;
+
+  @Column({ type: 'bigint' })
+  economicStrength: number;
+
+  @Column({ type: 'bigint' })
+  culturalInfluence: number;
+
+  @Column({ type: 'jsonb', nullable: true })
+  resources: {
+    ore?: number;
+    energy?: number;
+    technology?: number;
+  };
+
+  @Column({ type: 'jsonb', nullable: true })
+  territory: {
+    regionId: string;
+    coordinates: { x: number; y: number; z: number };
+    influenceRadius: number;
+  }[];
+
+  @Column({ type: 'jsonb', nullable: true })
+  tradeRoutes: {
+    routeId: string;
+    partnerId: string;
+    resourceType: string;
+    flowAmount: number;
+  }[];
+
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
+  gdpValue: number;
+
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
+  happinessIndex: number;
+}

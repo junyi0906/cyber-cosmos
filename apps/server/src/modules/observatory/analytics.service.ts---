@@ -1,0 +1,269 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, Between, MoreThanOrEqual, LessThanOrEqual } from 'typeorm';
+import { Cron, CronExpression } from '@nestjs/schedule';
+import { HistorySnapshot } from './entities/history-snapshot.entity';
+import { RegionStats } from './entities/region-stats.entity';
+import { ResourceFlow } from './entities/resource-flow.entity';
+import {
+  TimelineDataPointDto,
+  CivilizationEvolutionPointDto,
+  PowerHeatmapDto,
+  ResourceFlowDataDto,
+  SnapshotRecordDto,
+} from './dto/analytics.dto';
+import {
+  CivilizationData,
+  RegionData,
+  TradeRouteInfo,
+} from './interfaces/civilization-data.interface';
+
+@Injectable()
+export class AnalyticsService {
+  private readonly logger = new Logger(AnalyticsService.name);
+
+  constructor(
+    @InjectRepository(HistorySnapshot)
+    private readonly snapshotRepository: Repository<HistorySnapshot>,
+    @InjectRepository(RegionStats)
+    private readonly regionStatsRepository: Repository<RegionStats>,
+    @InjectRepository(ResourceFlow)
+    private readonly resourceFlowRepository: Repository<ResourceFlow>,
+  ) {}
+
+  /**
+   * 获取时间线数据 - 查询 TimescaleDB 时序数据
+   */
+  async getTimelineData(
+    startTime: Date,
+    endTime: Date,
+    interval: 'hour' | 'day' | 'week' | 'month' = 'day',
+  ): Promise<TimelineDataPointDto[]> {
+    this.logger.log(
+      `Fetching timeline data from ${startTime} to ${endTime} with interval ${interval}`,
+    );
+
+    const intervalMapping = {
+      hour: "date_trunc('hour', timestamp)",
+      day: "date_trunc('day', timestamp)",
+      week: "date_trunc('week', timestamp)",
+      month: "date_trunc('month', timestamp)",
+    };
+
+    const query = `
+      SELECT
+        ${intervalMapping[interval]} as timestamp,
+        SUM(population) as "totalPopulation",
+        SUM("militaryPower") as "totalMilitaryPower",
+        AVG("technologyLevel") as "totalTechnologyLevel",
+        COUNT(DISTINCT "civilizationId") as "activeCivilizations",
+        AVG("gdpValue") as "averageGdp"
+      FROM history_snapshots
+      WHERE timestamp BETWEEN $1 AND $2
+      GROUP BY ${intervalMapping[interval]}
+      ORDER BY timestamp ASC
+    `;
+
+    const results = await this.snapshotRepository.query(query, [
+      startTime,
+      endTime,
+    ]);
+
+    return results.map((row: any) => ({
+      timestamp: row.timestamp,
+      totalPopulation: parseInt(row.totalPopulation) || 0,
+      totalMilitaryPower: parseInt(row.totalMilitaryPower) || 0,
+      totalTechnologyLevel: parseFloat(row.totalTechnologyLevel) || 0,
+      activeCivilizations: parseInt(row.activeCivilizations) || 0,
+      averageGdp: parseFloat(row.averageGdp) || 0,
+    }));
+  }
+
+  /**
+   * 获取文明演化数据 - 返回文明人口、战力随时间变化
+   */
+  async getCivilizationEvolution(
+    civId: string,
+    startTime?: Date,
+    endTime?: Date,
+  ): Promise<CivilizationEvolutionPointDto[]> {
+    this.logger.log(`Fetching evolution data for civilization ${civId}`);
+
+    const whereCondition: any = { civilizationId: civId };
+
+    if (startTime && endTime) {
+      whereCondition.timestamp = Between(startTime, endTime);
+    } else if (startTime) {
+      whereCondition.timestamp = MoreThanOrEqual(startTime);
+    } else if (endTime) {
+      whereCondition.timestamp = LessThanOrEqual(endTime);
+    }
+
+    const snapshots = await this.snapshotRepository.find({
+      where: whereCondition,
+      order: { timestamp: 'ASC' },
+    });
+
+    return snapshots.map((snapshot) => ({
+      timestamp: snapshot.timestamp,
+      population: Number(snapshot.population),
+      militaryPower: Number(snapshot.militaryPower),
+      technologyLevel: Number(snapshot.technologyLevel),
+      economicStrength: Number(snapshot.economicStrength),
+      culturalInfluence: Number(snapshot.culturalInfluence),
+      resources: {
+        ore: snapshot.resources?.ore || 0,
+        energy: snapshot.resources?.energy || 0,
+        technology: snapshot.resources?.technology || 0,
+      },
+    }));
+  }
+
+  /**
+   * 获取战力热力图 - 聚合各区域文明战力密度
+   */
+  async getPowerHeatmap(): Promise<PowerHeatmapDto[]> {
+    this.logger.log('Generating power heatmap');
+
+    // 获取最新的区域统计数据
+    const latestTimestamp = await this.regionStatsRepository
+      .createQueryBuilder('rs')
+      .select('MAX(rs.timestamp)', 'max')
+      .getRawOne();
+
+    if (!latestTimestamp?.max) {
+      // 如果没有区域统计，从快照数据计算
+      return this.calculateHeatmapFromSnapshots();
+    }
+
+    const regionStats = await this.regionStatsRepository.find({
+      where: { timestamp: latestTimestamp.max },
+      order: { powerDensity: 'DESC' },
+    });
+
+    return regionStats.map((stat) => ({
+      regionId: stat.regionId,
+      coordinates: stat.coordinates || { x: 0, y: 0, z: 0 },
+      totalPower: parseFloat(stat.totalPower.toString()),
+      powerDensity: parseFloat(stat.powerDensity.toString()),
+      civilizationCount: stat.civilizationCount,
+      dominantCivilizations: stat.dominantCivilizations || [],
+    }));
+  }
+
+  /**
+   * 从快照数据计算热力图
+   */
+  private async calculateHeatmapFromSnapshots(): Promise<PowerHeatmapDto[]> {
+    const latestSnapshotQuery = `
+      SELECT DISTINCT ON ("civilizationId") *
+      FROM history_snapshots
+      ORDER BY "civilizationId", timestamp DESC
+    `;
+
+    const snapshots = await this.snapshotRepository.query(latestSnapshotQuery);
+
+    // 按区域聚合
+    const regionMap = new Map<
+      string,
+      {
+        coordinates: { x: number; y: number; z: number };
+        civilizations: Map<string, { name: string; power: number }>;
+        totalPower: number;
+      }
+    >();
+
+    for (const snapshot of snapshots) {
+      const territories = snapshot.territory || [];
+      for (const territory of territories) {
+        const regionId = territory.regionId;
+        if (!regionMap.has(regionId)) {
+          regionMap.set(regionId, {
+            coordinates: territory.coordinates,
+            civilizations: new Map(),
+            totalPower: 0,
+          });
+        }
+
+        const region = regionMap.get(regionId)!;
+        const power = Number(snapshot.militaryPower);
+        region.totalPower += power;
+        region.civilizations.set(snapshot.civilizationId, {
+          name: snapshot.civilizationName,
+          power,
+        });
+      }
+    }
+
+    const result: PowerHeatmapDto[] = [];
+    regionMap.forEach((data, regionId) => {
+      const dominantCivilizations = Array.from(data.civilizations.entries())
+        .map(([id, info]) => ({
+          civilizationId: id,
+          civilizationName: info.name,
+          powerContribution: info.power,
+        }))
+        .sort((a, b) => b.powerContribution - a.powerContribution)
+        .slice(0, 5);
+
+      result.push({
+        regionId,
+        coordinates: data.coordinates,
+        totalPower: data.totalPower,
+        powerDensity: data.totalPower / (dominantCivilizations.length || 1),
+        civilizationCount: data.civilizations.size,
+        dominantCivilizations,
+      });
+    });
+
+    return result.sort((a, b) => b.powerDensity - a.powerDensity);
+  }
+
+  /**
+   * 获取资源流向数据 - 统计贸易路线资源流向
+   */
+  async getResourceFlowData(): Promise<ResourceFlowDataDto[]> {
+    this.logger.log('Analyzing resource flow data');
+
+    const flowQuery = `
+      SELECT
+        "sourceCivilizationId" as "sourceId",
+        "sourceCivilizationName" as "sourceName",
+        "targetCivilizationId" as "targetId",
+        "targetCivilizationName" as "targetName",
+        "resourceType",
+        SUM("flowAmount") as "totalFlow",
+        AVG("efficiency") as "averageEfficiency",
+        COUNT(DISTINCT "routeId") as "routeCount",
+        ARRAY_AGG(DISTINCT path) as paths
+      FROM resource_flows
+      WHERE "isActive" = true
+      GROUP BY
+        "sourceCivilizationId",
+        "sourceCivilizationName",
+        "targetCivilizationId",
+        "targetCivilizationName",
+        "resourceType"
+      ORDER BY "totalFlow" DESC
+    `;
+
+    const results = await this.resourceFlowRepository.query(flowQuery);
+
+    return results.map((row: any) => ({
+      sourceId: row.sourceId,
+      sourceName: row.sourceName,
+      targetId: row.targetId,
+      targetName: row.targetName || 'Unknown',
+      resourceType: row.resourceType,
+      totalFlow: parseFloat(row.totalFlow) || 0,
+      averageEfficiency: parseFloat(row.averageEfficiency) || 0,
+      routeCount: parseInt(row.routeCount) || 0,
+      paths: (row.paths || []).filter((p: any) => p !== null),
+    }));
+  }
+
+  /**
+   * 记录文明快照 - 定时记录到 history_snapshots 表
+   */
+  async recordSnapshot(data: SnapshotRecordDto): Promise<HistorySnapshot> {
+    this.logger.debug(`Recording snapshot for civilization ${data.civilization

@@ -1,0 +1,88 @@
+export class TimelineQueryDto {
+  startTime: Date;
+  endTime: Date;
+  interval?: 'hour' | 'day' | 'week' | 'month' = 'day';
+  metrics?: string[];
+}
+
+export class CivilizationEvolutionDto {
+  civilizationId: string;
+  startTime?: Date;
+  endTime?: Date;
+}
+
+export class TimelineDataPointDto {
+  timestamp: Date;
+  totalPopulation: number;
+  totalMilitaryPower: number;
+  totalTechnologyLevel: number;
+  activeCivilizations: number;
+  averageGdp: number;
+}
+
+export class CivilizationEvolutionPointDto {
+  timestamp: Date;
+  population: number;
+  militaryPower: number;
+  technologyLevel: number;
+  economicStrength: number;
+  culturalInfluence: number;
+  resources: {
+    ore: number;
+    energy: number;
+    technology: number;
+  };
+}
+
+export class PowerHeatmapDto {
+  regionId: string;
+  coordinates: { x: number; y: number; z: number };
+  totalPower: number;
+  powerDensity: number;
+  civilizationCount: number;
+  dominantCivilizations: {
+    civilizationId: string;
+    civilizationName: string;
+    powerContribution: number;
+  }[];
+}
+
+export class ResourceFlowDataDto {
+  sourceId: string;
+  sourceName: string;
+  targetId: string;
+  targetName: string;
+  resourceType: string;
+  totalFlow: number;
+  averageEfficiency: number;
+  routeCount: number;
+  paths: { x: number; y: number; z: number }[][];
+}
+
+export class SnapshotRecordDto {
+  civilizationId: string;
+  civilizationName: string;
+  population: number;
+  militaryPower: number;
+  technologyLevel: number;
+  economicStrength: number;
+  culturalInfluence: number;
+  resources?: {
+    ore?: number;
+    energy?: number;
+    technology?: number;
+  };
+  territory?: {
+    regionId: string;
+    coordinates: { x: number; y: number; z: number };
+    influenceRadius: number;
+  }[];
+  tradeRoutes?: {
+    routeId: string;
+    partnerId: string;
+    resourceType: string;
+    flowAmount: number;
+  }[];
+  gdpValue?: number;
+  happinessIndex?: number;
+}

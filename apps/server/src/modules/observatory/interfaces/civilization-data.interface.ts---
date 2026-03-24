@@ -1,0 +1,50 @@
+export interface CivilizationData {
+  id: string;
+  name: string;
+  population: number;
+  militaryPower: number;
+  technologyLevel: number;
+  economicStrength: number;
+  culturalInfluence: number;
+  resources: {
+    ore: number;
+    energy: number;
+    technology: number;
+  };
+  territory: TerritoryData[];
+  tradeRoutes: TradeRouteData[];
+  gdpValue: number;
+  happinessIndex: number;
+}
+
+export interface TerritoryData {
+  regionId: string;
+  coordinates: { x: number; y: number; z: number };
+  influenceRadius: number;
+}
+
+export interface TradeRouteData {
+  routeId: string;
+  partnerId: string;
+  resourceType: string;
+  flowAmount: number;
+}
+
+export interface RegionData {
+  id: string;
+  coordinates: { x: number; y: number; z: number };
+  area: number;
+}
+
+export interface TradeRouteInfo {
+  id: string;
+  sourceId: string;
+  sourceName: string;
+  targetId: string;
+  targetName: string;
+  resourceType: string;
+  flowAmount: number;
+  efficiency: number;
+  path: { x: number; y: number; z: number }[];
+  isActive: boolean;
+}

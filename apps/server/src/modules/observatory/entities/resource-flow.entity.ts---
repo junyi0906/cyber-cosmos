@@ -1,0 +1,42 @@
+import { Entity, Column, PrimaryGeneratedColumn, Index } from 'typeorm';
+
+@Entity('resource_flows')
+export class ResourceFlow {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column()
+  @Index()
+  routeId: string;
+
+  @Column()
+  sourceCivilizationId: string;
+
+  @Column()
+  sourceCivilizationName: string;
+
+  @Column()
+  targetCivilizationId: string;
+
+  @Column({ nullable: true })
+  targetCivilizationName: string;
+
+  @Column()
+  resourceType: string;
+
+  @Column({ type: 'decimal', precision: 12, scale: 2 })
+  flowAmount: number;
+
+  @Column({ type: 'decimal', precision: 10, scale: 4 })
+  efficiency: number;
+
+  @Column({ type: 'timestamptz' })
+  @Index()
+  timestamp: Date;
+
+  @Column({ type: 'jsonb', nullable: true })
+  path: { x: number; y: number; z: number }[];
+
+  @Column({ type: 'boolean', default: true })
+  isActive: boolean;
+}
