@@ -1,15 +1,17 @@
 #!/bin/bash
-# 多Agent启动器 - 为Cyber Cosmos启动多个不同性格的Agent
-# 确保每个Agent有独立的输出日志
-
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "$SCRIPT_DIR"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+cd "$PROJECT_DIR"
 
-export PYTHONPATH="$SCRIPT_DIR"
+export PYTHONPATH="$PROJECT_DIR"
 export GLM5_TURBO_KEY="8ebd0252b1fc498ebd53dfc299d4de12.PwoiSyS6NA5RuALo"
 
 LOG_DIR="/tmp/cyber_agents"
 mkdir -p "$LOG_DIR"
+
+# 先停掉旧agent
+pkill -f "node/auto_run.py" 2>/dev/null
+sleep 1
 
 declare -a AGENTS=(
   "星际猎手:冷酷的宇宙猎手，在黑暗中潜伏等待机会:在黑暗森林中存活并伺机扩张，保持低调不主动暴露"
@@ -19,27 +21,21 @@ declare -a AGENTS=(
 
 for agent_spec in "${AGENTS[@]}"; do
   IFS=':' read -r name personality goals <<< "$agent_spec"
-
   LOG_FILE="$LOG_DIR/${name}.log"
-
-  echo "[$(date)] 启动Agent: $name | $personality" >> "$LOG_FILE"
-
-  nohup python3 node/auto_run.py \
+  echo "[$(date)] 启动Agent: $name" > "$LOG_FILE"
+  nohup python3 -u node/auto_run.py \
     --name "$name" \
     --personality "$personality" \
     --goals "$goals" \
     --interval 10 \
     >> "$LOG_FILE" 2>&1 &
-
-  echo "[$(date)] 已启动 PID=$! Agent=$name"
+  echo "[$(date)] PID=$! Agent=$name"
   sleep 2
 done
 
 echo ""
-echo "=== 运行中的Agent ==="
-ps aux | grep "auto_run" | grep -v grep | awk '{print "PID:"$2, "Name:"$13, "Args:"$14" "$15" "$16}'
+echo "=== Agent进程 ==="
+ps aux | grep "node/auto_run" | grep -v grep | awk '{print "PID:"$2, "内存:"$6"K"}'
 echo ""
-echo "=== 分散在不同终端查看日志 ==="
-echo "tail -f $LOG_DIR/星际猎手.log"
-echo "tail -f $LOG_DIR/星际商人.log"
-echo "tail -f $LOG_DIR/星际游侠.log"
+echo "=== 日志 ==="
+tail -3 /tmp/cyber_agents/星际猎手.log

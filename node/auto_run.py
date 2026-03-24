@@ -131,6 +131,11 @@ def run_autonomous_loop(civ_id: str, civ_name: str, personality: str, goals: str
             
             # 外交行动选项（如果关系允许）
             diplomacy_actions = []
+            try:
+                all_civilizations = get_civilizations()
+            except Exception:
+                all_civilizations = []
+
             for other_civ in all_civilizations:
                 if other_civ["id"] == civ_id or not other_civ["is_alive"]:
                     continue
