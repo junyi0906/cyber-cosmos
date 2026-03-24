@@ -1,0 +1,425 @@
+"""
+宇宙事件生成器模块
+包含宏观事件生成器和微观事件生成器
+"""
+import uuid
+import random
+from datetime import datetime
+from typing import Dict, List, Optional, Any
+from dataclasses import dataclass, field
+from enum import Enum
+
+
+class EventType(Enum):
+    """事件类型枚举"""
+    # 宏观事件
+    SUPERNOVA = "supernova"
+    BLACKHOLE = "blackhole"
+    NEBULA_COLLISION = "nebula_collision"
+    COSMIC_RADIATION = "cosmic_radiation"
+    # 微观事件
+    RESOURCE_DEPLETION = "resource_depletion"
+    TECH_SINGULARITY = "tech_singularity"
+    ENVIRONMENTAL_MUTATION = "environmental_mutation"
+
+
+@dataclass
+class CosmicEvent:
+    """宇宙事件基类"""
+    event_id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
+    event_type: EventType = EventType.SUPERNOVA
+    name: str = ""
+    description: str = ""
+    timestamp: float = field(default_factory=lambda: datetime.now().timestamp())
+    location: Dict[str, float] = field(default_factory=lambda: {"x": 0.0, "y": 0.0, "z": 0.0})
+    magnitude: float = 1.0
+    affected_entities: List[str] = field(default_factory=list)
+    impact: Dict[str, Any] = field(default_factory=dict)
+    duration: int = 1  # 持续时间（宇宙周期）
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典格式"""
+        return {
+            "event_id": self.event_id,
+            "event_type": self.event_type.value,
+            "name": self.name,
+            "description": self.description,
+            "timestamp": self.timestamp,
+            "location": self.location,
+            "magnitude": self.magnitude,
+            "affected_entities": self.affected_entities,
+            "impact": self.impact,
+            "duration": self.duration
+        }
+
+
+class MacroEventGenerator:
+    """
+    宏观事件生成器
+    负责生成影响整个宇宙或大范围区域的重大事件
+    """
+    
+    # 超新星名称模板
+    SUPERNOVA_NAMES = [
+        "SN-{}", "Nova-{}", "Stellar-Death-{}",
+        "Cosmic-Explosion-{}", "Star-Burst-{}"
+    ]
+    
+    # 黑洞名称模板
+    BLACKHOLE_NAMES = [
+        "BH-{}", "Singularity-{}", "Void-{}",
+        "Gravity-Well-{}", "Abyss-{}"
+    ]
+    
+    def __init__(self, universe_size: int = 1000, seed: Optional[int] = None):
+        """
+        初始化宏观事件生成器
+        
+        Args:
+            universe_size: 宇宙大小（坐标范围）
+            seed: 随机种子（用于可复现的事件生成）
+        """
+        self.universe_size = universe_size
+        self.rng = random.Random(seed)
+        self._event_count = {"supernova": 0, "blackhole": 0}
+    
+    def _generate_random_location(self) -> Dict[str, float]:
+        """生成随机宇宙坐标"""
+        size = self.universe_size
+        return {
+            "x": round(self.rng.uniform(-size, size), 2),
+            "y": round(self.rng.uniform(-size, size), 2),
+            "z": round(self.rng.uniform(-size, size), 2)
+        }
+    
+    def _generate_impact_radius(self, base_radius: float, magnitude: float) -> float:
+        """计算事件影响半径"""
+        return round(base_radius * magnitude * self.rng.uniform(0.8, 1.2), 2)
+    
+    def generate_supernova(
+        self,
+        location: Optional[Dict[str, float]] = None,
+        magnitude: Optional[float] = None,
+        affected_entities: Optional[List[str]] = None
+    ) -> CosmicEvent:
+        """
+        生成超新星爆发事件
+        
+        Args:
+            location: 事件发生位置（可选，默认随机）
+            magnitude: 事件强度（可选，默认随机1.0-10.0）
+            affected_entities: 受影响的实体ID列表（可选）
+        
+        Returns:
+            CosmicEvent: 超新星爆发事件对象
+        """
+        self._event_count["supernova"] += 1
+        
+        # 设置事件属性
+        if location is None:
+            location = self._generate_random_location()
+        
+        if magnitude is None:
+            magnitude = round(self.rng.uniform(1.0, 10.0), 2)
+        
+        # 生成事件名称
+        name_template = self.rng.choice(self.SUPERNOVA_NAMES)
+        name = name_template.format(self._event_count["supernova"])
+        
+        # 计算影响范围
+        impact_radius = self._generate_impact_radius(50.0, magnitude)
+        
+        # 生成描述
+        descriptions = [
+            f"一颗恒星在坐标({location['x']}, {location['y']}, {location['z']})发生剧烈爆炸，"
+            f"释放出相当于{int(magnitude * 100)}颗太阳的能量。",
+            f"超新星{name}爆发，光芒照亮了半径{impact_radius}光年的区域。",
+            f"恒星终结事件：{name}，强度等级{magnitude:.1f}，影响范围{impact_radius}光年。"
+        ]
+        
+        # 构建影响数据
+        impact = {
+            "radius": impact_radius,
+            "energy_release": int(magnitude * 1e44),  # 尔格
+            "radiation_level": round(magnitude * 0.5, 2),
+            "population_loss_rate": round(min(0.8, magnitude * 0.08), 2),
+            "tech_boost": round(magnitude * 0.02, 3),  # 观测带来的科技提升
+            "resource_change": round(-magnitude * 0.05, 3)
+        }
+        
+        return CosmicEvent(
+            event_type=EventType.SUPERNOVA,
+            name=name,
+            description=self.rng.choice(descriptions),
+            location=location,
+            magnitude=magnitude,
+            affected_entities=affected_entities or [],
+            impact=impact,
+            duration=max(1, int(magnitude / 2))
+        )
+    
+    def generate_blackhole(
+        self,
+        location: Optional[Dict[str, float]] = None,
+        magnitude: Optional[float] = None,
+        affected_entities: Optional[List[str]] = None,
+        blackhole_type: Optional[str] = None
+    ) -> CosmicEvent:
+        """
+        生成黑洞形成事件
+        
+        Args:
+            location: 事件发生位置（可选，默认随机）
+            magnitude: 事件强度（可选，默认随机1.0-15.0）
+            affected_entities: 受影响的实体ID列表（可选）
+            blackhole_type: 黑洞类型（stellar/intermediate/supermassive）
+        
+        Returns:
+            CosmicEvent: 黑洞形成事件对象
+        """
+        self._event_count["blackhole"] += 1
+        
+        # 设置事件属性
+        if location is None:
+            location = self._generate_random_location()
+        
+        if magnitude is None:
+            magnitude = round(self.rng.uniform(1.0, 15.0), 2)
+        
+        # 确定黑洞类型
+        if blackhole_type is None:
+            if magnitude < 5:
+                blackhole_type = "stellar"
+            elif magnitude < 10:
+                blackhole_type = "intermediate"
+            else:
+                blackhole_type = "supermassive"
+        
+        # 生成事件名称
+        name_template = self.rng.choice(self.BLACKHOLE_NAMES)
+        name = name_template.format(self._event_count["blackhole"])
+        
+        # 计算史瓦西半径（简化计算）
+        schwarzschild_radius = round(magnitude * 2.95, 2)  # 公里
+        
+        # 计算引力影响范围
+        gravity_well_radius = self._generate_impact_radius(100.0, magnitude)
+        
+        # 生成描述
+        type_descriptions = {
+            "stellar": "恒星级黑洞",
+            "intermediate": "中等质量黑洞",
+            "supermassive": "超大质量黑洞"
+        }
+        
+        descriptions = [
+            f"{type_descriptions[blackhole_type]}{name}在坐标"
+            f"({location['x']}, {location['y']}, {location['z']})形成，"
+            f"史瓦西半径为{schwarzschild_radius}公里。",
+            f"引力深渊{name}诞生，其引力井范围达{gravity_well_radius}光年，"
+            f"任何接近的物质都将被吞噬。",
+            f"时空扭曲事件：{name}（{blackhole_type}型），"
+            f"质量相当于{int(magnitude * 10)}个太阳。"
+        ]
+        
+        # 构建影响数据
+        impact = {
+            "blackhole_type": blackhole_type,
+            "schwarzschild_radius": schwarzschild_radius,
+            "gravity_well_radius": gravity_well_radius,
+            "mass_solar_masses": int(magnitude * 10),
+            "hawking_radiation": round(magnitude * 0.001, 6),
+            "time_dilation_factor": round(1 + magnitude * 0.1, 3),
+            "population_loss_rate": round(min(0.95, magnitude * 0.1), 2),
+            "navigation_hazard": True,
+            "wormhole_potential": magnitude > 8
+        }
+        
+        return CosmicEvent(
+            event_type=EventType.BLACKHOLE,
+            name=name,
+            description=self.rng.choice(descriptions),
+            location=location,
+            magnitude=magnitude,
+            affected_entities=affected_entities or [],
+            impact=impact,
+            duration=-1  # 黑洞是永久性的
+        )
+    
+    def generate_nebula_collision(
+        self,
+        location: Optional[Dict[str, float]] = None,
+        magnitude: Optional[float] = None
+    ) -> CosmicEvent:
+        """
+        生成星云碰撞事件
+        
+        Args:
+            location: 事件发生位置（可选）
+            magnitude: 事件强度（可选）
+        
+        Returns:
+            CosmicEvent: 星云碰撞事件对象
+        """
+        if location is None:
+            location = self._generate_random_location()
+        
+        if magnitude is None:
+            magnitude = round(self.rng.uniform(0.5, 5.0), 2)
+        
+        collision_radius = self._generate_impact_radius(200.0, magnitude)
+        
+        impact = {
+            "collision_radius": collision_radius,
+            "star_formation_rate": round(magnitude * 0.1, 2),
+            "new_stars_estimate": int(magnitude * 50),
+            "resource_richness_boost": round(magnitude * 0.2, 2),
+            "radiation_hazard": round(magnitude * 0.3, 2)
+        }
+        
+        return CosmicEvent(
+            event_type=EventType.NEBULA_COLLISION,
+            name=f"Nebula-Collision-{self._event_count['supernova']}",
+            description=f"两团星云在坐标({location['x']}, {location['y']}, {location['z']})发生碰撞，"
+                       f"预计将诞生约{impact['new_stars_estimate']}颗新恒星。",
+            location=location,
+            magnitude=magnitude,
+            impact=impact,
+            duration=max(10, int(magnitude * 5))
+        )
+    
+    def generate_cosmic_radiation(
+        self,
+        location: Optional[Dict[str, float]] = None,
+        magnitude: Optional[float] = None
+    ) -> CosmicEvent:
+        """
+        生成宇宙背景辐射波动事件
+        
+        Args:
+            location: 事件发生位置（可选）
+            magnitude: 事件强度（可选）
+        
+        Returns:
+            CosmicEvent: 宇宙辐射波动事件对象
+        """
+        if location is None:
+            location = self._generate_random_location()
+        
+        if magnitude is None:
+            magnitude = round(self.rng.uniform(0.1, 3.0), 2)
+        
+        impact = {
+            "radiation_intensity": round(magnitude * 100, 1),
+            "affected_volume": round(magnitude * 1000, 0),
+            "mutation_rate": round(magnitude * 0.05, 3),
+            "tech_disruption": round(magnitude * 0.1, 2),
+            "communication_interference": magnitude > 1.5
+        }
+        
+        return CosmicEvent(
+            event_type=EventType.COSMIC_RADIATION,
+            name=f"Cosmic-Radiation-Wave-{self._event_count['supernova']}",
+            description=f"宇宙背景辐射异常波动，强度增加{impact['radiation_intensity']}%，"
+                       f"可能影响{impact['affected_volume']}立方光年范围内的文明。",
+            location=location,
+            magnitude=magnitude,
+            impact=impact,
+            duration=max(5, int(magnitude * 3))
+        )
+    
+    def get_event_statistics(self) -> Dict[str, int]:
+        """获取事件生成统计"""
+        return self._event_count.copy()
+
+
+class MicroEventGenerator:
+    """
+    微观事件生成器
+    负责生成影响单个星球或文明的局部事件
+    """
+    
+    # 资源枯竭名称模板
+    DEPLETION_NAMES = [
+        "Resource-Crisis-{}", "Depletion-{}", "Scarcity-{}",
+        "Drought-{}", "Famine-{}"
+    ]
+    
+    # 科技奇点名称模板
+    SINGULARITY_NAMES = [
+        "Tech-Singularity-{}", "Breakthrough-{}", "Evolution-{}",
+        "Ascension-{}", "Transcendence-{}"
+    ]
+    
+    def __init__(self, seed: Optional[int] = None):
+        """
+        初始化微观事件生成器
+        
+        Args:
+            seed: 随机种子
+        """
+        self.rng = random.Random(seed)
+        self._event_count = {"resource_depletion": 0, "tech_singularity": 0}
+    
+    def generate_resource_depletion(
+        self,
+        planet_id: str,
+        resource_type: Optional[str] = None,
+        severity: Optional[float] = None,
+        affected_population: Optional[int] = None
+    ) -> CosmicEvent:
+        """
+        生成资源枯竭事件
+        
+        Args:
+            planet_id: 星球ID
+            resource_type: 资源类型（energy/minerals/food/water）
+            severity: 严重程度（0.1-1.0）
+            affected_population: 受影响人口数量
+        
+        Returns:
+            CosmicEvent: 资源枯竭事件对象
+        """
+        self._event_count["resource_depletion"] += 1
+        
+        # 确定资源类型
+        if resource_type is None:
+            resource_type = self.rng.choice(["energy", "minerals", "food", "water"])
+        
+        # 设置严重程度
+        if severity is None:
+            severity = round(self.rng.uniform(0.1, 1.0), 2)
+        
+        # 生成事件名称
+        name_template = self.rng.choice(self.DEPLETION_NAMES)
+        name = name_template.format(self._event_count["resource_depletion"])
+        
+        # 资源类型描述
+        resource_descriptions = {
+            "energy": "能源危机",
+            "minerals": "矿物枯竭",
+            "food": "粮食短缺",
+            "water": "水资源匮乏"
+        }
+        
+        # 计算影响
+        base_population_loss = int(severity * 1000000)
+        if affected_population is None:
+            affected_population = base_population_loss
+        
+        impact = {
+            "resource_type": resource_type,
+            "depletion_rate": round(severity * 0.8, 2),
+            "remaining_reserves": round((1 - severity) * 100, 1),
+            "population_affected": affected_population,
+            "population_loss": int(affected_population * severity * 0.3),
+            "economic_impact": round(-severity * 0.5, 2),
+            "stability_change": round(-severity * 0.4, 2),
+            "migration_triggered": severity > 0.5,
+            "conflict_probability": round(severity * 0.6, 2)
+        }
+        
+        descriptions = [
+            f"星球{planet_id}遭遇{resource_descriptions[resource_type]}，"
+            f"资源储量仅剩{impact['remaining_reserves']}%，"
+            f
