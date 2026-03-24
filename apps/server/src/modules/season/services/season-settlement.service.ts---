@@ -1,0 +1,304 @@
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, DataSource, Between } from 'typeorm';
+import { SeasonRecord, SeasonStatistics } from '../entities/season-record.entity';
+import { Season, SeasonPhase } from '../entities/season.entity';
+import { 
+  CivilizationScoreInput, 
+  CivilizationScoreResult, 
+  LeaderboardEntry,
+  SettlementResult,
+  Achievement 
+} from '../interfaces/civilization-score.interface';
+
+@Injectable()
+export class SeasonSettlementService {
+  private readonly logger = new Logger(SeasonSettlementService.name);
+
+  // Score weights as per specification
+  private readonly SCORE_WEIGHTS = {
+    territory: 0.30,   // 30%
+    economy: 0.30,     // 30%
+    technology: 0.20,  // 20%
+    military: 0.20     // 20%
+  };
+
+  constructor(
+    @InjectRepository(SeasonRecord)
+    private readonly seasonRecordRepository: Repository<SeasonRecord>,
+    @InjectRepository(Season)
+    private readonly seasonRepository: Repository<Season>,
+    private readonly dataSource: DataSource
+  ) {}
+
+  /**
+   * Calculate civilization score based on the formula:
+   * Territory 30% + Economy 30% + Technology 20% + Military 20%
+   */
+  calculateCivilizationScore(civilization: CivilizationScoreInput): CivilizationScoreResult {
+    // Calculate raw scores for each category
+    const territoryRaw = this.calculateTerritoryScore(civilization.territory);
+    const economyRaw = this.calculateEconomyScore(civilization.economy);
+    const technologyRaw = this.calculateTechnologyScore(civilization.technology);
+    const militaryRaw = this.calculateMilitaryScore(civilization.military);
+
+    // Apply weights
+    const territoryWeighted = territoryRaw * this.SCORE_WEIGHTS.territory;
+    const economyWeighted = economyRaw * this.SCORE_WEIGHTS.economy;
+    const technologyWeighted = technologyRaw * this.SCORE_WEIGHTS.technology;
+    const militaryWeighted = militaryRaw * this.SCORE_WEIGHTS.military;
+
+    // Calculate total score
+    const totalScore = territoryWeighted + economyWeighted + technologyWeighted + militaryWeighted;
+
+    return {
+      civilizationId: civilization.id,
+      civilizationName: civilization.name,
+      totalScore: Math.round(totalScore * 100) / 100,
+      breakdown: {
+        territory: Math.round(territoryWeighted * 100) / 100,
+        economy: Math.round(economyWeighted * 100) / 100,
+        technology: Math.round(technologyWeighted * 100) / 100,
+        military: Math.round(militaryWeighted * 100) / 100
+      },
+      rawScores: {
+        territory: Math.round(territoryRaw * 100) / 100,
+        economy: Math.round(economyRaw * 100) / 100,
+        technology: Math.round(technologyRaw * 100) / 100,
+        military: Math.round(militaryRaw * 100) / 100
+      }
+    };
+  }
+
+  /**
+   * Calculate territory score
+   * Based on systems, planets, area, and strategic points
+   */
+  private calculateTerritoryScore(territory: CivilizationScoreInput['territory']): number {
+    const systemScore = territory.systems * 100;
+    const planetScore = territory.planets * 25;
+    const areaScore = territory.totalArea * 0.1;
+    const strategicScore = territory.strategicPoints * 150;
+
+    return systemScore + planetScore + areaScore + strategicScore;
+  }
+
+  /**
+   * Calculate economy score
+   * Based on resources, trade routes, market share, and treasury
+   */
+  private calculateEconomyScore(economy: CivilizationScoreInput['economy']): number {
+    const resourceScore = economy.totalResources * 0.01;
+    const tradeScore = economy.tradeRoutes * 50;
+    const marketScore = economy.marketShare * 10;
+    const treasuryScore = economy.treasury * 0.001;
+
+    return resourceScore + tradeScore + marketScore + treasuryScore;
+  }
+
+  /**
+   * Calculate technology score
+   * Based on research points, unlocked techs, and tech level
+   */
+  private calculateTechnologyScore(technology: CivilizationScoreInput['technology']): number {
+    const researchScore = technology.researchPoints * 0.1;
+    const techUnlockScore = technology.technologiesUnlocked * 100;
+    const levelScore = technology.techLevel * 500;
+
+    return researchScore + techUnlockScore + levelScore;
+  }
+
+  /**
+   * Calculate military score
+   * Based on fleets, firepower, and battle record
+   */
+  private calculateMilitaryScore(military: CivilizationScoreInput['military']): number {
+    const fleetScore = military.fleetCount * 75;
+    const firepowerScore = military.totalFirepower * 0.01;
+    const battleScore = (military.battlesWon - military.battlesLost * 0.5) * 50;
+
+    return Math.max(0, fleetScore + firepowerScore + battleScore);
+  }
+
+  /**
+   * Generate leaderboard from all civilizations
+   * Sorts by score and assigns ranks
+   */
+  async generateLeaderboard(civilizations: CivilizationScoreInput[]): Promise<LeaderboardEntry[]> {
+    // Calculate scores for all civilizations
+    const scoreResults = civilizations.map(civ => this.calculateCivilizationScore(civ));
+
+    // Sort by total score descending
+    scoreResults.sort((a, b) => b.totalScore - a.totalScore);
+
+    // Generate leaderboard entries with ranks
+    const leaderboard: LeaderboardEntry[] = scoreResults.map((result, index) => ({
+      rank: index + 1,
+      civilizationId: result.civilizationId,
+      civilizationName: result.civilizationName,
+      score: result.totalScore,
+      scoreBreakdown: result.breakdown,
+      achievements: [],
+      isPlayer: false // Will be set by caller if needed
+    }));
+
+    // Assign achievements based on performance
+    this.assignLeaderboardAchievements(leaderboard, scoreResults);
+
+    return leaderboard;
+  }
+
+  /**
+   * Assign achievements based on leaderboard position and performance
+   */
+  private assignLeaderboardAchievements(leaderboard: LeaderboardEntry[], scores: CivilizationScoreResult[]): void {
+    const now = new Date();
+
+    // Top 3 achievements
+    if (leaderboard.length > 0) {
+      leaderboard[0].achievements.push({
+        id: 'champion',
+        name: '宇宙霸主',
+        description: '赛季排名第一的文明',
+        icon: '👑',
+        unlockedAt: now
+      });
+    }
+
+    if (leaderboard.length > 1) {
+      leaderboard[1].achievements.push({
+        id: 'runner-up',
+        name: '银河之星',
+        description: '赛季排名第二的文明',
+        icon: '⭐',
+        unlockedAt: now
+      });
+    }
+
+    if (leaderboard.length > 2) {
+      leaderboard[2].achievements.push({
+        id: 'third-place',
+        name: '星际新秀',
+        description: '赛季排名第三的文明',
+        icon: '🌟',
+        unlockedAt: now
+      });
+    }
+
+    // Category-specific achievements
+    const topTerritory = scores.reduce((prev, curr) => 
+      curr.rawScores.territory > prev.rawScores.territory ? curr : prev
+    );
+    const topEconomy = scores.reduce((prev, curr) => 
+      curr.rawScores.economy > prev.rawScores.economy ? curr : prev
+    );
+    const topTechnology = scores.reduce((prev, curr) => 
+      curr.rawScores.technology > prev.rawScores.technology ? curr : prev
+    );
+    const topMilitary = scores.reduce((prev, curr) => 
+      curr.rawScores.military > prev.rawScores.military ? curr : prev
+    );
+
+    // Add category achievements
+    leaderboard.forEach(entry => {
+      if (entry.civilizationId === topTerritory.civilizationId) {
+        entry.achievements.push({
+          id: 'territory-master',
+          name: '疆域之王',
+          description: '领土得分最高的文明',
+          icon: '🏰',
+          unlockedAt: now
+        });
+      }
+      if (entry.civilizationId === topEconomy.civilizationId) {
+        entry.achievements.push({
+          id: 'trade-tycoon',
+          name: '贸易大亨',
+          description: '经济得分最高的文明',
+          icon: '💰',
+          unlockedAt: now
+        });
+      }
+      if (entry.civilizationId === topTechnology.civilizationId) {
+        entry.achievements.push({
+          id: 'tech-pioneer',
+          name: '科技先驱',
+          description: '科技得分最高的文明',
+          icon: '🔬',
+          unlockedAt: now
+        });
+      }
+      if (entry.civilizationId === topMilitary.civilizationId) {
+        entry.achievements.push({
+          id: 'warlord',
+          name: '战争领主',
+          description: '军事得分最高的文明',
+          icon: '⚔️',
+          unlockedAt: now
+        });
+      }
+    });
+  }
+
+  /**
+   * Settle the current season
+   * Archives data and generates final leaderboard
+   */
+  async settleSeason(seasonId: string, civilizations: CivilizationScoreInput[]): Promise<SettlementResult> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      // Get the season
+      const season = await queryRunner.manager.findOne(Season, {
+        where: { id: seasonId }
+      });
+
+      if (!season) {
+        throw new NotFoundException(`Season with ID ${seasonId} not found`);
+      }
+
+      if (season.isSettled) {
+        throw new Error(`Season ${seasonId} has already been settled`);
+      }
+
+      // Generate leaderboard
+      const leaderboard = await this.generateLeaderboard(civilizations);
+
+      // Create season records
+      const records: SeasonRecord[] = [];
+      for (const entry of leaderboard) {
+        const civ = civilizations.find(c => c.id === entry.civilizationId);
+        const scoreResult = this.calculateCivilizationScore(civ!);
+
+        const record = queryRunner.manager.create(SeasonRecord, {
+          seasonId: season.id,
+          civilizationId: entry.civilizationId,
+          civilizationName: entry.civilizationName,
+          score: entry.score,
+          rank: entry.rank,
+          territoryScore: scoreResult.rawScores.territory,
+          economyScore: scoreResult.rawScores.economy,
+          technologyScore: scoreResult.rawScores.technology,
+          militaryScore: scoreResult.rawScores.military,
+          achievements: entry.achievements,
+          statistics: this.generateStatistics(civ!)
+        });
+
+        records.push(await queryRunner.manager.save(record));
+      }
+
+      // Update season as settled
+      season.isSettled = true;
+      season.isActive = false;
+      season.endDate = new Date();
+      season.phase = SeasonPhase.FINALE;
+      await queryRunner.manager.save(season);
+
+      await queryRunner.commitTransaction();
+
+      this.logger.log(`Season ${season.seasonNumber} settled successfully with ${records.length} records`);
+
+      // Build achievements map
+      const achievementsMap =

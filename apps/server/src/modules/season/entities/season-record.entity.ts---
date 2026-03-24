@@ -1,0 +1,80 @@
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, Index } from 'typeorm';
+
+@Entity('season_records')
+export class SeasonRecord {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ type: 'uuid' })
+  @Index()
+  seasonId: string;
+
+  @Column({ type: 'uuid' })
+  @Index()
+  civilizationId: string;
+
+  @Column({ type: 'varchar', length: 100 })
+  civilizationName: string;
+
+  @Column({ type: 'decimal', precision: 10, scale: 2 })
+  score: number;
+
+  @Column({ type: 'int' })
+  rank: number;
+
+  @Column({ type: 'decimal', precision: 10, scale: 2 })
+  territoryScore: number;
+
+  @Column({ type: 'decimal', precision: 10, scale: 2 })
+  economyScore: number;
+
+  @Column({ type: 'decimal', precision: 10, scale: 2 })
+  technologyScore: number;
+
+  @Column({ type: 'decimal', precision: 10, scale: 2 })
+  militaryScore: number;
+
+  @Column({ type: 'jsonb', nullable: true })
+  achievements: Achievement[];
+
+  @Column({ type: 'jsonb', nullable: true })
+  statistics: SeasonStatistics;
+
+  @CreateDateColumn()
+  createdAt: Date;
+}
+
+export interface Achievement {
+  id: string;
+  name: string;
+  description: string;
+  icon?: string;
+  unlockedAt: Date;
+}
+
+export interface SeasonStatistics {
+  totalSystems: number;
+  totalPopulation: number;
+  totalFleets: number;
+  totalResearch: number;
+  totalTradeRoutes: number;
+  warsWon: number;
+  warsLost: number;
+  alliancesFormed: number;
+  eventsTriggered: number;
+}
+
+export interface SeasonConstants {
+  id: string;
+  name: string;
+  description: string;
+  modifiers: {
+    resourceMultiplier: number;
+    researchMultiplier: number;
+    diplomacyModifier: number;
+    conflictIntensity: number;
+  };
+  startDate: Date;
+  endDate: Date;
+  duration: number; // in simulation years
+}

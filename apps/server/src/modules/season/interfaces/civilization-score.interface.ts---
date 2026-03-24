@@ -1,0 +1,78 @@
+export interface CivilizationScoreInput {
+  id: string;
+  name: string;
+  territory: {
+    systems: number;
+    planets: number;
+    totalArea: number;
+    strategicPoints: number;
+  };
+  economy: {
+    totalResources: number;
+    tradeRoutes: number;
+    marketShare: number;
+    treasury: number;
+  };
+  technology: {
+    researchPoints: number;
+    technologiesUnlocked: number;
+    techLevel: number;
+  };
+  military: {
+    fleetCount: number;
+    totalFirepower: number;
+    battlesWon: number;
+    battlesLost: number;
+  };
+}
+
+export interface CivilizationScoreResult {
+  civilizationId: string;
+  civilizationName: string;
+  totalScore: number;
+  breakdown: {
+    territory: number;
+    economy: number;
+    technology: number;
+    military: number;
+  };
+  rawScores: {
+    territory: number;
+    economy: number;
+    technology: number;
+    military: number;
+  };
+}
+
+export interface LeaderboardEntry {
+  rank: number;
+  civilizationId: string;
+  civilizationName: string;
+  score: number;
+  scoreBreakdown: {
+    territory: number;
+    economy: number;
+    technology: number;
+    military: number;
+  };
+  achievements: Achievement[];
+  isPlayer?: boolean;
+}
+
+export interface Achievement {
+  id: string;
+  name: string;
+  description: string;
+  icon?: string;
+  unlockedAt: Date;
+}
+
+export interface SettlementResult {
+  seasonId: string;
+  seasonNumber: number;
+  settledAt: Date;
+  totalCivilizations: number;
+  leaderboard: LeaderboardEntry[];
+  topCivilization: LeaderboardEntry;
+  achievements: Map<string, Achievement[]>;
+}

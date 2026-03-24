@@ -1,0 +1,76 @@
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany } from 'typeorm';
+import { SeasonRecord } from './season-record.entity';
+
+export enum SeasonPhase {
+  PIONEER = 'pioneer',      // 开拓期
+  EXPANSION = 'expansion',  // 扩张期
+  CONFLICT = 'conflict',    // 纷争期
+  FINALE = 'finale'         // 终焉期
+}
+
+@Entity('seasons')
+export class Season {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ type: 'int', unique: true })
+  seasonNumber: number;
+
+  @Column({ type: 'varchar', length: 100 })
+  name: string;
+
+  @Column({ type: 'text', nullable: true })
+  description: string;
+
+  @Column({
+    type: 'enum',
+    enum: SeasonPhase,
+    default: SeasonPhase.PIONEER
+  })
+  phase: SeasonPhase;
+
+  @Column({ type: 'jsonb' })
+  constants: SeasonConstants;
+
+  @Column({ type: 'timestamp' })
+  startDate: Date;
+
+  @Column({ type: 'timestamp', nullable: true })
+  endDate: Date;
+
+  @Column({ type: 'int', default: 1000 })
+  duration: number; // simulation years
+
+  @Column({ type: 'int', default: 0 })
+  currentYear: number;
+
+  @Column({ type: 'boolean', default: false })
+  isSettled: boolean;
+
+  @Column({ type: 'boolean', default: true })
+  isActive: boolean;
+
+  @OneToMany(() => SeasonRecord, record => record.seasonId)
+  records: SeasonRecord[];
+
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
+}
+
+export interface SeasonConstants {
+  id: string;
+  name: string;
+  description: string;
+  modifiers: {
+    resourceMultiplier: number;
+    researchMultiplier: number;
+    diplomacyModifier: number;
+    conflictIntensity: number;
+  };
+  startDate: Date;
+  endDate: Date;
+  duration: number;
+}
