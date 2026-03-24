@@ -86,9 +86,10 @@
         "feat-001",
         "feat-003"
       ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "依赖数据库迁移和资源枚举"
+      "passes": true,
+      "last_attempt": "2026-03-25T00:05:29.168985",
+      "notes": "依赖数据库迁移和资源枚举",
+      "retry_count": 0
     },
     {
       "id": "feat-005",
