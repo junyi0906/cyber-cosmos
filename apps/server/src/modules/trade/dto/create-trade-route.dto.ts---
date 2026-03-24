@@ -1,19 +1,20 @@
-import { IsString, IsEnum, IsInt, Min, IsNotEmpty } from 'class-validator';
-import { ResourceType } from '../entities/trade-route.entity';
+import { IsString, IsEnum, IsNumber, IsUUID, Min, Max } from 'class-validator';
+import { ResourceType } from '../interfaces/trade.interface';
 
 export class CreateTradeRouteDto {
+  @IsUUID()
   @IsString()
-  @IsNotEmpty()
-  fromCivilizationId: string;
+  fromCivId: string;
 
+  @IsUUID()
   @IsString()
-  @IsNotEmpty()
-  toCivilizationId: string;
+  toCivId: string;
 
   @IsEnum(ResourceType)
   resourceType: ResourceType;
 
-  @IsInt()
+  @IsNumber()
   @Min(1)
-  quantity: number;
+  @Max(10000)
+  amount: number;
 }

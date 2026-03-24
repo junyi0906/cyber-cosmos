@@ -1,185 +1,146 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
-import { EventEmitter2 } from '@nestjs/event-emitter';
-import { DiplomacyService } from '../diplomacy/diplomacy.service';
-import { WeatherService } from '../weather/weather.service';
-
-export interface TradeRoute {
-  id: string;
-  fromCivilization: string;
-  toCivilization: string;
-  resourceType: 'ore' | 'energy' | 'tech';
-  amount: number;
-  status: 'active' | 'suspended' | 'interrupted';
-  efficiency: number;
-  createdAt: Date;
-  interruptedReason?: string;
-}
-
-export interface Civilization {
-  id: string;
-  name: string;
-  resources: {
-    ore: number;
-    energy: number;
-    tech: number;
-  };
-}
+import { Injectable, Logger } from '@nestjs/common';
+import { CreateTradeRouteDto } from './dto/create-trade-route.dto';
+import { MarketPriceDto, MarketOverviewDto } from './dto/market-price.dto';
+import {
+  ITradeRoute,
+  ITradeAgreement,
+  ITradeEvent,
+  TradeRouteStatus,
+  ResourceType,
+} from './interfaces/trade.interface';
+import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class TradeService {
-  private tradeRoutes: Map<string, TradeRoute> = new Map();
-  private civilizations: Map<string, Civilization> = new Map();
-  private routeIdCounter = 0;
+  private readonly logger = new Logger(TradeService.name);
+  private tradeRoutes: Map<string, ITradeRoute> = new Map();
+  private tradeAgreements: Map<string, ITradeAgreement> = new Map();
+  private tradeEvents: ITradeEvent[] = [];
 
-  constructor(
-    private readonly diplomacyService: DiplomacyService,
-    private readonly weatherService: WeatherService,
-    private readonly eventEmitter: EventEmitter2,
-  ) {}
-
-  // 初始化文明（测试用）
-  initializeCivilization(id: string, name: string, resources: { ore: number; energy: number; tech: number }): Civilization {
-    const civ: Civilization = { id, name, resources: { ...resources } };
-    this.civilizations.set(id, civ);
-    return civ;
-  }
-
-  // 获取文明
-  getCivilization(id: string): Civilization | undefined {
-    return this.civilizations.get(id);
-  }
-
-  // 创建贸易路线
-  async createTradeRoute(
-    fromCivId: string,
-    toCivId: string,
-    resourceType: 'ore' | 'energy' | 'tech',
-    amount: number,
-  ): Promise<TradeRoute> {
-    // 验证文明存在
-    const fromCiv = this.civilizations.get(fromCivId);
-    const toCiv = this.civilizations.get(toCivId);
-    
-    if (!fromCiv || !toCiv) {
-      throw new NotFoundException('Civilization not found');
-    }
-
-    // 验证外交关系（需要联盟或友好关系）
-    const relation = this.diplomacyService.getRelation(fromCivId, toCivId);
-    if (relation !== 'alliance' && relation !== 'friendly') {
-      throw new BadRequestException('Trade requires alliance or friendly diplomatic relation');
-    }
-
-    // 验证资源充足
-    if (fromCiv.resources[resourceType] < amount) {
-      throw new BadRequestException('Insufficient resources');
-    }
-
-    // 计算效率（受天气影响）
-    const weatherEffect = this.weatherService.getCurrentWeatherEffect();
-    let efficiency = 1.0;
-    
-    if (weatherEffect.type === 'resource_storm') {
-      efficiency = 0.7; // 资源风暴降低效率
-    } else if (weatherEffect.type === 'dark_matter_wave') {
-      efficiency = 0.8;
-    }
-
-    // 扣除资源
-    fromCiv.resources[resourceType] -= amount;
-    
-    // 增加资源（考虑效率）
-    const receivedAmount = Math.floor(amount * efficiency);
-    toCiv.resources[resourceType] += receivedAmount;
-
-    // 创建贸易路线
-    const routeId = `route-${++this.routeIdCounter}`;
-    const route: TradeRoute = {
-      id: routeId,
-      fromCivilization: fromCivId,
-      toCivilization: toCivId,
-      resourceType,
-      amount,
-      status: 'active',
-      efficiency,
+  async createTradeRoute(dto: CreateTradeRouteDto): Promise<ITradeRoute> {
+    const route: ITradeRoute = {
+      id: uuidv4(),
+      fromCivId: dto.fromCivId,
+      toCivId: dto.toCivId,
+      resourceType: dto.resourceType,
+      amount: dto.amount,
+      status: TradeRouteStatus.ACTIVE,
+      efficiency: 1.0,
       createdAt: new Date(),
+      updatedAt: new Date(),
     };
 
-    this.tradeRoutes.set(routeId, route);
-
-    // 发送 WebSocket 推送
-    this.eventEmitter.emit('trade_updates', {
-      type: 'route_created',
-      route,
-      fromCivResources: fromCiv.resources,
-      toCivResources: toCiv.resources,
-    });
-
+    this.tradeRoutes.set(route.id, route);
+    this.logger.log(`Created trade route ${route.id} from ${dto.fromCivId} to ${dto.toCivId}`);
+    
     return route;
   }
 
-  // 获取贸易路线
-  getTradeRoute(id: string): TradeRoute | undefined {
-    return this.tradeRoutes.get(id);
+  async getTradeRoute(id: string): Promise<ITradeRoute | null> {
+    return this.tradeRoutes.get(id) || null;
   }
 
-  // 获取所有贸易路线
-  getAllTradeRoutes(): TradeRoute[] {
+  async getAllTradeRoutes(): Promise<ITradeRoute[]> {
     return Array.from(this.tradeRoutes.values());
   }
 
-  // 检查天气影响并中断路线
-  async checkWeatherImpact(): Promise<TradeRoute[]> {
-    const weatherEffect = this.weatherService.getCurrentWeatherEffect();
-    const interruptedRoutes: TradeRoute[] = [];
-
-    for (const route of this.tradeRoutes.values()) {
-      if (route.status !== 'active') continue;
-
-      // 资源风暴可能导致路线中断
-      if (weatherEffect.type === 'resource_storm' && weatherEffect.accidentRate > 0.5) {
-        route.status = 'interrupted';
-        route.interruptedReason = 'Severe resource storm';
-        interruptedRoutes.push(route);
-
-        this.eventEmitter.emit('trade_updates', {
-          type: 'route_interrupted',
-          route,
-          reason: route.interruptedReason,
-        });
-      }
-    }
-
-    return interruptedRoutes;
+  async getTradeRoutesByCiv(civId: string): Promise<ITradeRoute[]> {
+    return Array.from(this.tradeRoutes.values()).filter(
+      (route) => route.fromCivId === civId || route.toCivId === civId,
+    );
   }
 
-  // 恢复中断的贸易路线
-  async resumeRoute(routeId: string): Promise<TradeRoute> {
+  async updateRouteStatus(
+    routeId: string,
+    status: TradeRouteStatus,
+    efficiency?: number,
+  ): Promise<ITradeRoute | null> {
     const route = this.tradeRoutes.get(routeId);
     if (!route) {
-      throw new NotFoundException('Trade route not found');
+      return null;
     }
 
-    const weatherEffect = this.weatherService.getCurrentWeatherEffect();
-    if (weatherEffect.type === 'resource_storm' && weatherEffect.accidentRate > 0.5) {
-      throw new BadRequestException('Cannot resume route during severe weather');
+    route.status = status;
+    if (efficiency !== undefined) {
+      route.efficiency = efficiency;
     }
+    route.updatedAt = new Date();
 
-    route.status = 'active';
-    route.interruptedReason = undefined;
-
-    this.eventEmitter.emit('trade_updates', {
-      type: 'route_resumed',
-      route,
-    });
-
+    this.tradeRoutes.set(routeId, route);
     return route;
   }
 
-  // 清除所有数据（测试用）
-  clearAll(): void {
-    this.tradeRoutes.clear();
-    this.civilizations.clear();
-    this.routeIdCounter = 0;
+  async createTradeAgreement(
+    civIdA: string,
+    civIdB: string,
+  ): Promise<ITradeAgreement> {
+    const agreement: ITradeAgreement = {
+      id: uuidv4(),
+      civIdA,
+      civIdB,
+      routes: [],
+      establishedAt: new Date(),
+    };
+
+    this.tradeAgreements.set(agreement.id, agreement);
+    this.logger.log(`Created trade agreement ${agreement.id} between ${civIdA} and ${civIdB}`);
+    
+    return agreement;
+  }
+
+  async getMarketPrices(): Promise<MarketOverviewDto> {
+    const basePrices: Record<ResourceType, number> = {
+      [ResourceType.ORE]: 100,
+      [ResourceType.ENERGY]: 150,
+      [ResourceType.TECHNOLOGY]: 300,
+    };
+
+    const prices: MarketPriceDto[] = Object.entries(basePrices).map(
+      ([type, basePrice]) => {
+        const fluctuation = (Math.random() - 0.5) * 0.2;
+        const price = basePrice * (1 + fluctuation);
+        const changeRate = fluctuation * 100;
+
+        return {
+          resourceType: type as ResourceType,
+          price: Math.round(price * 100) / 100,
+          changeRate: Math.round(changeRate * 100) / 100,
+          timestamp: new Date().toISOString(),
+        };
+      },
+    );
+
+    const avgChangeRate =
+      prices.reduce((sum, p) => sum + p.changeRate, 0) / prices.length;
+
+    let marketTrend: 'bullish' | 'bearish' | 'stable' = 'stable';
+    if (avgChangeRate > 2) marketTrend = 'bullish';
+    else if (avgChangeRate < -2) marketTrend = 'bearish';
+
+    return {
+      prices,
+      lastUpdated: new Date(),
+      marketTrend,
+    };
+  }
+
+  async recordTradeEvent(event: Omit<ITradeEvent, 'id' | 'occurredAt'>): Promise<ITradeEvent> {
+    const tradeEvent: ITradeEvent = {
+      ...event,
+      id: uuidv4(),
+      occurredAt: new Date(),
+    };
+
+    this.tradeEvents.push(tradeEvent);
+    this.logger.log(`Recorded trade event ${tradeEvent.eventType} on route ${event.routeId}`);
+    
+    return tradeEvent;
+  }
+
+  async getTradeEvents(routeId?: string): Promise<ITradeEvent[]> {
+    if (routeId) {
+      return this.tradeEvents.filter((e) => e.routeId === routeId);
+    }
+    return this.tradeEvents;
   }
 }

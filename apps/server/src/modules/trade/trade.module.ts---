@@ -1,14 +1,11 @@
 import { Module } from '@nestjs/common';
 import { TradeService } from './trade.service';
 import { TradeController } from './trade.controller';
-import { TradeGateway } from './trade.gateway';
-import { DiplomacyModule } from '../diplomacy/diplomacy.module';
-import { WeatherModule } from '../weather/weather.module';
+import { MarketEngine } from './market.engine';
 
 @Module({
-  imports: [DiplomacyModule, WeatherModule],
   controllers: [TradeController],
-  providers: [TradeService, TradeGateway],
-  exports: [TradeService],
+  providers: [TradeService, MarketEngine],
+  exports: [TradeService, MarketEngine],
 })
 export class TradeModule {}

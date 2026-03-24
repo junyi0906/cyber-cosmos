@@ -1,0 +1,13 @@
+import { Test, TestingModule } from '@nestjs/testing';
+import { TradeModule } from './trade.module';
+import { TradeService } from './trade.service';
+import { TradeController } from './trade.controller';
+import { MarketEngine } from './market.engine';
+
+describe('TradeModule', () => {
+  let module: TestingModule;
+
+  beforeEach(async () => {
+    module = await Test.createTestingModule({
+      imports: [TradeModule],
+    }).compile();

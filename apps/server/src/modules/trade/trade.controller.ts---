@@ -1,20 +1,19 @@
-import { Controller, Post, Get, Body, Param } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query } from '@nestjs/common';
 import { TradeService } from './trade.service';
+import { CreateTradeRouteDto } from './dto/create-trade-route.dto';
+import { MarketEngine } from './market.engine';
+import { ResourceType, TradeRouteStatus } from './interfaces/trade.interface';
 
 @Controller('trade')
 export class TradeController {
-  constructor(private readonly tradeService: TradeService) {}
+  constructor(
+    private readonly tradeService: TradeService,
+    private readonly marketEngine: MarketEngine,
+  ) {}
 
   @Post('routes')
-  async createRoute(
-    @Body() body: { fromCivId: string; toCivId: string; resourceType: 'ore' | 'energy' | 'tech'; amount: number },
-  ) {
-    return this.tradeService.createTradeRoute(
-      body.fromCivId,
-      body.toCivId,
-      body.resourceType,
-      body.amount,
-    );
+  async createRoute(@Body() dto: CreateTradeRouteDto) {
+    return this.tradeService.createTradeRoute(dto);
   }
 
   @Get('routes')
@@ -27,13 +26,54 @@ export class TradeController {
     return this.tradeService.getTradeRoute(id);
   }
 
-  @Post('routes/:id/resume')
-  async resumeRoute(@Param('id') id: string) {
-    return this.tradeService.resumeRoute(id);
+  @Get('routes/civ/:civId')
+  async getRoutesByCiv(@Param('civId') civId: string) {
+    return this.tradeService.getTradeRoutesByCiv(civId);
   }
 
-  @Post('check-weather')
-  async checkWeatherImpact() {
-    return this.tradeService.checkWeatherImpact();
+  @Post('routes/:id/status')
+  async updateRouteStatus(
+    @Param('id') id: string,
+    @Body('status') status: TradeRouteStatus,
+    @Body('efficiency') efficiency?: number,
+  ) {
+    return this.tradeService.updateRouteStatus(id, status, efficiency);
+  }
+
+  @Get('market/prices')
+  async getMarketPrices() {
+    return this.tradeService.getMarketPrices();
+  }
+
+  @Get('market/history/:resourceType')
+  async getPriceHistory(@Param('resourceType') resourceType: ResourceType) {
+    return this.marketEngine.getPriceHistory(resourceType);
+  }
+
+  @Get('market/state')
+  async getMarketState() {
+    const state = this.marketEngine.getMarketState();
+    const result: Record<string, { supply: number; demand: number; price: number }> = {};
+    
+    state.forEach((value, key) => {
+      result[key] = {
+        supply: value.totalSupply,
+        demand: value.totalDemand,
+        price: this.marketEngine.calculatePrice(key),
+      };
+    });
+    
+    return result;
+  }
+
+  @Post('market/tick')
+  async simulateMarketTick() {
+    this.marketEngine.simulateMarketTick();
+    return { status: 'ok', timestamp: new Date() };
+  }
+
+  @Get('events')
+  async getTradeEvents(@Query('routeId') routeId?: string) {
+    return this.tradeService.getTradeEvents(routeId);
   }
 }

@@ -1,93 +1,46 @@
-export interface TradeJobData {
-  tradeId: string;
-  sourceCivilizationId: string;
-  targetCivilizationId: string;
-  resources: TradeResource[];
-  routeId: string;
-  timestamp: Date;
-}
-
-export interface TradeResource {
-  type: ResourceType;
-  amount: number;
-}
-
 export enum ResourceType {
   ORE = 'ore',
   ENERGY = 'energy',
-  TECH_POINTS = 'tech_points',
-  CREDITS = 'credits',
+  TECHNOLOGY = 'technology',
 }
 
-export interface TradeResult {
-  success: boolean;
-  tradeId: string;
-  sourceId: string;
-  targetId: string;
-  resourcesTransferred: TradeResource[];
-  events: TradeEvent[];
-  timestamp: Date;
-}
-
-export interface TradeEvent {
-  type: TradeEventType;
-  description: string;
-  impact?: TradeEventImpact;
-}
-
-export enum TradeEventType {
-  PIRATE_ATTACK = 'pirate_attack',
-  WEATHER_STORM = 'weather_storm',
-  TREASURE_FOUND = 'treasure_found',
-  SAFE_PASSAGE = 'safe_passage',
-  DARK_MATTER_WAVE = 'dark_matter_wave',
-}
-
-export interface TradeEventImpact {
-  resourceLoss?: Partial<Record<ResourceType, number>>;
-  resourceGain?: Partial<Record<ResourceType, number>>;
-  delay?: number;
-}
-
-export interface TradeRoute {
-  id: string;
-  sourceId: string;
-  targetId: string;
-  distance: number;
-  efficiency: number;
-  status: RouteStatus;
-}
-
-export enum RouteStatus {
+export enum TradeRouteStatus {
   ACTIVE = 'active',
-  BLOCKED = 'blocked',
   SUSPENDED = 'suspended',
+  DISRUPTED = 'disrupted',
+  CLOSED = 'closed',
 }
 
-export interface CivilizationResources {
-  civilizationId: string;
-  ore: number;
-  energy: number;
-  techPoints: number;
-  credits: number;
-  version: number;
+export interface ITradeRoute {
+  id: string;
+  fromCivId: string;
+  toCivId: string;
+  resourceType: ResourceType;
+  amount: number;
+  status: TradeRouteStatus;
+  efficiency: number;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
-export interface UniverseWeather {
-  current: WeatherType;
-  duration: number;
-  effects: WeatherEffect[];
+export interface ITradeAgreement {
+  id: string;
+  civIdA: string;
+  civIdB: string;
+  routes: ITradeRoute[];
+  establishedAt: Date;
+  expiresAt?: Date;
 }
 
-export enum WeatherType {
-  CALM = 'calm',
-  RESOURCE_STORM = 'resource_storm',
-  DARK_MATTER_WAVE = 'dark_matter_wave',
-  DARK_FLUCTUATION = 'dark_fluctuation',
-}
-
-export interface WeatherEffect {
-  type: string;
-  modifier: number;
-  target: string;
+export interface ITradeEvent {
+  id: string;
+  routeId: string;
+  eventType: 'pirate_attack' | 'smuggling' | 'weather_disruption' | 'resource_boom';
+  description: string;
+  impact: {
+    resourceLoss?: number;
+    efficiencyModifier?: number;
+    bonusAmount?: number;
+  };
+  occurredAt: Date;
 }

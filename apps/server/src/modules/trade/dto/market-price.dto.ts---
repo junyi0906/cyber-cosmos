@@ -1,0 +1,30 @@
+import { IsEnum, IsNumber, IsDateString } from 'class-validator';
+import { ResourceType } from '../interfaces/trade.interface';
+
+export class MarketPriceDto {
+  @IsEnum(ResourceType)
+  resourceType: ResourceType;
+
+  @IsNumber()
+  price: number;
+
+  @IsNumber()
+  changeRate: number;
+
+  @IsDateString()
+  timestamp: string;
+}
+
+export class MarketPriceHistoryDto {
+  resourceType: ResourceType;
+  prices: {
+    price: number;
+    timestamp: Date;
+  }[];
+}
+
+export class MarketOverviewDto {
+  prices: MarketPriceDto[];
+  lastUpdated: Date;
+  marketTrend: 'bullish' | 'bearish' | 'stable';
+}

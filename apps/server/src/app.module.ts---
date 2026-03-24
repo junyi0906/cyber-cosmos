@@ -1,40 +1,10 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import redisConfig from './config/redis.config';
-import { CacheModule } from './common/cache/cache.module';
+import { TradeModule } from './modules/trade/trade.module';
 import { TimelineModule } from './modules/timeline/timeline.module';
-import { WeatherModule } from './modules/weather/weather.module';
-import { EventsModule } from './modules/events/events.module';
 
 @Module({
-  imports: [
-    // Configuration
-    ConfigModule.forRoot({
-      isGlobal: true,
-      load: [redisConfig],
-      envFilePath: ['.env.local', '.env'],
-    }),
-
-    // Database (placeholder - configure based on actual DB setup)
-    TypeOrmModule.forRoot({
-      type: 'postgres',
-      host: process.env.DATABASE_HOST || 'localhost',
-      port: parseInt(process.env.DATABASE_PORT || '5432', 10),
-      username: process.env.DATABASE_USER || 'postgres',
-      password: process.env.DATABASE_PASSWORD || 'postgres',
-      database: process.env.DATABASE_NAME || 'cyber_cosmos',
-      autoLoadEntities: true,
-      synchronize: process.env.NODE_ENV !== 'production',
-    }),
-
-    // Cache Module (Redis)
-    CacheModule,
-
-    // Feature Modules
-    TimelineModule,
-    WeatherModule,
-    EventsModule,
-  ],
+  imports: [TradeModule, TimelineModule],
+  controllers: [],
+  providers: [],
 })
 export class AppModule {}

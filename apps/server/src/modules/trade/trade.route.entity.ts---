@@ -1,0 +1,39 @@
+import { Entity, Column, PrimaryColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { ResourceType, TradeRouteStatus } from './interfaces/trade.interface';
+
+@Entity('trade_routes')
+export class TradeRouteEntity {
+  @PrimaryColumn('uuid')
+  id: string;
+
+  @Column('uuid')
+  fromCivId: string;
+
+  @Column('uuid')
+  toCivId: string;
+
+  @Column({
+    type: 'enum',
+    enum: ResourceType,
+  })
+  resourceType: ResourceType;
+
+  @Column('integer')
+  amount: number;
+
+  @Column({
+    type: 'enum',
+    enum: TradeRouteStatus,
+    default: TradeRouteStatus.ACTIVE,
+  })
+  status: TradeRouteStatus;
+
+  @Column('decimal', { precision: 5, scale: 2, default: 1.0 })
+  efficiency: number;
+
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
+}
