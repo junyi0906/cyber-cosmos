@@ -1,0 +1,22 @@
+import { Test, TestingModule } from '@nestjs/testing';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { RedisService } from '../src/common/cache/redis.service';
+import redisConfig from '../src/config/redis.config';
+
+describe('RedisService', () => {
+  let service: RedisService;
+
+  beforeAll(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({
+          isGlobal: true,
+          load: [redisConfig],
+          envFilePath: ['.env.test', '.env.example', '.env'],
+        }),
+      ],
+      providers: [RedisService],
+    }).compile();
+
+    service = module.get<RedisService>(RedisService);
+    await

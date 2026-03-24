@@ -1,0 +1,18 @@
+import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { RedisModule } from './common/cache/redis.module';
+import redisConfig from './config/redis.config';
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+      load: [redisConfig],
+      envFilePath: ['.env.local', '.env'],
+    }),
+    RedisModule,
+  ],
+  controllers: [],
+  providers: [],
+})
+export class AppModule {}

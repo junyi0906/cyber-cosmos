@@ -1,0 +1,400 @@
+import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/config';
+import { ConfigService } from '@nestjs/config';
+import { createClient, RedisClientType } from 'redis';
+
+export interface MarketQuote {
+  resourceId: string;
+  resourceName: string;
+  currentPrice: number;
+  previousPrice: number;
+  changePercent: number;
+  volume: number;
+  timestamp: number;
+}
+
+export interface SeasonState {
+  seasonId: string;
+  seasonName: string;
+  phase: 'exploration' | 'expansion' | 'conflict' | 'finale';
+  startedAt: number;
+  endsAt: number;
+  universeConstants: Record<string, number>;
+  isActive: boolean;
+}
+
+@Injectable()
+export class RedisService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(RedisService.name);
+  private client: RedisClientType;
+  private subscriber: RedisClientType;
+  private publisher: RedisClientType;
+  private readonly keyPrefix: string;
+
+  constructor(private readonly configService: ConfigService) {
+    this.keyPrefix = this.configService.get<string>('redis.keyPrefix', 'cyber-cosmos:');
+  }
+
+  async onModuleInit(): Promise<void> {
+    const redisUrl = this.configService.get<string>('redis.url');
+    
+    try {
+      // Main client
+      this.client = createClient({
+        url: redisUrl,
+        socket: {
+          reconnectStrategy: (retries) => {
+            if (retries > 10) {
+              this.logger.error('Redis connection retries exceeded');
+              return new Error('Redis connection retries exceeded');
+            }
+            this.logger.warn(`Redis reconnecting... attempt ${retries}`);
+            return Math.min(retries * 100, 3000);
+          },
+        },
+      });
+
+      this.client.on('connect', () => {
+        this.logger.log('Redis client connected');
+      });
+
+      this.client.on('error', (err) => {
+        this.logger.error('Redis client error:', err.message);
+      });
+
+      await this.client.connect();
+
+      // Subscriber client
+      this.subscriber = createClient({ url: redisUrl });
+      await this.subscriber.connect();
+
+      // Publisher client
+      this.publisher = createClient({ url: redisUrl });
+      await this.publisher.connect();
+
+      this.logger.log('Redis service initialized successfully');
+    } catch (error) {
+      this.logger.error('Failed to initialize Redis service:', error.message);
+      throw error;
+    }
+  }
+
+  async onModuleDestroy(): Promise<void> {
+    try {
+      await this.client?.quit();
+      await this.subscriber?.quit();
+      await this.publisher?.quit();
+      this.logger.log('Redis connections closed');
+    } catch (error) {
+      this.logger.error('Error closing Redis connections:', error.message);
+    }
+  }
+
+  private getKey(key: string): string {
+    return `${this.keyPrefix}${key}`;
+  }
+
+  // Basic operations
+  async get<T = unknown>(key: string): Promise<T | null> {
+    try {
+      const fullKey = this.getKey(key);
+      const value = await this.client.get(fullKey);
+      if (value === null) {
+        return null;
+      }
+      return JSON.parse(value) as T;
+    } catch (error) {
+      this.logger.error(`Error getting key ${key}:`, error.message);
+      return null;
+    }
+  }
+
+  async set(key: string, value: unknown, ttlSeconds?: number): Promise<boolean> {
+    try {
+      const fullKey = this.getKey(key);
+      const stringValue = JSON.stringify(value);
+      
+      if (ttlSeconds) {
+        await this.client.setEx(fullKey, ttlSeconds, stringValue);
+      } else {
+        await this.client.set(fullKey, stringValue);
+      }
+      return true;
+    } catch (error) {
+      this.logger.error(`Error setting key ${key}:`, error.message);
+      return false;
+    }
+  }
+
+  async del(key: string): Promise<boolean> {
+    try {
+      const fullKey = this.getKey(key);
+      await this.client.del(fullKey);
+      return true;
+    } catch (error) {
+      this.logger.error(`Error deleting key ${key}:`, error.message);
+      return false;
+    }
+  }
+
+  async exists(key: string): Promise<boolean> {
+    try {
+      const fullKey = this.getKey(key);
+      const result = await this.client.exists(fullKey);
+      return result === 1;
+    } catch (error) {
+      this.logger.error(`Error checking existence of key ${key}:`, error.message);
+      return false;
+    }
+  }
+
+  async expire(key: string, ttlSeconds: number): Promise<boolean> {
+    try {
+      const fullKey = this.getKey(key);
+      await this.client.expire(fullKey, ttlSeconds);
+      return true;
+    } catch (error) {
+      this.logger.error(`Error setting expiry for key ${key}:`, error.message);
+      return false;
+    }
+  }
+
+  // Hash operations
+  async hget<T = unknown>(key: string, field: string): Promise<T | null> {
+    try {
+      const fullKey = this.getKey(key);
+      const value = await this.client.hGet(fullKey, field);
+      if (value === undefined) {
+        return null;
+      }
+      return JSON.parse(value) as T;
+    } catch (error) {
+      this.logger.error(`Error hgetting ${key}.${field}:`, error.message);
+      return null;
+    }
+  }
+
+  async hset(key: string, field: string, value: unknown): Promise<boolean> {
+    try {
+      const fullKey = this.getKey(key);
+      const stringValue = JSON.stringify(value);
+      await this.client.hSet(fullKey, field, stringValue);
+      return true;
+    } catch (error) {
+      this.logger.error(`Error hsetting ${key}.${field}:`, error.message);
+      return false;
+    }
+  }
+
+  async hdel(key: string, field: string): Promise<boolean> {
+    try {
+      const fullKey = this.getKey(key);
+      await this.client.hDel(fullKey, field);
+      return true;
+    } catch (error) {
+      this.logger.error(`Error hdeleting ${key}.${field}:`, error.message);
+      return false;
+    }
+  }
+
+  async hgetall<T = unknown>(key: string): Promise<Record<string, T>> {
+    try {
+      const fullKey = this.getKey(key);
+      const values = await this.client.hGetAll(fullKey);
+      const result: Record<string, T> = {};
+      for (const [field, value] of Object.entries(values)) {
+        result[field] = JSON.parse(value) as T;
+      }
+      return result;
+    } catch (error) {
+      this.logger.error(`Error hgetting all ${key}:`, error.message);
+      return {};
+    }
+  }
+
+  // Pub/Sub operations
+  async publish(channel: string, message: unknown): Promise<boolean> {
+    try {
+      const fullChannel = this.getKey(channel);
+      const stringMessage = JSON.stringify(message);
+      await this.publisher.publish(fullChannel, stringMessage);
+      return true;
+    } catch (error) {
+      this.logger.error(`Error publishing to ${channel}:`, error.message);
+      return false;
+    }
+  }
+
+  async subscribe(
+    channel: string,
+    callback: (message: unknown) => void,
+  ): Promise<() => Promise<void>> {
+    try {
+      const fullChannel = this.getKey(channel);
+      
+      await this.subscriber.subscribe(fullChannel, (message) => {
+        try {
+          const parsed = JSON.parse(message);
+          callback(parsed);
+        } catch {
+          callback(message);
+        }
+      });
+
+      // Return unsubscribe function
+      return async () => {
+        await this.subscriber.unsubscribe(fullChannel);
+      };
+    } catch (error) {
+      this.logger.error(`Error subscribing to ${channel}:`, error.message);
+      return async () => {};
+    }
+  }
+
+  // Market-specific operations
+  async setMarketQuote(resourceId: string, quote: MarketQuote): Promise<boolean> {
+    return this.hset('market:quotes', resourceId, quote);
+  }
+
+  async getMarketQuote(resourceId: string): Promise<MarketQuote | null> {
+    return this.hget<MarketQuote>('market:quotes', resourceId);
+  }
+
+  async getAllMarketQuotes(): Promise<Record<string, MarketQuote>> {
+    return this.hgetall<MarketQuote>('market:quotes');
+  }
+
+  async updateMarketPrice(
+    resourceId: string,
+    newPrice: number,
+    volume: number,
+  ): Promise<MarketQuote | null> {
+    const existing = await this.getMarketQuote(resourceId);
+    
+    const quote: MarketQuote = {
+      resourceId,
+      resourceName: existing?.resourceName || resourceId,
+      currentPrice: newPrice,
+      previousPrice: existing?.currentPrice || newPrice,
+      changePercent: existing
+        ? ((newPrice - existing.currentPrice) / existing.currentPrice) * 100
+        : 0,
+      volume: (existing?.volume || 0) + volume,
+      timestamp: Date.now(),
+    };
+
+    await this.setMarketQuote(resourceId, quote);
+    
+    // Publish price update
+    await this.publish('market:price_updates', {
+      resourceId,
+      quote,
+    });
+
+    return quote;
+  }
+
+  // Season-specific operations
+  async setCurrentSeason(season: SeasonState): Promise<boolean> {
+    return this.set('season:current', season);
+  }
+
+  async getCurrentSeason(): Promise<SeasonState | null> {
+    return this.get<SeasonState>('season:current');
+  }
+
+  async updateSeasonPhase(
+    phase: SeasonState['phase'],
+  ): Promise<SeasonState | null> {
+    const season = await this.getCurrentSeason();
+    if (!season) {
+      return null;
+    }
+
+    season.phase = phase;
+    await this.setCurrentSeason(season);
+    
+    // Publish phase change
+    await this.publish('season:phase_change', {
+      seasonId: season.seasonId,
+      phase,
+      timestamp: Date.now(),
+    });
+
+    return season;
+  }
+
+  // Leaderboard operations
+  async addToLeaderboard(
+    leaderboardKey: string,
+    memberId: string,
+    score: number,
+  ): Promise<boolean> {
+    try {
+      const fullKey = this.getKey(leaderboardKey);
+      await this.client.zAdd(fullKey, { score, value: memberId });
+      return true;
+    } catch (error) {
+      this.logger.error(`Error adding to leaderboard ${leaderboardKey}:`, error.message);
+      return false;
+    }
+  }
+
+  async getLeaderboard(
+    leaderboardKey: string,
+    start: number = 0,
+    stop: number = -1,
+    descending: boolean = true,
+  ): Promise<Array<{ memberId: string; score: number }>> {
+    try {
+      const fullKey = this.getKey(leaderboardKey);
+      const results = descending
+        ? await this.client.zRangeWithScores(fullKey, start, stop, { REV: true })
+        : await this.client.zRangeWithScores(fullKey, start, stop);
+
+      return results.map((r) => ({
+        memberId: r.value,
+        score: r.score,
+      }));
+    } catch (error) {
+      this.logger.error(`Error getting leaderboard ${leaderboardKey}:`, error.message);
+      return [];
+    }
+  }
+
+  // Cache with fallback
+  async getOrSet<T>(
+    key: string,
+    factory: () => Promise<T>,
+    ttlSeconds?: number,
+  ): Promise<T> {
+    const cached = await this.get<T>(key);
+    if (cached !== null) {
+      return cached;
+    }
+
+    const value = await factory();
+    await this.set(key, value, ttlSeconds);
+    return value;
+  }
+
+  // Increment operations
+  async incr(key: string): Promise<number> {
+    try {
+      const fullKey = this.getKey(key);
+      return await this.client.incr(fullKey);
+    } catch (error) {
+      this.logger.error(`Error incrementing ${key}:`, error.message);
+      return 0;
+    }
+  }
+
+  async incrBy(key: string, increment: number): Promise<number> {
+    try {
+      const fullKey = this.getKey(key);
+      return await this.client.incrBy(fullKey, increment);
+    } catch (error) {
+      this.logger.error(`Error incrementing ${key} by ${increment}:`, error.message);
+      return 0;
+    }
+  }
+}

@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: cyber-cosmos-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cyber-cosmos-network
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: cyber-cosmos-postgres
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-cyber}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cosmos}
+      POSTGRES_DB: ${POSTGRES_DB:-cyber_cosmos}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cyber} -d ${POSTGRES_DB:-cyber_cosmos}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cyber-cosmos-network
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cyber-cosmos-backend
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_KEY_PREFIX: ${REDIS_KEY_PREFIX:-cyber-cosmos:}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-cyber}:${POSTGRES_PASSWORD:-cosmos}@postgres:5432/${POSTGRES_DB:-cyber_cosmos}
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - cyber-cosmos-network
+
+volumes:
+  redis_data:
+    driver: local
+  postgres_data:
+    driver: local
+
+networks:
+  cyber-cosmos-network:
+    driver: bridge
