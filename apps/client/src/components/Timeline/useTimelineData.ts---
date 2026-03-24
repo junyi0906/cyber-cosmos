@@ -1,0 +1,171 @@
+import { useState, useEffect, useCallback } from 'react';
+
+export interface TimelineDataPoint {
+  timestamp: string;
+  year: number;
+  civilizations: CivilizationSnapshot[];
+}
+
+export interface CivilizationSnapshot {
+  id: string;
+  name: string;
+  population: number;
+  technology: number;
+  military: number;
+  economy: number;
+  culture: number;
+  status: 'rising' | 'stable' | 'declining' | 'collapsed';
+}
+
+export interface TimelineFilter {
+  startTime?: number;
+  endTime?: number;
+  civilizationIds?: string[];
+  metrics?: ('population' | 'technology' | 'military' | 'economy' | 'culture')[];
+}
+
+export interface TimelineResponse {
+  success: boolean;
+  data: TimelineDataPoint[];
+  meta: {
+    totalPoints: number;
+    startYear: number;
+    endYear: number;
+    civilizations: { id: string; name: string }[];
+  };
+}
+
+export interface UseTimelineDataResult {
+  data: TimelineDataPoint[];
+  meta: TimelineResponse['meta'] | null;
+  loading: boolean;
+  error: Error | null;
+  refetch: () => Promise<void>;
+  setFilter: (filter: TimelineFilter) => void;
+  filter: TimelineFilter;
+}
+
+const API_BASE_URL = '/api/observatory';
+
+export function useTimelineData(initialFilter: TimelineFilter = {}): UseTimelineDataResult {
+  const [data, setData] = useState<TimelineDataPoint[]>([]);
+  const [meta, setMeta] = useState<TimelineResponse['meta'] | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<Error | null>(null);
+  const [filter, setFilterState] = useState<TimelineFilter>(initialFilter);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const params = new URLSearchParams();
+      
+      if (filter.startTime) {
+        params.append('startTime', filter.startTime.toString());
+      }
+      if (filter.endTime) {
+        params.append('endTime', filter.endTime.toString());
+      }
+      if (filter.civilizationIds && filter.civilizationIds.length > 0) {
+        params.append('civilizationIds', filter.civilizationIds.join(','));
+      }
+      if (filter.metrics && filter.metrics.length > 0) {
+        params.append('metrics', filter.metrics.join(','));
+      }
+
+      const queryString = params.toString();
+      const url = `${API_BASE_URL}/timeline${queryString ? `?${queryString}` : ''}`;
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result: TimelineResponse = await response.json();
+
+      if (result.success) {
+        setData(result.data);
+        setMeta(result.meta);
+      } else {
+        throw new Error('Failed to fetch timeline data');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error('Unknown error occurred'));
+      // Generate mock data for development
+      const mockData = generateMockTimelineData(filter);
+      setData(mockData.data);
+      setMeta(mockData.meta);
+    } finally {
+      setLoading(false);
+    }
+  }, [filter]);
+
+  const setFilter = useCallback((newFilter: TimelineFilter) => {
+    setFilterState(prev => ({ ...prev, ...newFilter }));
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  return {
+    data,
+    meta,
+    loading,
+    error,
+    refetch: fetchData,
+    setFilter,
+    filter,
+  };
+}
+
+// Mock data generator for development/fallback
+function generateMockTimelineData(filter: TimelineFilter): TimelineResponse {
+  const startYear = filter.startTime || 2100;
+  const endYear = filter.endTime || 2200;
+  const civilizations = [
+    { id: 'civ-001', name: '星际联邦' },
+    { id: 'civ-002', name: '赛博帝国' },
+    { id: 'civ-003', name: '机械蜂巢' },
+    { id: 'civ-004', name: '虚空行者' },
+  ];
+
+  const data: TimelineDataPoint[] = [];
+  
+  for (let year = startYear; year <= endYear; year += 5) {
+    data.push({
+      timestamp: `${year}-01-01T00:00:00Z`,
+      year,
+      civilizations: civilizations.map(civ => ({
+        id: civ.id,
+        name: civ.name,
+        population: Math.floor(Math.random() * 10000 + 1000),
+        technology: Math.floor(Math.random() * 100),
+        military: Math.floor(Math.random() * 100),
+        economy: Math.floor(Math.random() * 100),
+        culture: Math.floor(Math.random() * 100),
+        status: ['rising', 'stable', 'declining', 'collapsed'][Math.floor(Math.random() * 4)] as any,
+      })),
+    });
+  }
+
+  return {
+    success: true,
+    data,
+    meta: {
+      totalPoints: data.length,
+      startYear,
+      endYear,
+      civilizations,
+    },
+  };
+}
+
+export default useTimelineData;

@@ -1,0 +1,358 @@
+import React, { useMemo, useCallback, useRef, useEffect } from 'react';
+import * as echarts from 'echarts';
+import { useTimelineData, TimelineDataPoint, TimelineFilter } from './useTimelineData';
+import { TimelineControls } from './TimelineControls';
+
+export interface EvolutionTimelineProps {
+  initialFilter?: TimelineFilter;
+  onCivilizationClick?: (civilizationId: string) => void;
+  height?: string | number;
+  showControls?: boolean;
+  theme?: 'dark' | 'light';
+}
+
+interface ChartDataPoint {
+  year: number;
+  value: number;
+  civilizationId: string;
+  civilizationName: string;
+  status: string;
+  metrics: {
+    population: number;
+    technology: number;
+    military: number;
+    economy: number;
+    culture: number;
+  };
+}
+
+const COLORS = [
+  '#5470c6', '#91cc75', '#fac858', '#ee6666',
+  '#73c0de', '#3ba272', '#fc8452', '#9a60b4',
+  '#ea7ccc', '#48b8d0', '#f59e0b', '#10b981',
+];
+
+const STATUS_COLORS: Record<string, string> = {
+  rising: '#10b981',
+  stable: '#3b82f6',
+  declining: '#f59e0b',
+  collapsed: '#ef4444',
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  rising: '崛起中',
+  stable: '稳定',
+  declining: '衰退中',
+  collapsed: '已崩溃',
+};
+
+export const EvolutionTimeline: React.FC<EvolutionTimelineProps> = ({
+  initialFilter = {},
+  onCivilizationClick,
+  height = 500,
+  showControls = true,
+  theme = 'dark',
+}) => {
+  const chartRef = useRef<HTMLDivElement>(null);
+  const chartInstance = useRef<echarts.ECharts | null>(null);
+  
+  const { data, meta, loading, error, setFilter, filter, refetch } = useTimelineData(initialFilter);
+
+  // Transform data for ECharts
+  const chartData = useMemo(() => {
+    if (!data || data.length === 0) return { series: [], years: [], civilizations: [] };
+
+    const years = data.map(d => d.year);
+    const civilizations = meta?.civilizations || [];
+    
+    // Create series for each civilization
+    const series = civilizations.map((civ, index) => {
+      const seriesData: ChartDataPoint[] = data.map(point => {
+        const civData = point.civilizations.find(c => c.id === civ.id);
+        return {
+          year: point.year,
+          value: civData?.population || 0,
+          civilizationId: civ.id,
+          civilizationName: civ.name,
+          status: civData?.status || 'stable',
+          metrics: {
+            population: civData?.population || 0,
+            technology: civData?.technology || 0,
+            military: civData?.military || 0,
+            economy: civData?.economy || 0,
+            culture: civData?.culture || 0,
+          },
+        };
+      });
+
+      return {
+        name: civ.name,
+        type: 'line' as const,
+        smooth: true,
+        symbol: 'circle',
+        symbolSize: 8,
+        lineStyle: {
+          width: 3,
+        },
+        emphasis: {
+          focus: 'series' as const,
+          lineStyle: {
+            width: 5,
+          },
+        },
+        itemStyle: {
+          color: COLORS[index % COLORS.length],
+        },
+        areaStyle: {
+          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: `${COLORS[index % COLORS.length]}40` },
+            { offset: 1, color: `${COLORS[index % COLORS.length]}05` },
+          ]),
+        },
+        data: seriesData,
+      };
+    });
+
+    return { series, years, civilizations };
+  }, [data, meta]);
+
+  // Initialize and update chart
+  useEffect(() => {
+    if (!chartRef.current) return;
+
+    if (!chartInstance.current) {
+      chartInstance.current = echarts.init(chartRef.current, theme === 'dark' ? 'dark' : undefined);
+    }
+
+    const handleResize = () => {
+      chartInstance.current?.resize();
+    };
+
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [theme]);
+
+  // Update chart options when data changes
+  useEffect(() => {
+    if (!chartInstance.current || !chartData.series.length) return;
+
+    const isDark = theme === 'dark';
+    const textColor = isDark ? '#e5e7eb' : '#374151';
+    const bgColor = isDark ? '#1f2937' : '#ffffff';
+    const borderColor = isDark ? '#374151' : '#e5e7eb';
+
+    const option: echarts.EChartsOption = {
+      backgroundColor: 'transparent',
+      title: {
+        text: '文明演化时间线',
+        subtext: `宇宙纪元 ${meta?.startYear || 2100} - ${meta?.endYear || 2200}`,
+        left: 'center',
+        textStyle: {
+          color: textColor,
+          fontSize: 20,
+          fontWeight: 'bold',
+        },
+        subtextStyle: {
+          color: isDark ? '#9ca3af' : '#6b7280',
+          fontSize: 14,
+        },
+      },
+      tooltip: {
+        trigger: 'item',
+        backgroundColor: isDark ? '#374151' : '#ffffff',
+        borderColor: borderColor,
+        borderWidth: 1,
+        textStyle: {
+          color: textColor,
+        },
+        formatter: (params: any) => {
+          const data = params.data as ChartDataPoint;
+          const statusColor = STATUS_COLORS[data.status] || '#6b7280';
+          const statusLabel = STATUS_LABELS[data.status] || data.status;
+          
+          return `
+            <div style="padding: 8px; min-width: 200px;">
+              <div style="font-weight: bold; font-size: 14px; margin-bottom: 8px;">
+                ${data.civilizationName}
+              </div>
+              <div style="font-size: 12px; color: ${isDark ? '#9ca3af' : '#6b7280'}; margin-bottom: 8px;">
+                宇宙纪元 ${data.year}
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${statusColor};"></span>
+                <span style="color: ${statusColor}; font-weight: 500;">${statusLabel}</span>
+              </div>
+              <div style="border-top: 1px solid ${borderColor}; padding-top: 8px;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                  <span>人口:</span>
+                  <span style="font-weight: 500;">${data.metrics.population.toLocaleString()}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                  <span>科技:</span>
+                  <span style="font-weight: 500;">${data.metrics.technology}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                  <span>军事:</span>
+                  <span style="font-weight: 500;">${data.metrics.military}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                  <span>经济:</span>
+                  <span style="font-weight: 500;">${data.metrics.economy}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                  <span>文化:</span>
+                  <span style="font-weight: 500;">${data.metrics.culture}</span>
+                </div>
+              </div>
+              <div style="margin-top: 8px; font-size: 11px; color: ${isDark ? '#6b7280' : '#9ca3af'};">
+                点击查看详情
+              </div>
+            </div>
+          `;
+        },
+      },
+      legend: {
+        type: 'scroll',
+        bottom: 10,
+        textStyle: {
+          color: textColor,
+        },
+        pageTextStyle: {
+          color: textColor,
+        },
+        pageIconColor: textColor,
+        pageIconInactiveColor: isDark ? '#4b5563' : '#d1d5db',
+      },
+      grid: {
+        left: '3%',
+        right: '4%',
+        bottom: '15%',
+        top: '15%',
+        containLabel: true,
+      },
+      toolbox: {
+        feature: {
+          dataZoom: {
+            yAxisIndex: 'none',
+            title: {
+              zoom: '区域缩放',
+              back: '还原',
+            },
+          },
+          restore: {
+            title: '还原',
+          },
+          saveAsImage: {
+            title: '保存图片',
+          },
+        },
+        iconStyle: {
+          borderColor: textColor,
+        },
+      },
+      xAxis: {
+        type: 'category',
+        boundaryGap: false,
+        data: chartData.years,
+        axisLine: {
+          lineStyle: {
+            color: borderColor,
+          },
+        },
+        axisLabel: {
+          color: textColor,
+          formatter: (value: number) => `${value}`,
+        },
+        name: '宇宙纪元',
+        nameTextStyle: {
+          color: textColor,
+        },
+      },
+      yAxis: {
+        type: 'value',
+        name: '人口数量',
+        nameTextStyle: {
+          color: textColor,
+        },
+        axisLine: {
+          lineStyle: {
+            color: borderColor,
+          },
+        },
+        axisLabel: {
+          color: textColor,
+          formatter: (value: number) => {
+            if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`;
+            if (value >= 1000) return `${(value / 1000).toFixed(1)}K`;
+            return `${value}`;
+          },
+        },
+        splitLine: {
+          lineStyle: {
+            color: borderColor,
+            type: 'dashed',
+          },
+        },
+      },
+      dataZoom: [
+        {
+          type: 'inside',
+          start: 0,
+          end: 100,
+        },
+        {
+          start: 0,
+          end: 100,
+          height: 20,
+          bottom: 60,
+          borderColor: borderColor,
+          textStyle: {
+            color: textColor,
+          },
+          handleStyle: {
+            color: isDark ? '#4b5563' : '#d1d5db',
+          },
+          dataBackground: {
+            lineStyle: {
+              color: borderColor,
+            },
+            areaStyle: {
+              color: isDark ? '#374151' : '#f3f4f6',
+            },
+          },
+        },
+      ],
+      series: chartData.series,
+    };
+
+    chartInstance.current.setOption(option, true);
+
+    // Click event handler
+    chartInstance.current.off('click');
+    chartInstance.current.on('click', (params: any) => {
+      if (params.data && onCivilizationClick) {
+        const data = params.data as ChartDataPoint;
+        onCivilizationClick(data.civilizationId);
+      }
+    });
+
+  }, [chartData, meta, theme, onCivilizationClick]);
+
+  // Handle filter changes from controls
+  const handleFilterChange = useCallback((newFilter: Partial<TimelineFilter>) => {
+    setFilter(newFilter);
+  }, [setFilter]);
+
+  // Cleanup
+  useEffect(() => {
+    return () => {
+      chartInstance.current?.dispose();
+    };
+  }, []);
+
+  if (error) {
+    return (
+      <div className="flex items-center justify
