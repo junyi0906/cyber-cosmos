@@ -1,63 +1,498 @@
 """
-决策日志记录器 - 记录 Agent 思考链和决策过程
-Feature: feat-013
+Decision Logger - Agent 思考链和决策过程记录系统
+
+功能:
+- 记录 Agent 决策过程（选项、权重、最终选择）
+- 记录思考链
+- 记录决策后果
+- 查询决策历史
+- 持久化到 MongoDB
 """
+
+import json
+import time
 import uuid
 from datetime import datetime
 from typing import Dict, List, Optional, Any
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
+from enum import Enum
 import logging
 
 logger = logging.getLogger(__name__)
 
 
+class DecisionType(Enum):
+    """决策类型枚举"""
+    DIPLOMATIC = "diplomatic"      # 外交决策
+    MILITARY = "military"          # 军事决策
+    ECONOMIC = "economic"          # 经济决策
+    EXPLORATION = "exploration"    # 探索决策
+    SOCIAL = "social"              # 社交决策
+    TECHNOLOGY = "technology"      # 科技决策
+    SURVIVAL = "survival"          # 生存决策
+    ALLIANCE = "alliance"          # 联盟决策
+    TRADE = "trade"                # 贸易决策
+    UNKNOWN = "unknown"
+
+
+class DecisionStatus(Enum):
+    """决策状态枚举"""
+    PENDING = "pending"            # 待执行
+    EXECUTING = "executing"        # 执行中
+    COMPLETED = "completed"        # 已完成
+    FAILED = "failed"              # 失败
+    CANCELLED = "cancelled"        # 已取消
+
+
 @dataclass
 class DecisionOption:
     """决策选项"""
-    name: str
-    weight: float
+    id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
+    name: str = ""
     description: str = ""
+    weight: float = 0.0
     factors: Dict[str, float] = field(default_factory=dict)
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "name": self.name,
-            "weight": self.weight,
-            "description": self.description,
-            "factors": self.factors
-        }
-
+    pros: List[str] = field(default_factory=list)
+    cons: List[str] = field(default_factory=list)
+    
+    def to_dict(self) -> Dict:
+        return asdict(self)
+    
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'DecisionOption':
-        return cls(
-            name=data.get("name", ""),
-            weight=data.get("weight", 0.0),
-            description=data.get("description", ""),
-            factors=data.get("factors", {})
-        )
+    def from_dict(cls, data: Dict) -> 'DecisionOption':
+        return cls(**data)
 
 
 @dataclass
 class ThoughtNode:
     """思考链节点"""
-    id: str
-    content: str
-    timestamp: datetime
-    node_type: str  # "observation", "analysis", "evaluation", "conclusion"
-    parent_id: Optional[str] = None
-    children: List[str] = field(default_factory=list)
+    id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
+    step: int = 0
+    content: str = ""
+    reasoning_type: str = "analysis"  # analysis, evaluation, inference, conclusion
+    timestamp: float = field(default_factory=time.time)
     metadata: Dict[str, Any] = field(default_factory=dict)
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "id": self.id,
-            "content": self.content,
-            "timestamp": self.timestamp.isoformat(),
-            "node_type": self.node_type,
-            "parent_id": self.parent_id,
-            "children": self.children,
-            "metadata": self.metadata
-        }
-
+    
+    def to_dict(self) -> Dict:
+        return asdict(self)
+    
     @classmethod
-    def from_dict(cls
+    def from_dict(cls, data: Dict) -> 'ThoughtNode':
+        return cls(**data)
+
+
+@dataclass
+class DecisionEntry:
+    """决策记录条目"""
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    agent_id: str = ""
+    tick: int = 0
+    decision_type: str = DecisionType.UNKNOWN.value
+    context: str = ""
+    trigger_event: str = ""
+    
+    # 决策选项
+    options: List[Dict] = field(default_factory=list)
+    
+    # 权重计算
+    weight_factors: Dict[str, float] = field(default_factory=dict)
+    
+    # 最终选择
+    selected_option_id: str = ""
+    selected_option_name: str = ""
+    selection_reason: str = ""
+    
+    # 状态
+    status: str = DecisionStatus.PENDING.value
+    
+    # 时间戳
+    timestamp: float = field(default_factory=time.time)
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    
+    # 思考链 ID 列表
+    thought_chain_ids: List[str] = field(default_factory=list)
+    
+    # 后果记录 ID 列表
+    consequence_ids: List[str] = field(default_factory=list)
+    
+    # 元数据
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    
+    def to_dict(self) -> Dict:
+        return asdict(self)
+    
+    @classmethod
+    def from_dict(cls, data: Dict) -> 'DecisionEntry':
+        return cls(**data)
+
+
+@dataclass
+class ThoughtChain:
+    """思考链记录"""
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    decision_id: str = ""
+    agent_id: str = ""
+    tick: int = 0
+    
+    # 思考节点
+    nodes: List[Dict] = field(default_factory=list)
+    
+    # 输入信息
+    input_data: Dict[str, Any] = field(default_factory=dict)
+    
+    # 推理过程
+    reasoning_process: str = ""
+    
+    # 结论
+    conclusion: str = ""
+    
+    # 时间戳
+    timestamp: float = field(default_factory=time.time)
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    
+    # 元数据
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    
+    def to_dict(self) -> Dict:
+        return asdict(self)
+    
+    @classmethod
+    def from_dict(cls, data: Dict) -> 'ThoughtChain':
+        return cls(**data)
+
+
+@dataclass
+class ConsequenceRecord:
+    """决策后果记录"""
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    decision_id: str = ""
+    agent_id: str = ""
+    tick: int = 0
+    
+    # 后果类型
+    consequence_type: str = ""  # immediate, short_term, long_term
+    
+    # 影响描述
+    description: str = ""
+    
+    # 影响范围
+    affected_agents: List[str] = field(default_factory=list)
+    affected_regions: List[str] = field(default_factory=list)
+    
+    # 数值影响
+    impact_metrics: Dict[str, float] = field(default_factory=dict)
+    
+    # 是否预期
+    expected: bool = True
+    
+    # 时间戳
+    timestamp: float = field(default_factory=time.time)
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    
+    # 元数据
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    
+    def to_dict(self) -> Dict:
+        return asdict(self)
+    
+    @classmethod
+    def from_dict(cls, data: Dict) -> 'ConsequenceRecord':
+        return cls(**data)
+
+
+class DecisionLogger:
+    """
+    决策日志记录器
+    
+    负责:
+    - 记录 Agent 决策过程
+    - 记录思考链
+    - 记录决策后果
+    - 查询决策历史
+    - 持久化到 MongoDB
+    """
+    
+    def __init__(self, mongo_client=None, db_name: str = "cyber_cosmos"):
+        """
+        初始化决策日志记录器
+        
+        Args:
+            mongo_client: MongoDB 客户端（可选）
+            db_name: 数据库名称
+        """
+        self.mongo_client = mongo_client
+        self.db_name = db_name
+        
+        # 内存存储（当 MongoDB 不可用时使用）
+        self._decisions: Dict[str, DecisionEntry] = {}
+        self._thought_chains: Dict[str, ThoughtChain] = {}
+        self._consequences: Dict[str, ConsequenceRecord] = {}
+        
+        # 索引
+        self._agent_decision_index: Dict[str, List[str]] = {}
+        self._tick_decision_index: Dict[int, List[str]] = {}
+        self._type_decision_index: Dict[str, List[str]] = {}
+        
+        # MongoDB 集合
+        self._mongo_db = None
+        self._decisions_collection = None
+        self._thought_chains_collection = None
+        self._consequences_collection = None
+        
+        if mongo_client:
+            self._init_mongo_collections()
+    
+    def _init_mongo_collections(self):
+        """初始化 MongoDB 集合"""
+        try:
+            self._mongo_db = self.mongo_client[self.db_name]
+            self._decisions_collection = self._mongo_db["decisions"]
+            self._thought_chains_collection = self._mongo_db["thought_chains"]
+            self._consequences_collection = self._mongo_db["consequences"]
+            
+            # 创建索引
+            self._decisions_collection.create_index([("agent_id", 1)])
+            self._decisions_collection.create_index([("tick", 1)])
+            self._decisions_collection.create_index([("decision_type", 1)])
+            self._decisions_collection.create_index([("timestamp", -1)])
+            
+            logger.info("MongoDB collections initialized for DecisionLogger")
+        except Exception as e:
+            logger.warning(f"Failed to initialize MongoDB collections: {e}")
+    
+    def log_decision(
+        self,
+        agent_id: str,
+        tick: int,
+        decision_type: str,
+        context: str,
+        options: List[Dict],
+        selected_option_id: str,
+        selected_option_name: str,
+        selection_reason: str = "",
+        weight_factors: Optional[Dict[str, float]] = None,
+        trigger_event: str = "",
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> DecisionEntry:
+        """
+        记录决策
+        
+        Args:
+            agent_id: Agent ID
+            tick: 宇宙时间刻
+            decision_type: 决策类型
+            context: 决策上下文
+            options: 决策选项列表
+            selected_option_id: 选择的选项 ID
+            selected_option_name: 选择的选项名称
+            selection_reason: 选择原因
+            weight_factors: 权重因子
+            trigger_event: 触发事件
+            metadata: 元数据
+            
+        Returns:
+            DecisionEntry: 决策记录
+        """
+        # 创建决策条目
+        entry = DecisionEntry(
+            agent_id=agent_id,
+            tick=tick,
+            decision_type=decision_type,
+            context=context,
+            trigger_event=trigger_event,
+            options=options,
+            weight_factors=weight_factors or {},
+            selected_option_id=selected_option_id,
+            selected_option_name=selected_option_name,
+            selection_reason=selection_reason,
+            status=DecisionStatus.PENDING.value,
+            metadata=metadata or {}
+        )
+        
+        # 存储到内存
+        self._decisions[entry.id] = entry
+        
+        # 更新索引
+        if agent_id not in self._agent_decision_index:
+            self._agent_decision_index[agent_id] = []
+        self._agent_decision_index[agent_id].append(entry.id)
+        
+        if tick not in self._tick_decision_index:
+            self._tick_decision_index[tick] = []
+        self._tick_decision_index[tick].append(entry.id)
+        
+        if decision_type not in self._type_decision_index:
+            self._type_decision_index[decision_type] = []
+        self._type_decision_index[decision_type].append(entry.id)
+        
+        # 持久化到 MongoDB
+        self.save_to_mongo(entry.to_dict(), "decisions")
+        
+        logger.debug(f"Logged decision {entry.id} for agent {agent_id}")
+        
+        return entry
+    
+    def log_thought_chain(
+        self,
+        decision_id: str,
+        agent_id: str,
+        tick: int,
+        nodes: List[Dict],
+        input_data: Optional[Dict[str, Any]] = None,
+        reasoning_process: str = "",
+        conclusion: str = "",
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> ThoughtChain:
+        """
+        记录思考链
+        
+        Args:
+            decision_id: 关联的决策 ID
+            agent_id: Agent ID
+            tick: 宇宙时间刻
+            nodes: 思考节点列表
+            input_data: 输入数据
+            reasoning_process: 推理过程描述
+            conclusion: 结论
+            metadata: 元数据
+            
+        Returns:
+            ThoughtChain: 思考链记录
+        """
+        # 创建思考链
+        chain = ThoughtChain(
+            decision_id=decision_id,
+            agent_id=agent_id,
+            tick=tick,
+            nodes=nodes,
+            input_data=input_data or {},
+            reasoning_process=reasoning_process,
+            conclusion=conclusion,
+            metadata=metadata or {}
+        )
+        
+        # 存储到内存
+        self._thought_chains[chain.id] = chain
+        
+        # 关联到决策
+        if decision_id in self._decisions:
+            self._decisions[decision_id].thought_chain_ids.append(chain.id)
+        
+        # 持久化到 MongoDB
+        self.save_to_mongo(chain.to_dict(), "thought_chains")
+        
+        logger.debug(f"Logged thought chain {chain.id} for decision {decision_id}")
+        
+        return chain
+    
+    def log_consequence(
+        self,
+        decision_id: str,
+        agent_id: str,
+        tick: int,
+        consequence_type: str,
+        description: str,
+        affected_agents: Optional[List[str]] = None,
+        affected_regions: Optional[List[str]] = None,
+        impact_metrics: Optional[Dict[str, float]] = None,
+        expected: bool = True,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> ConsequenceRecord:
+        """
+        记录决策后果
+        
+        Args:
+            decision_id: 关联的决策 ID
+            agent_id: Agent ID
+            tick: 宇宙时间刻
+            consequence_type: 后果类型
+            description: 后果描述
+            affected_agents: 受影响的 Agent 列表
+            affected_regions: 受影响的区域列表
+            impact_metrics: 影响指标
+            expected: 是否预期后果
+            metadata: 元数据
+            
+        Returns:
+            ConsequenceRecord: 后果记录
+        """
+        # 创建后果记录
+        record = ConsequenceRecord(
+            decision_id=decision_id,
+            agent_id=agent_id,
+            tick=tick,
+            consequence_type=consequence_type,
+            description=description,
+            affected_agents=affected_agents or [],
+            affected_regions=affected_regions or [],
+            impact_metrics=impact_metrics or {},
+            expected=expected,
+            metadata=metadata or {}
+        )
+        
+        # 存储到内存
+        self._consequences[record.id] = record
+        
+        # 关联到决策
+        if decision_id in self._decisions:
+            self._decisions[decision_id].consequence_ids.append(record.id)
+        
+        # 持久化到 MongoDB
+        self.save_to_mongo(record.to_dict(), "consequences")
+        
+        logger.debug(f"Logged consequence {record.id} for decision {decision_id}")
+        
+        return record
+    
+    def get_decision_history(
+        self,
+        agent_id: Optional[str] = None,
+        tick_range: Optional[tuple] = None,
+        decision_type: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0,
+        sort_by: str = "timestamp",
+        sort_order: int = -1
+    ) -> List[DecisionEntry]:
+        """
+        查询决策历史
+        
+        Args:
+            agent_id: Agent ID（可选）
+            tick_range: 时间刻范围 (start, end)（可选）
+            decision_type: 决策类型（可选）
+            status: 决策状态（可选）
+            limit: 返回数量限制
+            offset: 偏移量
+            sort_by: 排序字段
+            sort_order: 排序方向（1 升序，-1 降序）
+            
+        Returns:
+            List[DecisionEntry]: 决策历史列表
+        """
+        results = []
+        
+        # 从 MongoDB 查询
+        if self._decisions_collection:
+            try:
+                query = {}
+                if agent_id:
+                    query["agent_id"] = agent_id
+                if decision_type:
+                    query["decision_type"] = decision_type
+                if status:
+                    query["status"] = status
+                if tick_range:
+                    query["tick"] = {"$gte": tick_range[0], "$lte": tick_range[1]}
+                
+                cursor = self._decisions_collection.find(query)
+                cursor = cursor.sort(sort_by, sort_order)
+                cursor = cursor.skip(offset).limit(limit)
+                
+                for doc in cursor:
+                    doc.pop("_id", None)
+                    results.append(DecisionEntry.from_dict(doc))
+                
+                return results
+            except Exception
