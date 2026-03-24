@@ -1,0 +1,38 @@
+export enum TreatyType {
+  ALLIANCE = 'ALLIANCE',
+  NON_AGGRESSION = 'NON_AGGRESSION',
+  PEACE = 'PEACE',
+  TRADE_AGREEMENT = 'TRADE_AGREEMENT',
+}
+
+export enum TreatyStatus {
+  PENDING = 'PENDING',
+  ACTIVE = 'ACTIVE',
+  SUSPENDED = 'SUSPENDED',
+  EXPIRED = 'EXPIRED',
+  CANCELLED = 'CANCELLED',
+}
+
+export interface TreatyParty {
+  civilizationId: string;
+  agreedAt?: Date;
+  terms?: Record<string, unknown>;
+}
+
+export interface Treaty {
+  id: string;
+  type: TreatyType;
+  status: TreatyStatus;
+  parties: TreatyParty[];
+  createdAt: Date;
+  updatedAt: Date;
+  expiresAt?: Date;
+  terms: Record<string, unknown>;
+}
+
+export interface TradeTreatyTerms {
+  taxRate: number;
+  exclusiveResources: string[];
+  duration: number;
+  tradeRouteEnabled: boolean;
+}

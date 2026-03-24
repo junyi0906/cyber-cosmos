@@ -1,0 +1,85 @@
+import { IsNumber, IsArray, IsString, IsOptional, Min, Max, IsBoolean } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+export class CreateTradeTreatyDto {
+  @ApiProperty({ description: '发起方文明ID' })
+  @IsString()
+  initiatorId: string;
+
+  @ApiProperty({ description: '接收方文明ID' })
+  @IsString()
+  recipientId: string;
+
+  @ApiPropertyOptional({ description: '贸易税率（百分比）', default: 10, minimum: 0, maximum: 100 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  taxRate?: number;
+
+  @ApiPropertyOptional({ description: '独家贸易资源列表', default: [] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  exclusiveResources?: string[];
+
+  @ApiPropertyOptional({ description: '条约持续时间（模拟年）', default: 100 })
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  duration?: number;
+}
+
+export class TradeTreatyDto {
+  @ApiProperty({ description: '条约ID' })
+  id: string;
+
+  @ApiProperty({ description: '发起方文明ID' })
+  initiatorId: string;
+
+  @ApiProperty({ description: '接收方文明ID' })
+  recipientId: string;
+
+  @ApiProperty({ description: '贸易税率（百分比）' })
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  taxRate: number;
+
+  @ApiProperty({ description: '独家贸易资源列表' })
+  @IsArray()
+  @IsString({ each: true })
+  exclusiveResources: string[];
+
+  @ApiProperty({ description: '条约持续时间（模拟年）' })
+  @IsNumber()
+  @Min(1)
+  duration: number;
+
+  @ApiProperty({ description: '贸易路线是否已解锁' })
+  @IsBoolean()
+  tradeRouteEnabled: boolean;
+
+  @ApiProperty({ description: '创建时间' })
+  createdAt: Date;
+
+  @ApiPropertyOptional({ description: '过期时间' })
+  expiresAt?: Date;
+}
+
+export class TradeBonusDto {
+  @ApiProperty({ description: '文明ID' })
+  civilizationId: string;
+
+  @ApiProperty({ description: '目标文明ID' })
+  targetCivilizationId: string;
+
+  @ApiProperty({ description: '基础税率' })
+  baseTaxRate: number;
+
+  @ApiProperty({ description: '调整后税率' })
+  adjustedTaxRate: number;
+
+  @ApiProperty({ description: '税率调整原因' })
+  adjustmentReason: string;
+}

@@ -1,341 +1,58 @@
-import { Injectable, Logger, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, Between } from 'typeorm';
-import { TradeRoute, TradeRouteStatus, ResourceType, TradeResource } from '../entities/trade-route.entity';
-import { CreateRouteDto, ProcessTradeDto } from '../dto/create-route.dto';
-import { Civilization, DiplomaticRelation, TradeEvent } from '../interfaces/civilization.interface';
+import { Injectable, Logger } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
-interface TradeResult {
-  routeId: string;
-  success: boolean;
-  resourcesTransferred: { type: ResourceType; amount: number; from: string; to: string }[];
-  stabilityChange: number;
-  newStability: number;
-  message: string;
+export interface TradePermission {
+  civilization1Id: string;
+  civilization2Id: string;
+  treatyId: string;
+  grantedAt: Date;
+  exclusiveResources: string[];
+}
+
+export interface TradeRoute {
+  id: string;
+  fromCivilizationId: string;
+  toCivilizationId: string;
+  resourceType: string;
+  amount: number;
+  taxRate: number;
+  treatyId: string;
+  status: 'active' | 'suspended' | 'closed';
+  createdAt: Date;
 }
 
 @Injectable()
 export class TradeRouteService {
   private readonly logger = new Logger(TradeRouteService.name);
-  private readonly MIN_STABILITY_FOR_TRADE = 10;
-  private readonly STABILITY_DECAY_PER_TRADE = 2;
-  private readonly HOSTILE_STATUSES = ['hostile', 'at_war'];
+  private permissions: Map<string, TradePermission> = new Map();
+  private tradeRoutes: Map<string, TradeRoute> = new Map();
 
-  constructor(
-    @InjectRepository(TradeRoute)
-    private tradeRouteRepository: Repository<TradeRoute>,
-    private dataSource: DataSource,
-  ) {}
+  constructor(private eventEmitter: EventEmitter2) {}
 
-  /**
-   * 创建贸易路线
-   * 验证双方文明存在、非敌对关系
-   */
-  async createRoute(
-    dto: CreateRouteDto,
-    getCivilization: (id: string) => Promise<Civilization | null>,
-    getDiplomaticRelation: (civId1: string, civId2: string) => Promise<DiplomaticRelation | null>,
-  ): Promise<TradeRoute> {
-    const { fromCivId, toCivId, resources, stabilityThreshold } = dto;
+  async grantTradePermission(
+    civ1Id: string,
+    civ2Id: string,
+    treatyId: string,
+    exclusiveResources: string[] = [],
+  ): Promise<TradePermission> {
+    const permissionId = this.generatePermissionId(civ1Id, civ2Id);
 
-    // 验证不能与自己建立贸易路线
-    if (fromCivId === toCivId) {
-      throw new BadRequestException('Cannot create trade route with self');
-    }
-
-    // 验证双方文明存在
-    const [fromCiv, toCiv] = await Promise.all([
-      getCivilization(fromCivId),
-      getCivilization(toCivId),
-    ]);
-
-    if (!fromCiv) {
-      throw new NotFoundException(`Civilization ${fromCivId} not found`);
-    }
-    if (!toCiv) {
-      throw new NotFoundException(`Civilization ${toCivId} not found`);
-    }
-
-    // 验证文明状态
-    if (fromCiv.status !== 'active' || toCiv.status !== 'active') {
-      throw new BadRequestException('Both civilizations must be active to establish trade route');
-    }
-
-    // 验证非敌对关系
-    const relation = await getDiplomaticRelation(fromCivId, toCivId);
-    if (relation && this.HOSTILE_STATUSES.includes(relation.status)) {
-      throw new ConflictException(`Cannot establish trade route with ${relation.status} civilization`);
-    }
-
-    // 检查是否已存在相同路线
-    const existingRoute = await this.tradeRouteRepository.findOne({
-      where: {
-        fromCivId,
-        toCivId,
-        status: TradeRouteStatus.ACTIVE,
-      },
-    });
-
-    if (existingRoute) {
-      throw new ConflictException('Active trade route already exists between these civilizations');
-    }
-
-    // 计算初始稳定性
-    const distance = this.calculateDistance(fromCiv.coordinates, toCiv.coordinates);
-    const diplomaticModifier = relation ? this.getDiplomaticModifier(relation) : 0;
-    const initialStability = this.calculateInitialStability(distance, diplomaticModifier);
-
-    // 创建贸易路线
-    const tradeRoute = this.tradeRouteRepository.create({
-      fromCivId,
-      toCivId,
-      resources: resources as TradeResource[],
-      stability: initialStability,
-      stabilityThreshold: stabilityThreshold ?? 20,
-      status: TradeRouteStatus.ACTIVE,
-      metrics: {
-        distance,
-        diplomaticModifier,
-        eventModifier: 0,
-        lastCalculatedAt: new Date(),
-      },
-    });
-
-    return await this.tradeRouteRepository.save(tradeRoute);
-  }
-
-  /**
-   * 计算稳定性
-   * 基于距离、外交关系、随机事件计算
-   */
-  async calculateStability(
-    routeId: string,
-    getCivilization: (id: string) => Promise<Civilization | null>,
-    getDiplomaticRelation: (civId1: string, civId2: string) => Promise<DiplomaticRelation | null>,
-    getActiveEvents: () => Promise<TradeEvent[]>,
-  ): Promise<number> {
-    const route = await this.tradeRouteRepository.findOne({ where: { id: routeId } });
-    if (!route) {
-      throw new NotFoundException(`Trade route ${routeId} not found`);
-    }
-
-    const [fromCiv, toCiv] = await Promise.all([
-      getCivilization(route.fromCivId),
-      getCivilization(route.toCivId),
-    ]);
-
-    if (!fromCiv || !toCiv) {
-      return 0; // 文明已消亡，稳定性归零
-    }
-
-    // 基础稳定性
-    let stability = 100;
-
-    // 距离影响 (距离越远，稳定性越低)
-    const distance = this.calculateDistance(fromCiv.coordinates, toCiv.coordinates);
-    const distancePenalty = Math.min(distance * 0.5, 30); // 最大惩罚30%
-    stability -= distancePenalty;
-
-    // 外交关系影响
-    const relation = await getDiplomaticRelation(route.fromCivId, route.toCivId);
-    const diplomaticModifier = relation ? this.getDiplomaticModifier(relation) : 0;
-    stability += diplomaticModifier;
-
-    // 随机事件影响
-    const activeEvents = await getActiveEvents();
-    const eventModifier = this.calculateEventModifier(route.id, activeEvents);
-    stability += eventModifier;
-
-    // 确保稳定性在有效范围内
-    stability = Math.max(0, Math.min(100, stability));
-
-    // 更新路线的 metrics
-    route.metrics = {
-      distance,
-      diplomaticModifier,
-      eventModifier,
-      lastCalculatedAt: new Date(),
+    const permission: TradePermission = {
+      civilization1Id: civ1Id,
+      civilization2Id: civ2Id,
+      treatyId,
+      grantedAt: new Date(),
+      exclusiveResources,
     };
-    route.stability = stability;
 
-    await this.tradeRouteRepository.save(route);
+    this.permissions.set(permissionId, permission);
+    this.logger.log(`贸易权限已授予: ${civ1Id} <-> ${civ2Id}`);
 
-    return stability;
+    return permission;
   }
 
-  /**
-   * 更新路线状态
-   * 稳定性低于阈值则暂停
-   */
-  async updateRouteStatus(routeId: string, newStatus?: TradeRouteStatus): Promise<TradeRoute> {
-    const route = await this.tradeRouteRepository.findOne({ where: { id: routeId } });
-    if (!route) {
-      throw new NotFoundException(`Trade route ${routeId} not found`);
-    }
-
-    if (newStatus) {
-      route.status = newStatus;
-    } else {
-      // 自动根据稳定性更新状态
-      if (route.stability < route.stabilityThreshold) {
-        if (route.stability < this.MIN_STABILITY_FOR_TRADE) {
-          route.status = TradeRouteStatus.SUSPENDED;
-        } else {
-          route.status = TradeRouteStatus.PAUSED;
-        }
-      } else if (route.status === TradeRouteStatus.PAUSED || route.status === TradeRouteStatus.SUSPENDED) {
-        route.status = TradeRouteStatus.ACTIVE;
-      }
-    }
-
-    return await this.tradeRouteRepository.save(route);
-  }
-
-  /**
-   * 获取文明所有活跃路线
-   */
-  async getActiveRoutes(civilizationId: string): Promise<TradeRoute[]> {
-    return await this.tradeRouteRepository.find({
-      where: [
-        { fromCivId: civilizationId, status: TradeRouteStatus.ACTIVE },
-        { toCivId: civilizationId, status: TradeRouteStatus.ACTIVE },
-      ],
-      order: { createdAt: 'DESC' },
-    });
-  }
-
-  /**
-   * 获取文明所有贸易路线（包括非活跃）
-   */
-  async getAllRoutes(civilizationId: string): Promise<TradeRoute[]> {
-    return await this.tradeRouteRepository.find({
-      where: [
-        { fromCivId: civilizationId },
-        { toCivId: civilizationId },
-      ],
-      order: { createdAt: 'DESC' },
-    });
-  }
-
-  /**
-   * 执行贸易
-   * 按路线传输资源，扣除稳定性
-   */
-  async processTrade(
-    dto: ProcessTradeDto,
-    updateResources: (civId: string, resourceType: ResourceType, amount: number) => Promise<boolean>,
-  ): Promise<TradeResult> {
-    const { routeId, multiplier = 1 } = dto;
-
-    const route = await this.tradeRouteRepository.findOne({ where: { id: routeId } });
-    if (!route) {
-      throw new NotFoundException(`Trade route ${routeId} not found`);
-    }
-
-    // 检查路线状态
-    if (route.status !== TradeRouteStatus.ACTIVE) {
-      return {
-        routeId,
-        success: false,
-        resourcesTransferred: [],
-        stabilityChange: 0,
-        newStability: route.stability,
-        message: `Trade route is ${route.status}, cannot process trade`,
-      };
-    }
-
-    // 检查稳定性是否足够
-    if (route.stability < this.MIN_STABILITY_FOR_TRADE) {
-      await this.updateRouteStatus(routeId);
-      return {
-        routeId,
-        success: false,
-        resourcesTransferred: [],
-        stabilityChange: 0,
-        newStability: route.stability,
-        message: 'Trade route stability too low for trade',
-      };
-    }
-
-    const resourcesTransferred: TradeResult['resourcesTransferred'] = [];
-    const queryRunner = this.dataSource.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
-
-    try {
-      // 处理每种资源的转移
-      for (const resource of route.resources) {
-        const amount = Math.floor(resource.amount * multiplier);
-        
-        if (resource.direction === 'export') {
-          // fromCiv -> toCiv
-          const success = await updateResources(route.fromCivId, resource.type, -amount);
-          if (success) {
-            await updateResources(route.toCivId, resource.type, amount);
-            resourcesTransferred.push({
-              type: resource.type,
-              amount,
-              from: route.fromCivId,
-              to: route.toCivId,
-            });
-          }
-        } else {
-          // toCiv -> fromCiv (import)
-          const success = await updateResources(route.toCivId, resource.type, -amount);
-          if (success) {
-            await updateResources(route.fromCivId, resource.type, amount);
-            resourcesTransferred.push({
-              type: resource.type,
-              amount,
-              from: route.toCivId,
-              to: route.fromCivId,
-            });
-          }
-        }
-      }
-
-      // 扣除稳定性
-      const stabilityDecay = this.STABILITY_DECAY_PER_TRADE * multiplier;
-      route.stability = Math.max(0, route.stability - stabilityDecay);
-      route.lastTradeAt = new Date();
-      route.totalTrades += 1;
-
-      // 检查是否需要暂停
-      if (route.stability < route.stabilityThreshold) {
-        route.status = TradeRouteStatus.PAUSED;
-      }
-
-      await queryRunner.manager.save(route);
-      await queryRunner.commitTransaction();
-
-      return {
-        routeId,
-        success: true,
-        resourcesTransferred,
-        stabilityChange: -stabilityDecay,
-        newStability: route.stability,
-        message: `Trade completed successfully. ${resourcesTransferred.length} resource types transferred.`,
-      };
-    } catch (error) {
-      await queryRunner.rollbackTransaction();
-      this.logger.error(`Trade failed for route ${routeId}: ${error.message}`);
-      return {
-        routeId,
-        success: false,
-        resourcesTransferred: [],
-        stabilityChange: 0,
-        newStability: route.stability,
-        message: `Trade failed: ${error.message}`,
-      };
-    } finally {
-      await queryRunner.release();
-    }
-  }
-
-  /**
-   * 批量处理所有活跃贸易路线
-   */
-  async processAllActiveTrades(
-    updateResources: (civId: string, resourceType: ResourceType, amount: number) => Promise<boolean>,
-  ): Promise<TradeResult[]> {
-    const activeRoutes = await this.trade
+  async revokeTradePermission(treatyId: string): Promise<void> {
+    for (const [key, permission] of this.permissions.entries()) {
+      if (permission.treatyId === treatyId) {
+        this.permissions.delete(key);
+        this.logger.log(`

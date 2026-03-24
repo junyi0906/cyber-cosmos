@@ -1,0 +1,225 @@
+import { Injectable, Inject, forwardRef, NotFoundException, BadRequestException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { Treaty, TreatyType, TreatyStatus, TreatyParty, TradeTreatyTerms } from '../interfaces/treaty.interface';
+import { CreateTradeTreatyDto, TradeTreatyDto, TradeBonusDto } from '../dto/trade-treaty.dto';
+import { TradeRouteService } from '../../trade/services/trade-route.service';
+
+@Injectable()
+export class TreatyService {
+  private treaties: Map<string, Treaty> = new Map();
+  private tradeTreaties: Map<string, TradeTreatyDto> = new Map();
+
+  constructor(
+    private eventEmitter: EventEmitter2,
+    @Inject(forwardRef(() => TradeRouteService))
+    private tradeRouteService: TradeRouteService,
+  ) {}
+
+  async createTreaty(
+    type: TreatyType,
+    parties: TreatyParty[],
+    terms: Record<string, unknown>,
+    duration?: number,
+  ): Promise<Treaty> {
+    const treaty: Treaty = {
+      id: this.generateTreatyId(),
+      type,
+      status: TreatyStatus.PENDING,
+      parties,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      terms,
+    };
+
+    if (duration) {
+      treaty.expiresAt = new Date(Date.now() + duration * 365 * 24 * 60 * 60 * 1000);
+    }
+
+    this.treaties.set(treaty.id, treaty);
+    return treaty;
+  }
+
+  async createTradeTreaty(dto: CreateTradeTreatyDto): Promise<TradeTreatyDto> {
+    const defaultTaxRate = 10;
+    const defaultDuration = 100;
+
+    const tradeTreaty: TradeTreatyDto = {
+      id: this.generateTreatyId(),
+      initiatorId: dto.initiatorId,
+      recipientId: dto.recipientId,
+      taxRate: dto.taxRate ?? defaultTaxRate,
+      exclusiveResources: dto.exclusiveResources ?? [],
+      duration: dto.duration ?? defaultDuration,
+      tradeRouteEnabled: false,
+      createdAt: new Date(),
+    };
+
+    tradeTreaty.expiresAt = new Date(
+      Date.now() + tradeTreaty.duration * 365 * 24 * 60 * 60 * 1000
+    );
+
+    const treatyTerms: TradeTreatyTerms = {
+      taxRate: tradeTreaty.taxRate,
+      exclusiveResources: tradeTreaty.exclusiveResources,
+      duration: tradeTreaty.duration,
+      tradeRouteEnabled: false,
+    };
+
+    const treaty = await this.createTreaty(
+      TreatyType.TRADE_AGREEMENT,
+      [
+        { civilizationId: dto.initiatorId, agreedAt: new Date() },
+        { civilizationId: dto.recipientId },
+      ],
+      treatyTerms as unknown as Record<string, unknown>,
+      tradeTreaty.duration,
+    );
+
+    this.tradeTreaties.set(tradeTreaty.id, tradeTreaty);
+
+    this.eventEmitter.emit('treaty.created', {
+      treatyId: treaty.id,
+      type: TreatyType.TRADE_AGREEMENT,
+      parties: [dto.initiatorId, dto.recipientId],
+      tradeTreaty,
+    });
+
+    return tradeTreaty;
+  }
+
+  async acceptTradeTreaty(treatyId: string, civilizationId: string): Promise<TradeTreatyDto> {
+    const tradeTreaty = this.tradeTreaties.get(treatyId);
+    if (!tradeTreaty) {
+      throw new NotFoundException(`贸易条约 ${treatyId} 不存在`);
+    }
+
+    if (tradeTreaty.recipientId !== civilizationId) {
+      throw new BadRequestException('只有接收方可以接受条约');
+    }
+
+    const treaty = this.treaties.get(treatyId);
+    if (treaty) {
+      treaty.status = TreatyStatus.ACTIVE;
+      treaty.parties[1].agreedAt = new Date();
+      treaty.updatedAt = new Date();
+    }
+
+    tradeTreaty.tradeRouteEnabled = true;
+    this.tradeTreaties.set(treatyId, tradeTreaty);
+
+    this.eventEmitter.emit('treaty.accepted', {
+      treatyId,
+      type: TreatyType.TRADE_AGREEMENT,
+      parties: [tradeTreaty.initiatorId, tradeTreaty.recipientId],
+      tradeTreaty,
+    });
+
+    return tradeTreaty;
+  }
+
+  async getTradeBonus(civilizationId: string, targetCivilizationId: string): Promise<TradeBonusDto> {
+    const baseTaxRate = 10;
+    let adjustedTaxRate = baseTaxRate;
+    let adjustmentReason = '基础税率';
+
+    const relationship = await this.getDiplomaticRelationship(civilizationId, targetCivilizationId);
+
+    if (relationship === 'ally') {
+      adjustedTaxRate = Math.max(0, baseTaxRate - 5);
+      adjustmentReason = '盟友关系：税率减免5%';
+    } else if (relationship === 'enemy') {
+      adjustedTaxRate = baseTaxRate + 20;
+      adjustmentReason = '敌对关系：税率增加20%';
+    } else if (relationship === 'neutral') {
+      adjustedTaxRate = baseTaxRate;
+      adjustmentReason = '中立关系：基础税率';
+    }
+
+    const activeTradeTreaty = await this.getActiveTradeTreatyBetween(
+      civilizationId,
+      targetCivilizationId,
+    );
+
+    if (activeTradeTreaty) {
+      adjustedTaxRate = activeTradeTreaty.taxRate;
+      adjustmentReason = `贸易协定税率（${adjustmentReason}）`;
+    }
+
+    return {
+      civilizationId,
+      targetCivilizationId,
+      baseTaxRate,
+      adjustedTaxRate,
+      adjustmentReason,
+    };
+  }
+
+  async getActiveTradeTreatyBetween(civ1: string, civ2: string): Promise<TradeTreatyDto | null> {
+    for (const treaty of this.tradeTreaties.values()) {
+      if (
+        treaty.tradeRouteEnabled &&
+        ((treaty.initiatorId === civ1 && treaty.recipientId === civ2) ||
+          (treaty.initiatorId === civ2 && treaty.recipientId === civ1))
+      ) {
+        if (!treaty.expiresAt || treaty.expiresAt > new Date()) {
+          return treaty;
+        }
+      }
+    }
+    return null;
+  }
+
+  private async getDiplomaticRelationship(
+    civ1: string,
+    civ2: string,
+  ): Promise<'ally' | 'enemy' | 'neutral'> {
+    for (const treaty of this.treaties.values()) {
+      if (treaty.status !== TreatyStatus.ACTIVE) continue;
+
+      const partyIds = treaty.parties.map((p) => p.civilizationId);
+      if (!partyIds.includes(civ1) || !partyIds.includes(civ2)) continue;
+
+      if (treaty.type === TreatyType.ALLIANCE) {
+        return 'ally';
+      }
+    }
+
+    return 'neutral';
+  }
+
+  async getTreatyById(id: string): Promise<Treaty | undefined> {
+    return this.treaties.get(id);
+  }
+
+  async getTradeTreatyById(id: string): Promise<TradeTreatyDto | undefined> {
+    return this.tradeTreaties.get(id);
+  }
+
+  async getAllTreaties(): Promise<Treaty[]> {
+    return Array.from(this.treaties.values());
+  }
+
+  async getAllTradeTreaties(): Promise<TradeTreatyDto[]> {
+    return Array.from(this.tradeTreaties.values());
+  }
+
+  async cancelTreaty(id: string): Promise<void> {
+    const treaty = this.treaties.get(id);
+    if (treaty) {
+      treaty.status = TreatyStatus.CANCELLED;
+      treaty.updatedAt = new Date();
+    }
+
+    const tradeTreaty = this.tradeTreaties.get(id);
+    if (tradeTreaty) {
+      tradeTreaty.tradeRouteEnabled = false;
+      this.tradeTreaties.set(id, tradeTreaty);
+    }
+
+    this.eventEmitter.emit('treaty.cancelled', { treatyId: id });
+  }
+
+  private generateTreatyId(): string {
+    return `treaty_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  }
+}

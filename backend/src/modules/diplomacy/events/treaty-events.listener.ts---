@@ -1,0 +1,88 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { OnEvent } from '@nestjs/event-emitter';
+import { Inject, forwardRef } from '@nestjs/common';
+import { TreatyType } from '../interfaces/treaty.interface';
+import { TradeTreatyDto } from '../dto/trade-treaty.dto';
+import { TradeRouteService } from '../../trade/services/trade-route.service';
+
+export interface TreatyCreatedEvent {
+  treatyId: string;
+  type: TreatyType;
+  parties: string[];
+  tradeTreaty?: TradeTreatyDto;
+}
+
+export interface TreatyAcceptedEvent {
+  treatyId: string;
+  type: TreatyType;
+  parties: string[];
+  tradeTreaty?: TradeTreatyDto;
+}
+
+@Injectable()
+export class TreatyEventsListener {
+  private readonly logger = new Logger(TreatyEventsListener.name);
+
+  constructor(
+    @Inject(forwardRef(() => TradeRouteService))
+    private tradeRouteService: TradeRouteService,
+  ) {}
+
+  @OnEvent('treaty.created')
+  async handleTreatyCreated(event: TreatyCreatedEvent) {
+    this.logger.log(`条约创建事件: ${event.treatyId}, 类型: ${event.type}`);
+
+    if (event.type === TreatyType.TRADE_AGREEMENT) {
+      this.logger.log(
+        `贸易条约 ${event.treatyId} 已创建，等待双方确认后解锁贸易路线`,
+      );
+    }
+  }
+
+  @OnEvent('treaty.accepted')
+  async handleTreatyAccepted(event: TreatyAcceptedEvent) {
+    this.logger.log(`条约接受事件: ${event.treatyId}, 类型: ${event.type}`);
+
+    if (event.type === TreatyType.TRADE_AGREEMENT && event.tradeTreaty) {
+      await this.unlockTradeRouteCreation(event.tradeTreaty);
+    }
+  }
+
+  private async unlockTradeRouteCreation(tradeTreaty: TradeTreatyDto) {
+    try {
+      await this.tradeRouteService.grantTradePermission(
+        tradeTreaty.initiatorId,
+        tradeTreaty.recipientId,
+        tradeTreaty.id,
+      );
+
+      this.logger.log(
+        `贸易路线创建权限已解锁: ${tradeTreaty.initiatorId} <-> ${tradeTreaty.recipientId}`,
+      );
+
+      this.eventEmitter.emit('trade.permission.granted', {
+        civilizationIds: [tradeTreaty.initiatorId, tradeTreaty.recipientId],
+        treatyId: tradeTreaty.id,
+        exclusiveResources: tradeTreaty.exclusiveResources,
+      });
+    } catch (error) {
+      this.logger.error(
+        `解锁贸易路线权限失败: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  @OnEvent('treaty.cancelled')
+  async handleTreatyCancelled(event: { treatyId: string }) {
+    this.logger.log(`条约取消事件: ${event.treatyId}`);
+
+    try {
+      await this.tradeRouteService.revokeTradePermission(event.treatyId);
+      this.logger.log(`贸易路线权限已撤销: 条约ID ${event.treatyId}`);
+    } catch (error) {
+      this.logger.error(
+        `撤销贸易路线权限失败: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+}
