@@ -17,10 +17,9 @@
       ],
       "test_command": "docker exec -it cyber-cosmos-postgres psql -U postgres -d cyber_cosmos -c \"\\dt\"",
       "depends_on": [],
-      "passes": true,
-      "last_attempt": "2026-03-24T22:08:24.328219",
-      "notes": "需确保 PostgreSQL 已启用 TimescaleDB 扩展",
-      "retry_count": 0
+      "passes": false,
+      "last_attempt": null,
+      "notes": "未解析到代码文件"
     },
     {
       "id": "feat-002",
