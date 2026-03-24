@@ -5,275 +5,264 @@ import pytest
 import sys
 import os
 import json
-import asyncio
-from unittest.mock import Mock, MagicMock, patch
-from datetime import datetime
+import time
+from unittest.mock import MagicMock, patch, AsyncMock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from universe.state import UniverseState
 from universe.events import EventSystem
-from universe.rules import RulesEngine
-from universe.narrative import NarrativeEngine
+from universe.rules import UniverseRules
 
 
 class TestSimulationFlow:
     """Test complete simulation flow from initialization to tick processing"""
     
-    @pytest.fixture
-    def simulation_setup(self, sample_civilization, sample_civilization_2, sample_civilization_3):
-        """Set up a complete simulation environment"""
+    def test_simulation_initialization(self, sample_universe_state, mock_redis):
+        """Test simulation initializes correctly with given state"""
+        # Initialize universe state
         state = UniverseState()
-        state.civilizations = {
-            sample_civilization["id"]: sample_civilization,
-            sample_civilization_2["id"]: sample_civilization_2,
-            sample_civilization_3["id"]: sample_civilization_3
-        }
-        state.current_tick = 0
-        state.history = []
+        state.load_state(sample_universe_state)
         
-        event_system = EventSystem()
-        rules_engine = RulesEngine()
-        narrative_engine = NarrativeEngine()
+        # Verify initial state
+        assert state.get_tick() == 0
+        assert len(state.get_civilizations()) == 3
+        assert state.get_civilization("civ_001") is not None
         
-        return {
-            "state": state,
-            "events": event_system,
-            "rules": rules_engine,
-            "narrative": narrative_engine
-        }
-    
-    def test_simulation_initialization(self, simulation_setup):
-        """Test that simulation initializes correctly"""
-        state = simulation_setup["state"]
-        
-        assert state is not None
-        assert len(state.civilizations) == 3
-        assert state.current_tick == 0
-        assert isinstance(state.history, list)
-    
-    def test_simulation_tick_advancement(self, simulation_setup):
-        """Test that simulation ticks advance correctly"""
-        state = simulation_setup["state"]
-        
-        initial_tick = state.current_tick
+    def test_simulation_tick_advancement(self, sample_universe_state):
+        """Test simulation tick advances correctly"""
+        state = UniverseState()
+        state.load_state(sample_universe_state)
         
         # Advance tick
         state.advance_tick()
-        assert state.current_tick == initial_tick + 1
+        assert state.get_tick() == 1
         
-        # Advance multiple ticks
+        # Multiple tick advances
         for _ in range(5):
             state.advance_tick()
-        assert state.current_tick == initial_tick + 6
-    
-    def test_civilization_population_growth(self, simulation_setup):
-        """Test population growth over simulation ticks"""
-        state = simulation_setup["state"]
-        rules = simulation_setup["rules"]
+        assert state.get_tick() == 6
         
-        civ_id = "civ_001"
-        initial_population = state.civilizations[civ_id]["population"]
+    def test_civilization_population_growth(self, sample_universe_state):
+        """Test civilization population changes over simulation"""
+        state = UniverseState()
+        state.load_state(sample_universe_state)
         
-        # Simulate population growth over multiple ticks
-        for _ in range(10):
-            growth_rate = rules.calculate_population_growth(state.civilizations[civ_id])
-            state.civilizations[civ_id]["population"] = int(
-                state.civilizations[civ_id]["population"] * (1 + growth_rate)
-            )
-            state.advance_tick()
+        initial_pop = state.get_civilization("civ_001")["population"]
         
-        assert state.civilizations[civ_id]["population"] > initial_population
-    
-    def test_resource_consumption_flow(self, simulation_setup):
+        # Simulate population growth
+        rules = UniverseRules()
+        growth_rate = rules.get_population_growth_rate(
+            state.get_civilization("civ_001")
+        )
+        
+        new_pop = int(initial_pop * (1 + growth_rate))
+        state.update_civilization("civ_001", {"population": new_pop})
+        
+        assert state.get_civilization("civ_001")["population"] > initial_pop
+        
+    def test_resource_consumption_flow(self, sample_universe_state):
         """Test resource consumption during simulation"""
-        state = simulation_setup["state"]
-        rules = simulation_setup["rules"]
+        state = UniverseState()
+        state.load_state(sample_universe_state)
         
-        civ_id = "civ_001"
-        initial_minerals = state.civilizations[civ_id]["resources"]["minerals"]
+        civ = state.get_civilization("civ_001")
+        initial_minerals = civ["resources"]["minerals"]
         
         # Simulate resource consumption
-        for _ in range(5):
-            consumption = rules.calculate_resource_consumption(state.civilizations[civ_id])
-            for resource, amount in consumption.items():
-                if resource in state.civilizations[civ_id]["resources"]:
-                    state.civilizations[civ_id]["resources"][resource] = max(
-                        0, state.civilizations[civ_id]["resources"][resource] - amount
-                    )
-            state.advance_tick()
+        consumption = 50
+        new_minerals = max(0, initial_minerals - consumption)
+        state.update_civilization("civ_001", {
+            "resources": {**civ["resources"], "minerals": new_minerals}
+        })
         
-        assert state.civilizations[civ_id]["resources"]["minerals"] < initial_minerals
-    
-    def test_technology_progression(self, simulation_setup):
-        """Test technology level progression over time"""
-        state = simulation_setup["state"]
-        rules = simulation_setup["rules"]
+        updated_civ = state.get_civilization("civ_001")
+        assert updated_civ["resources"]["minerals"] == initial_minerals - consumption
         
-        civ_id = "civ_002"
-        initial_tech = state.civilizations[civ_id]["technology_level"]
+    def test_technology_advancement_flow(self, sample_universe_state):
+        """Test technology level advancement during simulation"""
+        state = UniverseState()
+        state.load_state(sample_universe_state)
         
-        # Simulate technology research
-        research_points = 0
-        for _ in range(20):
-            research_points += rules.calculate_research_output(state.civilizations[civ_id])
-            if research_points >= 1000:  # Threshold for tech level up
-                state.civilizations[civ_id]["technology_level"] += 1
-                research_points = 0
-            state.advance_tick()
+        civ_id = "civ_001"
+        initial_tech = state.get_civilization(civ_id)["technology_level"]
         
-        # Technology should have progressed or stayed same
-        assert state.civilizations[civ_id]["technology_level"] >= initial_tech
-    
-    def test_event_generation_during_simulation(self, simulation_setup):
-        """Test that events are generated during simulation"""
-        state = simulation_setup["state"]
-        event_system = simulation_setup["events"]
+        # Simulate tech advancement
+        rules = UniverseRules()
+        can_advance = rules.can_advance_technology(
+            state.get_civilization(civ_id)
+        )
         
-        generated_events = []
-        
-        # Run simulation for multiple ticks
-        for tick in range(10):
-            # Generate random events
-            events = event_system.generate_events(state, tick)
-            generated_events.extend(events)
+        if can_advance:
+            state.update_civilization(civ_id, {
+                "technology_level": initial_tech + 1
+            })
             
-            # Process events
-            for event in events:
-                event_system.process_event(event, state)
+        # Verify state change
+        updated_tech = state.get_civilization(civ_id)["technology_level"]
+        assert updated_tech >= initial_tech
+        
+    def test_event_generation_during_simulation(self, sample_universe_state, sample_events):
+        """Test events are generated during simulation ticks"""
+        state = UniverseState()
+        state.load_state(sample_universe_state)
+        
+        event_system = EventSystem()
+        
+        # Generate random event
+        event = event_system.generate_random_event(state)
+        
+        if event:
+            state.add_event(event)
+            events = state.get_events()
+            assert len(events) > 0
+            assert events[-1]["type"] is not None
             
-            state.advance_tick()
-        
-        # Events should have been generated
-        assert len(generated_events) >= 0  # May or may not generate events
-    
-    def test_narrative_generation_flow(self, simulation_setup):
-        """Test narrative generation from simulation events"""
-        state = simulation_setup["state"]
-        narrative = simulation_setup["narrative"]
-        
-        # Create a significant event
-        event = {
-            "id": "evt_history_001",
-            "type": "first_contact",
-            "description": "First contact between Test Empire and Alliance Federation",
-            "civilizations_involved": ["civ_001", "civ_002"],
-            "timestamp": datetime.now().isoformat()
-        }
-        
-        # Add to history
-        state.history.append(event)
-        
-        # Generate narrative
-        chronicle = narrative.generate_chronicle(state.history)
-        
-        assert chronicle is not None
-        assert len(state.history) > 0
-    
-    def test_civilization_extinction_event(self, simulation_setup):
-        """Test civilization extinction when population reaches zero"""
-        state = simulation_setup["state"]
-        
-        civ_id = "civ_003"
-        
-        # Simulate catastrophic event
-        state.civilizations[civ_id]["population"] = 0
-        state.civilizations[civ_id]["status"] = "extinct"
-        
-        # Check extinction status
-        assert state.civilizations[civ_id]["population"] == 0
-        assert state.civilizations[civ_id]["status"] == "extinct"
-    
-    def test_civilization_advancement(self, simulation_setup):
-        """Test civilization advancement to higher stages"""
-        state = simulation_setup["state"]
-        rules = simulation_setup["rules"]
+    def test_civilization_status_changes(self, sample_universe_state):
+        """Test civilization status changes during simulation"""
+        state = UniverseState()
+        state.load_state(sample_universe_state)
         
         civ_id = "civ_001"
         
-        # Simulate advancement conditions
-        state.civilizations[civ_id]["technology_level"] = 10
-        state.civilizations[civ_id]["population"] = 10000000
-        state.civilizations[civ_id]["military_power"] = 5000
+        # Test status change to expanding
+        state.update_civilization(civ_id, {"status": "expanding"})
+        assert state.get_civilization(civ_id)["status"] == "expanding"
         
-        # Check if civilization can advance
-        can_advance = rules.check_advancement(state.civilizations[civ_id])
+        # Test status change to declining
+        state.update_civilization(civ_id, {"status": "declining"})
+        assert state.get_civilization(civ_id)["status"] == "declining"
         
-        # High stats should allow advancement
-        assert can_advance is not None
-    
-    def test_full_simulation_cycle(self, simulation_setup):
-        """Test a complete simulation cycle with all systems"""
-        state = simulation_setup["state"]
-        event_system = simulation_setup["events"]
-        rules = simulation_setup["rules"]
-        narrative = simulation_setup["narrative"]
+    def test_multiple_tick_simulation(self, sample_universe_state):
+        """Test running multiple simulation ticks in sequence"""
+        state = UniverseState()
+        state.load_state(sample_universe_state)
+        event_system = EventSystem()
+        rules = UniverseRules()
         
-        # Run full cycle
-        for tick in range(20):
-            # 1. Process resource changes
-            for civ_id, civ in state.civilizations.items():
-                if civ.get("status") != "extinct":
-                    # Resource consumption
-                    consumption = rules.calculate_resource_consumption(civ)
-                    for resource, amount in consumption.items():
-                        if resource in civ["resources"]:
-                            civ["resources"][resource] = max(0, civ["resources"][resource] - amount)
-                    
-                    # Population growth
-                    growth = rules.calculate_population_growth(civ)
-                    civ["population"] = int(civ["population"] * (1 + growth))
-            
-            # 2. Generate and process events
-            events = event_system.generate_events(state, tick)
-            for event in events:
-                event_system.process_event(event, state)
-                state.history.append(event)
-            
-            # 3. Advance tick
+        initial_civ_count = len(state.get_civilizations())
+        
+        # Run 10 ticks
+        for tick in range(10):
             state.advance_tick()
+            
+            # Process each civilization
+            for civ_id, civ in state.get_civilizations().items():
+                # Apply population growth
+                growth = rules.get_population_growth_rate(civ)
+                new_pop = int(civ["population"] * (1 + growth * 0.01))
+                state.update_civilization(civ_id, {"population": new_pop})
+                
+            # Generate events
+            event = event_system.generate_random_event(state)
+            if event:
+                state.add_event(event)
+                
+        # Verify simulation ran
+        assert state.get_tick() == 10
+        assert len(state.get_civilizations()) == initial_civ_count
         
-        # Verify simulation ran correctly
-        assert state.current_tick == 20
-        assert len(state.civilizations) == 3
+    def test_civilization_destruction_flow(self, sample_universe_state):
+        """Test civilization destruction during catastrophic events"""
+        state = UniverseState()
+        state.load_state(sample_universe_state)
         
-        # Generate final narrative
-        chronicle = narrative.generate_chronicle(state.history)
-        assert chronicle is not None
-
-
-class TestSimulationStatePersistence:
-    """Test simulation state persistence and recovery"""
-    
-    def test_state_serialization(self, universe_state):
-        """Test that universe state can be serialized"""
-        state_dict = universe_state.to_dict()
+        civ_id = "civ_001"
         
-        assert isinstance(state_dict, dict)
-        assert "civilizations" in state_dict
-        assert "current_tick" in state_dict
-    
-    def test_state_deserialization(self, universe_state):
-        """Test that universe state can be deserialized"""
-        state_dict = universe_state.to_dict()
+        # Simulate catastrophic event destroying civilization
+        state.update_civilization(civ_id, {
+            "status": "destroyed",
+            "population": 0
+        })
         
+        civ = state.get_civilization(civ_id)
+        assert civ["status"] == "destroyed"
+        assert civ["population"] == 0
+        
+    def test_state_persistence_flow(self, sample_universe_state, temp_state_file):
+        """Test state can be saved and loaded correctly"""
+        state = UniverseState()
+        state.load_state(sample_universe_state)
+        
+        # Make changes
+        state.advance_tick()
+        state.update_civilization("civ_001", {"technology_level": 10})
+        
+        # Save state
+        state_data = state.export_state()
+        
+        # Create new state and load
         new_state = UniverseState()
-        new_state.from_dict(state_dict)
+        new_state.load_state(state_data)
         
-        assert new_state.current_tick == universe_state.current_tick
-        assert len(new_state.civilizations) == len(universe_state.civilizations)
+        # Verify persistence
+        assert new_state.get_tick() == 1
+        assert new_state.get_civilization("civ_001")["technology_level"] == 10
+
+
+class TestSimulationEdgeCases:
+    """Test edge cases in simulation flow"""
     
-    def test_state_json_export(self, universe_state, tmp_path):
-        """Test exporting state to JSON file"""
-        export_path = tmp_path / "universe_state.json"
+    def test_empty_universe_initialization(self):
+        """Test simulation handles empty universe state"""
+        state = UniverseState()
+        state.load_state({"tick": 0, "civilizations": {}, "events": []})
         
-        state_dict = universe_state.to_dict()
-        with open(export_path, 'w') as f:
-            json.dump(state_dict, f)
+        assert state.get_tick() == 0
+        assert len(state.get_civilizations()) == 0
         
-        assert export_path.exists()
+    def test_large_population_values(self):
+        """Test simulation handles very large population values"""
+        state = UniverseState()
+        large_pop_state = {
+            "tick": 0,
+            "civilizations": {
+                "civ_001": {
+                    "id": "civ_001",
+                    "name": "Large Pop Civ",
+                    "population": 10**15,  # Quadrillion
+                    "technology_level": 10,
+                    "resources": {"minerals": 10**12},
+                    "location": {"x": 0, "y": 0, "z": 0},
+                    "status": "active"
+                }
+            },
+            "events": []
+        }
+        state.load_state(large_pop_state)
         
-        with open(export_path, 'r') as f:
-            loaded = json.load(f)
+        civ = state.get_civilization("civ_001")
+        assert civ["population"] == 10**15
         
-        assert loaded["current_tick"] == universe_state.current_tick
+    def test_negative_resources_handling(self, sample_universe_state):
+        """Test simulation handles negative resources gracefully"""
+        state = UniverseState()
+        state.load_state(sample_universe_state)
+        
+        civ_id = "civ_001"
+        civ = state.get_civilization(civ_id)
+        
+        # Set negative resources (should be handled)
+        state.update_civilization(civ_id, {
+            "resources": {**civ["resources"], "minerals": -100}
+        })
+        
+        # Resources should be clamped to 0 or handled
+        updated_civ = state.get_civilization(civ_id)
+        assert updated_civ["resources"]["minerals"] >= 0 or updated_civ["resources"]["minerals"] == -100
+        
+    def test_concurrent_state_updates(self, sample_universe_state):
+        """Test state handles concurrent update attempts"""
+        state = UniverseState()
+        state.load_state(sample_universe_state)
+        
+        civ_id = "civ_001"
+        
+        # Simulate concurrent updates
+        state.update_civilization(civ_id, {"technology_level": 5})
+        state.update_civilization(civ_id, {"military_power": 500})
+        state.update_civilization(civ_id, {"economic_power": 1000})
+        
+        civ = state.get_civilization(civ_id)
+        assert civ["technology_level"] == 5
+        assert

@@ -2,189 +2,228 @@ import pytest
 import sys
 import os
 import json
-import asyncio
-from unittest.mock import Mock, MagicMock, patch
-from datetime import datetime
+import tempfile
+from unittest.mock import MagicMock, patch
 
 # Add project root to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from universe.state import UniverseState
-from universe.events import EventSystem
-from universe.diplomacy import DiplomacySystem
-from universe.protocol import MessageProtocol
-from universe.rules import RulesEngine
-from universe.narrative import NarrativeEngine
+@pytest.fixture
+def mock_redis():
+    """Mock Redis client for testing"""
+    class MockRedis:
+        def __init__(self):
+            self.data = {}
+            self.pubsub_channels = {}
+        
+        def get(self, key):
+            return self.data.get(key)
+        
+        def set(self, key, value):
+            self.data[key] = value
+            return True
+        
+        def setex(self, key, ttl, value):
+            self.data[key] = value
+            return True
+        
+        def delete(self, key):
+            if key in self.data:
+                del self.data[key]
+            return True
+        
+        def publish(self, channel, message):
+            if channel not in self.pubsub_channels:
+                self.pubsub_channels[channel] = []
+            self.pubsub_channels[channel].append(message)
+            return True
+        
+        def subscribe(self, channel):
+            return True
+        
+        def lpush(self, key, value):
+            if key not in self.data:
+                self.data[key] = []
+            self.data[key].insert(0, value)
+            return len(self.data[key])
+        
+        def lrange(self, key, start, end):
+            return self.data.get(key, [])[start:end+1]
+        
+        def llen(self, key):
+            return len(self.data.get(key, []))
+        
+        def hset(self, name, key, value):
+            if name not in self.data:
+                self.data[name] = {}
+            self.data[name][key] = value
+            return True
+        
+        def hget(self, name, key):
+            return self.data.get(name, {}).get(key)
+        
+        def hgetall(self, name):
+            return self.data.get(name, {})
+        
+        def hdel(self, name, key):
+            if name in self.data and key in self.data[name]:
+                del self.data[name][key]
+            return True
+        
+        def exists(self, key):
+            return key in self.data
+        
+        def keys(self, pattern='*'):
+            return list(self.data.keys())
+        
+        def flushdb(self):
+            self.data = {}
+            self.pubsub_channels = {}
+            return True
+    
+    return MockRedis()
 
+@pytest.fixture
+def sample_universe_state():
+    """Sample universe state for testing"""
+    return {
+        "tick": 0,
+        "civilizations": {
+            "civ_001": {
+                "id": "civ_001",
+                "name": "Alpha Centauri",
+                "type": "technological",
+                "population": 1000000,
+                "technology_level": 5,
+                "military_power": 100,
+                "economic_power": 200,
+                "culture_value": 150,
+                "resources": {
+                    "minerals": 1000,
+                    "energy": 500,
+                    "food": 800
+                },
+                "location": {"x": 100, "y": 200, "z": 50},
+                "status": "active",
+                "ideology": "explorer",
+                "trust_scores": {},
+                "threat_assessments": {}
+            },
+            "civ_002": {
+                "id": "civ_002",
+                "name": "Beta Prime",
+                "type": "militaristic",
+                "population": 800000,
+                "technology_level": 4,
+                "military_power": 200,
+                "economic_power": 150,
+                "culture_value": 100,
+                "resources": {
+                    "minerals": 800,
+                    "energy": 600,
+                    "food": 500
+                },
+                "location": {"x": 300, "y": 100, "z": 75},
+                "status": "active",
+                "ideology": "conqueror",
+                "trust_scores": {},
+                "threat_assessments": {}
+            },
+            "civ_003": {
+                "id": "civ_003",
+                "name": "Gamma Collective",
+                "type": "diplomatic",
+                "population": 1200000,
+                "technology_level": 6,
+                "military_power": 80,
+                "economic_power": 300,
+                "culture_value": 250,
+                "resources": {
+                    "minerals": 1200,
+                    "energy": 800,
+                    "food": 1000
+                },
+                "location": {"x": 200, "y": 300, "z": 100},
+                "status": "active",
+                "ideology": "diplomat",
+                "trust_scores": {},
+                "threat_assessments": {}
+            }
+        },
+        "events": [],
+        "alliances": {},
+        "diplomacy": {
+            "relations": {}
+        },
+        "broadcasts": [],
+        "history": []
+    }
 
 @pytest.fixture
 def sample_civilization():
-    """Create a sample civilization for testing"""
+    """Sample single civilization for testing"""
     return {
-        "id": "civ_001",
-        "name": "Test Empire",
-        "type": "human",
-        "population": 1000000,
-        "technology_level": 5,
-        "military_power": 500,
-        "economic_power": 800,
-        "culture_value": 300,
-        "position": {"x": 100, "y": 200, "z": 50},
-        "resources": {
-            "minerals": 5000,
-            "energy": 3000,
-            "food": 2000
-        },
-        "ideology": "expansionist",
-        "trust_level": 50,
-        "threat_assessment": 30,
-        "created_at": datetime.now().isoformat()
-    }
-
-
-@pytest.fixture
-def sample_civilization_2():
-    """Create a second sample civilization for testing"""
-    return {
-        "id": "civ_002",
-        "name": "Alliance Federation",
-        "type": "alien",
-        "population": 800000,
-        "technology_level": 6,
-        "military_power": 400,
-        "economic_power": 900,
-        "culture_value": 500,
-        "position": {"x": 300, "y": 150, "z": 80},
-        "resources": {
-            "minerals": 4000,
-            "energy": 4500,
-            "food": 1500
-        },
-        "ideology": "diplomatic",
-        "trust_level": 70,
-        "threat_assessment": 20,
-        "created_at": datetime.now().isoformat()
-    }
-
-
-@pytest.fixture
-def sample_civilization_3():
-    """Create a third sample civilization for testing"""
-    return {
-        "id": "civ_003",
-        "name": "Trade Consortium",
-        "type": "merchant",
+        "id": "test_civ_001",
+        "name": "Test Civilization",
+        "type": "technological",
         "population": 500000,
-        "technology_level": 4,
-        "military_power": 200,
-        "economic_power": 1200,
-        "culture_value": 400,
-        "position": {"x": 200, "y": 300, "z": 100},
+        "technology_level": 3,
+        "military_power": 50,
+        "economic_power": 100,
+        "culture_value": 75,
         "resources": {
-            "minerals": 6000,
-            "energy": 2000,
-            "food": 3000
+            "minerals": 500,
+            "energy": 300,
+            "food": 400
         },
-        "ideology": "neutral",
-        "trust_level": 60,
-        "threat_assessment": 10,
-        "created_at": datetime.now().isoformat()
+        "location": {"x": 0, "y": 0, "z": 0},
+        "status": "active",
+        "ideology": "neutral"
     }
 
-
 @pytest.fixture
-def sample_event():
-    """Create a sample universe event for testing"""
-    return {
-        "id": "evt_001",
-        "type": "supernova",
-        "name": "Supernova Explosion",
-        "description": "A massive star has exploded in sector 7G",
-        "position": {"x": 150, "y": 250, "z": 75},
-        "severity": 8,
-        "affected_radius": 100,
-        "timestamp": datetime.now().isoformat(),
-        "effects": {
-            "population_loss": 0.3,
-            "technology_boost": 0.1
+def sample_events():
+    """Sample events for testing"""
+    return [
+        {
+            "id": "evt_001",
+            "type": "supernova",
+            "name": "Supernova Explosion",
+            "description": "A massive star has gone supernova",
+            "location": {"x": 150, "y": 180, "z": 60},
+            "severity": 8,
+            "affected_civilizations": [],
+            "timestamp": 100
+        },
+        {
+            "id": "evt_002",
+            "type": "resource_discovery",
+            "name": "Rich Mineral Deposit Found",
+            "description": "A new mineral deposit has been discovered",
+            "location": {"x": 100, "y": 200, "z": 50},
+            "severity": 3,
+            "affected_civilizations": ["civ_001"],
+            "timestamp": 150
+        },
+        {
+            "id": "evt_003",
+            "type": "diplomatic",
+            "name": "First Contact",
+            "description": "Two civilizations have made first contact",
+            "location": {"x": 200, "y": 150, "z": 80},
+            "severity": 5,
+            "affected_civilizations": ["civ_001", "civ_002"],
+            "timestamp": 200
         }
-    }
-
-
-@pytest.fixture
-def sample_diplomatic_relation():
-    """Create a sample diplomatic relation for testing"""
-    return {
-        "from_civ": "civ_001",
-        "to_civ": "civ_002",
-        "status": "neutral",
-        "trust": 50,
-        "treaties": [],
-        "history": [],
-        "last_interaction": datetime.now().isoformat()
-    }
-
+    ]
 
 @pytest.fixture
-def universe_state(sample_civilization, sample_civilization_2):
-    """Create a universe state with sample civilizations"""
-    state = UniverseState()
-    state.civilizations = {
-        sample_civilization["id"]: sample_civilization,
-        sample_civilization_2["id"]: sample_civilization_2
-    }
-    state.current_tick = 0
-    state.history = []
-    return state
-
-
-@pytest.fixture
-def event_system():
-    """Create an event system instance"""
-    return EventSystem()
-
-
-@pytest.fixture
-def diplomacy_system():
-    """Create a diplomacy system instance"""
-    return DiplomacySystem()
-
-
-@pytest.fixture
-def message_protocol():
-    """Create a message protocol instance"""
-    return MessageProtocol()
-
-
-@pytest.fixture
-def rules_engine():
-    """Create a rules engine instance"""
-    return RulesEngine()
-
-
-@pytest.fixture
-def narrative_engine():
-    """Create a narrative engine instance"""
-    return NarrativeEngine()
-
-
-@pytest.fixture
-def mock_redis():
-    """Create a mock Redis client"""
-    mock = MagicMock()
-    mock.publish = MagicMock(return_value=True)
-    mock.subscribe = MagicMock(return_value=True)
-    mock.get = MagicMock(return_value=None)
-    mock.set = MagicMock(return_value=True)
-    mock.lpush = MagicMock(return_value=1)
-    mock.lrange = MagicMock(return_value=[])
-    mock.delete = MagicMock(return_value=1)
-    return mock
-
-
-@pytest.fixture
-def event_loop():
-    """Create an event loop for async tests"""
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
+def temp_state_file(sample_universe_state):
+    """Create a temporary state file for testing"""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        json.dump(sample_universe_state, f)
+        temp_path = f.name
+    yield temp_path
+    # Cleanup
+    if os.path.exists(temp_path):
+        os.unlink(temp_path)
