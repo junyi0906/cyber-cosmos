@@ -1,15 +1,12 @@
 import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { WeatherState } from './weather.entity';
 import { WeatherService } from './weather.service';
-import { WeatherGateway } from './weather.gateway';
+import { EffectsService } from './effects.service';
 
-/**
- * 天气模块
- * 负责管理宇宙天气系统，包括天气预报、效果计算和实时推送
- */
 @Module({
-  providers: [WeatherService, WeatherGateway],
-  controllers: [],
-  exports: [WeatherService],
-  imports: [],
+  imports: [TypeOrmModule.forFeature([WeatherState])],
+  providers: [WeatherService, EffectsService],
+  exports: [WeatherService, EffectsService],
 })
 export class WeatherModule {}

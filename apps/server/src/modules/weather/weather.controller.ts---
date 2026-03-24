@@ -1,16 +1,31 @@
-import { Controller, Get, Post, Body, Param } from '@nestjs/common';
-import { WeatherService, WeatherType } from './weather.service';
+import {
+  Controller,
+  Get,
+  Param,
+  Post,
+  Body,
+  Query,
+  UseInterceptors,
+  CacheInterceptor,
+} from '@nestjs/common';
+import { WeatherService } from './weather.service';
+import { WeatherType } from './weather.entity';
 
 @Controller('weather')
+@UseInterceptors(CacheInterceptor)
 export class WeatherController {
   constructor(private readonly weatherService: WeatherService) {}
 
-  @Get('current')
-  getCurrentWeather() {
+  @Get('sector/:sectorId')
+  async getSectorWeather(@Param('sectorId') sectorId: string) {
+    const weather = await this.weatherService.getSectorWeather(sectorId);
+    const effects = this.weatherService.getWeatherEffects(weather);
     return {
-      weather: this.weatherService.getCurrentWeather(),
-      effect: this.weatherService.getCurrentWeatherEffect(),
+      weather,
+      effects,
     };
   }
 
-  @Post('
+  @Get('all')
+  async getAllSectorWeather() {
+    const weathers = await this.weather

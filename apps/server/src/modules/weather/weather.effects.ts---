@@ -1,0 +1,141 @@
+import { WeatherType } from './weather.entity';
+
+export interface WeatherEffect {
+  name: string;
+  description: string;
+  resourceBonus: number;
+  energyConsumption: number;
+  shieldMalus: number;
+  sensorRange: number;
+  researchBonus: number;
+  mutationRisk: number;
+  tradeEfficiency: number;
+  eventProbabilityModifier: number;
+}
+
+export const WEATHER_EFFECTS: Record<WeatherType, WeatherEffect> = {
+  [WeatherType.NORMAL]: {
+    name: '平静空间',
+    description: '正常的宇宙空间，没有任何异常现象',
+    resourceBonus: 1.0,
+    energyConsumption: 1.0,
+    shieldMalus: 1.0,
+    sensorRange: 1.0,
+    researchBonus: 1.0,
+    mutationRisk: 0,
+    tradeEfficiency: 1.0,
+    eventProbabilityModifier: 1.0,
+  },
+  [WeatherType.RESOURCE_STORM]: {
+    name: '资源风暴',
+    description: '富含矿物质的宇宙风暴，矿石产出大幅提升，但护盾系统受到干扰',
+    resourceBonus: 1.5,
+    energyConsumption: 1.2,
+    shieldMalus: 0.8,
+    sensorRange: 0.9,
+    researchBonus: 1.0,
+    mutationRisk: 0,
+    tradeEfficiency: 0.9,
+    eventProbabilityModifier: 1.2,
+  },
+  [WeatherType.DARK_WAVE]: {
+    name: '黑暗波动',
+    description: '神秘的暗能量波动，严重干扰传感器和通讯系统',
+    resourceBonus: 1.0,
+    energyConsumption: 1.0,
+    shieldMalus: 1.0,
+    sensorRange: 0.5,
+    researchBonus: 1.0,
+    mutationRisk: 0.05,
+    tradeEfficiency: 0.7,
+    eventProbabilityModifier: 1.3,
+  },
+  [WeatherType.DARK_MATTER_TIDE]: {
+    name: '暗物质浪潮',
+    description: '暗物质浓度异常升高，科研效率显著提升，但存在变异风险',
+    resourceBonus: 1.0,
+    energyConsumption: 1.1,
+    shieldMalus: 1.0,
+    sensorRange: 1.0,
+    researchBonus: 1.5,
+    mutationRisk: 0.15,
+    tradeEfficiency: 1.0,
+    eventProbabilityModifier: 1.4,
+  },
+  [WeatherType.ION_STORM]: {
+    name: '离子风暴',
+    description: '强烈的电磁干扰，影响所有电子设备和能量系统',
+    resourceBonus: 0.8,
+    energyConsumption: 1.5,
+    shieldMalus: 0.6,
+    sensorRange: 0.7,
+    researchBonus: 0.8,
+    mutationRisk: 0,
+    tradeEfficiency: 0.6,
+    eventProbabilityModifier: 1.5,
+  },
+  [WeatherType.NEUTRON_PULSE]: {
+    name: '中子脉冲',
+    description: '周期性的中子辐射爆发，对生物体和电子系统都有影响',
+    resourceBonus: 1.2,
+    energyConsumption: 1.3,
+    shieldMalus: 0.7,
+    sensorRange: 0.8,
+    researchBonus: 1.2,
+    mutationRisk: 0.1,
+    tradeEfficiency: 0.8,
+    eventProbabilityModifier: 1.6,
+  },
+};
+
+// 天气转换概率矩阵
+export const WEATHER_TRANSITION_MATRIX: Record<WeatherType, Partial<Record<WeatherType, number>>> = {
+  [WeatherType.NORMAL]: {
+    [WeatherType.NORMAL]: 0.4,
+    [WeatherType.RESOURCE_STORM]: 0.2,
+    [WeatherType.DARK_WAVE]: 0.15,
+    [WeatherType.DARK_MATTER_TIDE]: 0.1,
+    [WeatherType.ION_STORM]: 0.1,
+    [WeatherType.NEUTRON_PULSE]: 0.05,
+  },
+  [WeatherType.RESOURCE_STORM]: {
+    [WeatherType.NORMAL]: 0.5,
+    [WeatherType.RESOURCE_STORM]: 0.2,
+    [WeatherType.ION_STORM]: 0.2,
+    [WeatherType.NEUTRON_PULSE]: 0.1,
+  },
+  [WeatherType.DARK_WAVE]: {
+    [WeatherType.NORMAL]: 0.4,
+    [WeatherType.DARK_WAVE]: 0.3,
+    [WeatherType.DARK_MATTER_TIDE]: 0.2,
+    [WeatherType.NEUTRON_PULSE]: 0.1,
+  },
+  [WeatherType.DARK_MATTER_TIDE]: {
+    [WeatherType.NORMAL]: 0.3,
+    [WeatherType.DARK_WAVE]: 0.3,
+    [WeatherType.DARK_MATTER_TIDE]: 0.2,
+    [WeatherType.NEUTRON_PULSE]: 0.2,
+  },
+  [WeatherType.ION_STORM]: {
+    [WeatherType.NORMAL]: 0.6,
+    [WeatherType.RESOURCE_STORM]: 0.2,
+    [WeatherType.ION_STORM]: 0.1,
+    [WeatherType.NEUTRON_PULSE]: 0.1,
+  },
+  [WeatherType.NEUTRON_PULSE]: {
+    [WeatherType.NORMAL]: 0.5,
+    [WeatherType.DARK_MATTER_TIDE]: 0.2,
+    [WeatherType.ION_STORM]: 0.2,
+    [WeatherType.NEUTRON_PULSE]: 0.1,
+  },
+};
+
+// 天气持续时间范围（分钟）
+export const WEATHER_DURATION_RANGE: Record<WeatherType, { min: number; max: number }> = {
+  [WeatherType.NORMAL]: { min: 30, max: 120 },
+  [WeatherType.RESOURCE_STORM]: { min: 15, max: 45 },
+  [WeatherType.DARK_WAVE]: { min: 20, max: 60 },
+  [WeatherType.DARK_MATTER_TIDE]: { min: 10, max: 30 },
+  [WeatherType.ION_STORM]: { min: 5, max: 25 },
+  [WeatherType.NEUTRON_PULSE]: { min: 10, max: 40 },
+};

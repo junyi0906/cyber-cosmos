@@ -1,0 +1,49 @@
+import { Entity, Column, PrimaryGeneratedColumn, Index, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+
+export enum WeatherType {
+  NORMAL = 'normal',
+  RESOURCE_STORM = 'resource_storm',
+  DARK_WAVE = 'dark_wave',
+  DARK_MATTER_TIDE = 'dark_matter_tide',
+  ION_STORM = 'ion_storm',
+  NEUTRON_PULSE = 'neutron_pulse',
+}
+
+@Entity('weather_states')
+export class WeatherState {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ type: 'varchar', length: 100 })
+  @Index()
+  sectorId: string;
+
+  @Column({
+    type: 'enum',
+    enum: WeatherType,
+    default: WeatherType.NORMAL,
+  })
+  currentWeather: WeatherType;
+
+  @Column({
+    type: 'enum',
+    enum: WeatherType,
+    default: WeatherType.NORMAL,
+  })
+  previousWeather: WeatherType;
+
+  @Column({ type: 'timestamp' })
+  nextChangeAt: Date;
+
+  @Column({ type: 'int', default: 0 })
+  transitionCount: number;
+
+  @Column({ type: 'jsonb', nullable: true })
+  metadata: Record<string, any>;
+
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
+}
