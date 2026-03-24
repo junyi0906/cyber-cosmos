@@ -1,0 +1,89 @@
+import { Pool } from 'pg';
+import * as fs from 'fs';
+import * as path from 'path';
+
+export interface MigrationResult {
+  version: string;
+  success: boolean;
+  error?: string;
+  duration: number;
+}
+
+export class MigrationRunner {
+  private pool: Pool;
+  private migrationsPath: string;
+
+  constructor(pool: Pool, migrationsPath?: string) {
+    this.pool = pool;
+    this.migrationsPath = migrationsPath || path.join(__dirname, 'migrations');
+  }
+
+  async ensureMigrationsTable(): Promise<void> {
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS schema_migrations (
+        version VARCHAR(20) PRIMARY KEY,
+        applied_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        description TEXT
+      )
+    `);
+  }
+
+  async getAppliedMigrations(): Promise<string[]> {
+    const result = await this.pool.query(
+      'SELECT version FROM schema_migrations ORDER BY version'
+    );
+    return result.rows.map((row) => row.version);
+  }
+
+  async getPendingMigrations(): Promise<string[]> {
+    const files = fs.readdirSync(this.migrationsPath)
+      .filter((f) => f.endsWith('.sql'))
+      .sort();
+
+    const applied = await this.getAppliedMigrations();
+    
+    return files.filter((file) => {
+      const version = path.basename(file, '.sql').split('_')[0];
+      return !applied.includes(version);
+    });
+  }
+
+  async runMigration(filename: string): Promise<MigrationResult> {
+    const startTime = Date.now();
+    const version = path.basename(filename, '.sql').split('_')[0];
+    const filePath = path.join(this.migrationsPath, filename);
+
+    try {
+      const sql = fs.readFileSync(filePath, 'utf8');
+      
+      await this.pool.query('BEGIN');
+      await this.pool.query(sql);
+      await this.pool.query('COMMIT');
+
+      return {
+        version,
+        success: true,
+        duration: Date.now() - startTime,
+      };
+    } catch (error) {
+      await this.pool.query('ROLLBACK');
+      
+      return {
+        version,
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+        duration: Date.now() - startTime,
+      };
+    }
+  }
+
+  async runAllPending(): Promise<MigrationResult[]> {
+    await this.ensureMigrationsTable();
+    
+    const pending = await this.getPendingMigrations();
+    const results: MigrationResult[] = [];
+
+    for (const file of pending) {
+      console.log(`Running migration: ${file}`);
+      const result = await this.runMigration(file);
+      results.push(result);

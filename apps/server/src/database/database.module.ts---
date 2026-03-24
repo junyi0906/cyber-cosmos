@@ -1,0 +1,36 @@
+import { Module, Global } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { Pool } from 'pg';
+
+export const DATABASE_POOL = 'DATABASE_POOL';
+
+@Global()
+@Module({
+  imports: [ConfigModule],
+  providers: [
+    {
+      provide: DATABASE_POOL,
+      useFactory: (configService: ConfigService): Pool => {
+        const pool = new Pool({
+          host: configService.get<string>('DATABASE_HOST', 'localhost'),
+          port: configService.get<number>('DATABASE_PORT', 5432),
+          user: configService.get<string>('DATABASE_USER', 'postgres'),
+          password: configService.get<string>('DATABASE_PASSWORD', 'postgres'),
+          database: configService.get<string>('DATABASE_NAME', 'cyber_cosmos'),
+          max: configService.get<number>('DATABASE_POOL_SIZE', 20),
+          idleTimeoutMillis: 30000,
+          connectionTimeoutMillis: 2000,
+        });
+
+        pool.on('error', (err) => {
+          console.error('Unexpected error on idle client', err);
+        });
+
+        return pool;
+      },
+      inject: [ConfigService],
+    },
+  ],
+  exports: [DATABASE_POOL],
+})
+export class DatabaseModule {}
