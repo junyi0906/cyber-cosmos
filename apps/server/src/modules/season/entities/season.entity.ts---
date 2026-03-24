@@ -1,11 +1,10 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany } from 'typeorm';
-import { SeasonRecord } from './season-record.entity';
+import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
 export enum SeasonPhase {
-  PIONEER = 'pioneer',      // 开拓期
-  EXPANSION = 'expansion',  // 扩张期
-  CONFLICT = 'conflict',    // 纷争期
-  FINALE = 'finale'         // 终焉期
+  EXPLORATION = 'exploration',
+  EXPANSION = 'expansion',
+  CONFLICT = 'conflict',
+  FINALE = 'finale',
 }
 
 @Entity('seasons')
@@ -13,45 +12,44 @@ export class Season {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'int', unique: true })
-  seasonNumber: number;
-
-  @Column({ type: 'varchar', length: 100 })
+  @Column()
   name: string;
 
-  @Column({ type: 'text', nullable: true })
-  description: string;
+  @Column()
+  seasonNumber: number;
 
   @Column({
     type: 'enum',
     enum: SeasonPhase,
-    default: SeasonPhase.PIONEER
+    default: SeasonPhase.EXPLORATION,
   })
-  phase: SeasonPhase;
+  currentPhase: SeasonPhase;
 
-  @Column({ type: 'jsonb' })
-  constants: SeasonConstants;
-
-  @Column({ type: 'timestamp' })
-  startDate: Date;
-
-  @Column({ type: 'timestamp', nullable: true })
-  endDate: Date;
-
-  @Column({ type: 'int', default: 1000 })
-  duration: number; // simulation years
-
-  @Column({ type: 'int', default: 0 })
+  @Column({ default: 0 })
   currentYear: number;
 
-  @Column({ type: 'boolean', default: false })
-  isSettled: boolean;
+  @Column({ default: 1000 })
+  totalYears: number;
 
-  @Column({ type: 'boolean', default: true })
+  @Column()
+  theme: string;
+
+  @Column({ type: 'jsonb', default: [] })
+  ruleModifiers: Array<{
+    name: string;
+    description: string;
+    value: number;
+    scope: string;
+  }>;
+
+  @Column({ default: true })
   isActive: boolean;
 
-  @OneToMany(() => SeasonRecord, record => record.seasonId)
-  records: SeasonRecord[];
+  @Column({ type: 'timestamp' })
+  startTime: Date;
+
+  @Column({ type: 'timestamp', nullable: true })
+  endTime: Date;
 
   @CreateDateColumn()
   createdAt: Date;
@@ -60,17 +58,41 @@ export class Season {
   updatedAt: Date;
 }
 
-export interface SeasonConstants {
+@Entity('season_rankings')
+export class SeasonRanking {
+  @PrimaryGeneratedColumn('uuid')
   id: string;
-  name: string;
-  description: string;
-  modifiers: {
-    resourceMultiplier: number;
-    researchMultiplier: number;
-    diplomacyModifier: number;
-    conflictIntensity: number;
-  };
-  startDate: Date;
-  endDate: Date;
-  duration: number;
+
+  @Column()
+  seasonId: string;
+
+  @Column()
+  civilizationId: string;
+
+  @Column()
+  civilizationName: string;
+
+  @Column()
+  rank: number;
+
+  @Column({ type: 'int', default: 0 })
+  totalScore: number;
+
+  @Column({ type: 'int', default: 0 })
+  territoryScore: number;
+
+  @Column({ type: 'int', default: 0 })
+  economyScore: number;
+
+  @Column({ type: 'int', default: 0 })
+  technologyScore: number;
+
+  @Column({ type: 'int', default: 0 })
+  militaryScore: number;
+
+  @Column({ type: 'int', default: 0 })
+  diplomacyScore: number;
+
+  @Column({ type: 'timestamp' })
+  updatedAt: Date;
 }

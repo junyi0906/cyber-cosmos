@@ -1,0 +1,254 @@
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/typeorm';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Season, SeasonPhase } from './entities/season.entity';
+import { SeasonRanking } from './entities/season.entity';
+import {
+  SeasonInfoDto,
+  SeasonLeaderboardDto,
+  LeaderboardEntryDto,
+  SeasonHistoryDto,
+  SeasonHistoryEntryDto,
+  AdvanceSeasonDto,
+  AdvanceSeasonResponseDto,
+  SeasonRuleModifierDto,
+} from './dto/season-info.dto';
+
+@Injectable()
+export class SeasonService {
+  constructor(
+    @InjectRepository(Season)
+    private seasonRepository: Repository<Season>,
+    @InjectRepository(SeasonRanking)
+    private rankingRepository: Repository<SeasonRanking>,
+  ) {}
+
+  async getCurrentSeasonInfo(): Promise<SeasonInfoDto> {
+    const season = await this.seasonRepository.findOne({
+      where: { isActive: true },
+      order: { createdAt: 'DESC' },
+    });
+
+    if (!season) {
+      // Return default season info if no active season
+      return this.getDefaultSeasonInfo();
+    }
+
+    const progressPercentage = (season.currentYear / season.totalYears) * 100;
+
+    return {
+      seasonId: season.id,
+      seasonName: season.name,
+      seasonNumber: season.seasonNumber,
+      currentPhase: season.currentPhase,
+      currentYear: season.currentYear,
+      totalYears: season.totalYears,
+      progressPercentage: Math.round(progressPercentage * 100) / 100,
+      startTime: season.startTime,
+      estimatedEndTime: season.endTime,
+      ruleModifiers: season.ruleModifiers as SeasonRuleModifierDto[],
+      theme: season.theme,
+      isActive: season.isActive,
+    };
+  }
+
+  async getLeaderboard(): Promise<SeasonLeaderboardDto> {
+    const season = await this.seasonRepository.findOne({
+      where: { isActive: true },
+      order: { createdAt: 'DESC' },
+    });
+
+    if (!season) {
+      return {
+        seasonId: 'default',
+        rankings: [],
+        updatedAt: new Date(),
+        totalCivilizations: 0,
+      };
+    }
+
+    const rankings = await this.rankingRepository.find({
+      where: { seasonId: season.id },
+      order: { rank: 'ASC' },
+      take: 100,
+    });
+
+    const leaderboardEntries: LeaderboardEntryDto[] = rankings.map((r) => ({
+      civilizationId: r.civilizationId,
+      civilizationName: r.civilizationName,
+      rank: r.rank,
+      totalScore: r.totalScore,
+      territoryScore: r.territoryScore,
+      economyScore: r.economyScore,
+      technologyScore: r.technologyScore,
+      militaryScore: r.militaryScore,
+      diplomacyScore: r.diplomacyScore,
+    }));
+
+    return {
+      seasonId: season.id,
+      rankings: leaderboardEntries,
+      updatedAt: rankings[0]?.updatedAt || new Date(),
+      totalCivilizations: rankings.length,
+    };
+  }
+
+  async getSeasonHistory(page: number = 1, pageSize: number = 10): Promise<SeasonHistoryDto> {
+    const [seasons, total] = await this.seasonRepository.findAndCount({
+      where: { isActive: false },
+      order: { endTime: 'DESC' },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    });
+
+    const historyEntries: SeasonHistoryEntryDto[] = await Promise.all(
+      seasons.map(async (season) => {
+        const champion = await this.rankingRepository.findOne({
+          where: { seasonId: season.id, rank: 1 },
+        });
+
+        const totalCivs = await this.rankingRepository.count({
+          where: { seasonId: season.id },
+        });
+
+        return {
+          seasonId: season.id,
+          seasonName: season.name,
+          seasonNumber: season.seasonNumber,
+          theme: season.theme,
+          startTime: season.startTime,
+          endTime: season.endTime || new Date(),
+          championName: champion?.civilizationName || 'N/A',
+          championId: champion?.civilizationId || 'N/A',
+          championScore: champion?.totalScore || 0,
+          totalCivilizations: totalCivs,
+          keyEventsCount: Math.floor(Math.random() * 100) + 10, // Placeholder
+        };
+      }),
+    );
+
+    return {
+      seasons: historyEntries,
+      totalSeasons: total,
+      page,
+      pageSize,
+    };
+  }
+
+  async advanceSeason(dto: AdvanceSeasonDto, userId: string): Promise<AdvanceSeasonResponseDto> {
+    const season = await this.seasonRepository.findOne({
+      where: { isActive: true },
+      order: { createdAt: 'DESC' },
+    });
+
+    if (!season) {
+      throw new NotFoundException('No active season found');
+    }
+
+    const phaseOrder = [
+      SeasonPhase.EXPLORATION,
+      SeasonPhase.EXPANSION,
+      SeasonPhase.CONFLICT,
+      SeasonPhase.FINALE,
+    ];
+
+    const currentIndex = phaseOrder.indexOf(season.currentPhase);
+    const targetIndex = phaseOrder.indexOf(dto.targetPhase);
+
+    if (!dto.force && targetIndex !== currentIndex + 1) {
+      throw new BadRequestException(
+        `Cannot advance to ${dto.targetPhase}. Current phase is ${season.currentPhase}. Next valid phase is ${phaseOrder[currentIndex + 1]}`,
+      );
+    }
+
+    const previousPhase = season.currentPhase;
+    season.currentPhase = dto.targetPhase;
+
+    // If advancing to finale, increment year significantly
+    if (dto.targetPhase === SeasonPhase.FINALE) {
+      season.currentYear = Math.floor(season.totalYears * 0.9);
+    } else if (dto.targetPhase === SeasonPhase.CONFLICT) {
+      season.currentYear = Math.floor(season.totalYears * 0.6);
+    } else if (dto.targetPhase === SeasonPhase.EXPANSION) {
+      season.currentYear = Math.floor(season.totalYears * 0.3);
+    }
+
+    await this.seasonRepository.save(season);
+
+    return {
+      success: true,
+      previousPhase,
+      newPhase: dto.targetPhase,
+      seasonId: season.id,
+      advancedAt: new Date(),
+      message: `Season advanced from ${previousPhase} to ${dto.targetPhase}`,
+    };
+  }
+
+  private getDefaultSeasonInfo(): SeasonInfoDto {
+    return {
+      seasonId: 'default-season',
+      seasonName: '创世纪元',
+      seasonNumber: 1,
+      currentPhase: SeasonPhase.EXPLORATION,
+      currentYear: 0,
+      totalYears: 1000,
+      progressPercentage: 0,
+      startTime: new Date(),
+      ruleModifiers: [
+        {
+          name: '初始繁荣',
+          description: '所有文明初始资源 +20%',
+          value: 1.2,
+          scope: 'initial_resources',
+        },
+      ],
+      theme: '起源时代',
+      isActive: true,
+    };
+  }
+
+  // Method to create a new season (for testing/admin purposes)
+  async createSeason(name: string, theme: string, totalYears: number = 1000): Promise<Season> {
+    // Deactivate current active season
+    await this.seasonRepository.update({ isActive: true }, { isActive: false, endTime: new Date() });
+
+    const lastSeason = await this.seasonRepository.findOne({
+      order: { seasonNumber: 'DESC' },
+    });
+
+    const newSeason = this.seasonRepository.create({
+      name,
+      theme,
+      totalYears,
+      seasonNumber: (lastSeason?.seasonNumber || 0) + 1,
+      currentPhase: SeasonPhase.EXPLORATION,
+      currentYear: 0,
+      startTime: new Date(),
+      isActive: true,
+      ruleModifiers: this.generateRuleModifiers(),
+    });
+
+    return this.seasonRepository.save(newSeason);
+  }
+
+  private generateRuleModifiers(): SeasonRuleModifierDto[] {
+    const modifiers: SeasonRuleModifierDto[] = [];
+    const possibleModifiers = [
+      { name: '能源繁荣', description: '能源产出 +{value}%', scope: 'energy_production', min: 10, max: 30 },
+      { name: '矿石匮乏', description: '矿石产出 -{value}%', scope: 'mineral_production', min: 10, max: 25 },
+      { name: '科研加速', description: '科研速度 +{value}%', scope: 'research_speed', min: 15, max: 40 },
+      { name: '外交寒冬', description: '外交信任恢复 -{value}%', scope: 'diplomacy_trust', min: 20, max: 50 },
+      { name: '军事扩张', description: '舰队攻击力 +{value}%', scope: 'military_attack', min: 10, max: 25 },
+    ];
+
+    // Select 2-3 random modifiers
+    const count = Math.floor(Math.random() * 2) + 2;
+    const shuffled = possibleModifiers.sort(() => Math.random() - 0.5);
+
+    for (let i = 0; i < count; i++) {
+      const mod = shuffled[i];
+      const value = Math.floor(Math.random() * (mod.max - mod.min + 1)) + mod.min;
+      modifiers.push({
+        name: mod.name,
+        description: mod.description.replace('{value}', value.toString

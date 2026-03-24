@@ -1,0 +1,183 @@
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+export enum SeasonPhase {
+  EXPLORATION = 'exploration',
+  EXPANSION = 'expansion',
+  CONFLICT = 'conflict',
+  FINALE = 'finale',
+}
+
+export class SeasonRuleModifierDto {
+  @ApiProperty({ description: '规则名称' })
+  name: string;
+
+  @ApiProperty({ description: '规则描述' })
+  description: string;
+
+  @ApiProperty({ description: '修改值' })
+  value: number;
+
+  @ApiProperty({ description: '影响范围' })
+  scope: string;
+}
+
+export class SeasonInfoDto {
+  @ApiProperty({ description: '赛季ID' })
+  seasonId: string;
+
+  @ApiProperty({ description: '赛季名称' })
+  seasonName: string;
+
+  @ApiProperty({ description: '赛季编号' })
+  seasonNumber: number;
+
+  @ApiProperty({ enum: SeasonPhase, description: '当前阶段' })
+  currentPhase: SeasonPhase;
+
+  @ApiProperty({ description: '当前模拟年份' })
+  currentYear: number;
+
+  @ApiProperty({ description: '赛季总年数' })
+  totalYears: number;
+
+  @ApiProperty({ description: '赛季进度百分比' })
+  progressPercentage: number;
+
+  @ApiProperty({ description: '赛季开始时间' })
+  startTime: Date;
+
+  @ApiPropertyOptional({ description: '赛季预计结束时间' })
+  estimatedEndTime?: Date;
+
+  @ApiProperty({ description: '赛季规则修改器', type: [SeasonRuleModifierDto] })
+  ruleModifiers: SeasonRuleModifierDto[];
+
+  @ApiProperty({ description: '赛季主题' })
+  theme: string;
+
+  @ApiProperty({ description: '是否为当前活跃赛季' })
+  isActive: boolean;
+}
+
+export class LeaderboardEntryDto {
+  @ApiProperty({ description: '文明ID' })
+  civilizationId: string;
+
+  @ApiProperty({ description: '文明名称' })
+  civilizationName: string;
+
+  @ApiProperty({ description: '排名' })
+  rank: number;
+
+  @ApiProperty({ description: '总分' })
+  totalScore: number;
+
+  @ApiProperty({ description: '领土分数' })
+  territoryScore: number;
+
+  @ApiProperty({ description: '经济分数' })
+  economyScore: number;
+
+  @ApiProperty({ description: '科技分数' })
+  technologyScore: number;
+
+  @ApiProperty({ description: '军事分数' })
+  militaryScore: number;
+
+  @ApiProperty({ description: '外交分数' })
+  diplomacyScore: number;
+}
+
+export class SeasonLeaderboardDto {
+  @ApiProperty({ description: '赛季ID' })
+  seasonId: string;
+
+  @ApiProperty({ description: '榜单数据', type: [LeaderboardEntryDto] })
+  rankings: LeaderboardEntryDto[];
+
+  @ApiProperty({ description: '更新时间' })
+  updatedAt: Date;
+
+  @ApiProperty({ description: '总文明数' })
+  totalCivilizations: number;
+}
+
+export class SeasonHistoryEntryDto {
+  @ApiProperty({ description: '赛季ID' })
+  seasonId: string;
+
+  @ApiProperty({ description: '赛季名称' })
+  seasonName: string;
+
+  @ApiProperty({ description: '赛季编号' })
+  seasonNumber: number;
+
+  @ApiProperty({ description: '赛季主题' })
+  theme: string;
+
+  @ApiProperty({ description: '开始时间' })
+  startTime: Date;
+
+  @ApiProperty({ description: '结束时间' })
+  endTime: Date;
+
+  @ApiProperty({ description: '冠军文明名称' })
+  championName: string;
+
+  @ApiProperty({ description: '冠军文明ID' })
+  championId: string;
+
+  @ApiProperty({ description: '冠军总分' })
+  championScore: number;
+
+  @ApiProperty({ description: '参与文明总数' })
+  totalCivilizations: number;
+
+  @ApiProperty({ description: '赛季关键事件数' })
+  keyEventsCount: number;
+}
+
+export class SeasonHistoryDto {
+  @ApiProperty({ description: '历史赛季列表', type: [SeasonHistoryEntryDto] })
+  seasons: SeasonHistoryEntryDto[];
+
+  @ApiProperty({ description: '总赛季数' })
+  totalSeasons: number;
+
+  @ApiProperty({ description: '当前页码' })
+  page: number;
+
+  @ApiProperty({ description: '每页数量' })
+  pageSize: number;
+}
+
+export class AdvanceSeasonDto {
+  @ApiProperty({ description: '目标阶段', enum: SeasonPhase })
+  targetPhase: SeasonPhase;
+
+  @ApiPropertyOptional({ description: '强制推进（跳过验证）' })
+  force?: boolean;
+
+  @ApiPropertyOptional({ description: '推进原因/备注' })
+  reason?: string;
+}
+
+export class AdvanceSeasonResponseDto {
+  @ApiProperty({ description: '是否成功' })
+  success: boolean;
+
+  @ApiProperty({ description: '原阶段' })
+  previousPhase: SeasonPhase;
+
+  @ApiProperty({ description: '新阶段' })
+  newPhase: SeasonPhase;
+
+  @ApiProperty({ description: '赛季ID' })
+  seasonId: string;
+
+  @ApiProperty({ description: '推进时间' })
+  advancedAt: Date;
+
+  @ApiPropertyOptional({ description: '消息' })
+  message?: string;
+}
