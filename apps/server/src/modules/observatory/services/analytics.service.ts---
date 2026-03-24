@@ -1,0 +1,285 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { TimelineQueryDto } from '../dto';
+import { 
+  HeatmapData, 
+  HeatmapPoint,
+  ResourceFlowData,
+  FlowNode,
+  FlowLink,
+  CivilizationEvolutionData,
+  EvolutionMetric,
+  EvolutionMilestone
+} from '../interfaces';
+
+@Injectable()
+export class AnalyticsService {
+  private readonly logger = new Logger(AnalyticsService.name);
+
+  async getTimelineData(query: TimelineQueryDto) {
+    const { limit, offset, startDate, endDate, granularity, metrics } = query;
+    
+    const timelineData = [];
+    const now = new Date();
+    const requestedMetrics = metrics ? metrics.split(',') : ['population', 'resources', 'events'];
+    
+    for (let i = offset; i < offset + limit; i++) {
+      const tickData = {
+        tick: 1000 + i,
+        timestamp: new Date(now.getTime() - (limit - i) * 3600000),
+        metrics: {}
+      };
+      
+      requestedMetrics.forEach(metric => {
+        tickData.metrics[metric] = this.generateMetricValue(metric, i);
+      });
+      
+      timelineData.push(tickData);
+    }
+    
+    return {
+      success: true,
+      data: timelineData,
+      meta: {
+        total: 10000,
+        limit,
+        offset,
+        granularity,
+        startDate: startDate || 'game_start',
+        endDate: endDate || 'now'
+      }
+    };
+  }
+
+  private generateMetricValue(metric: string, index: number): number | object {
+    const baseValue = 1000 + Math.sin(index * 0.1) * 500;
+    const noise = Math.random() * 100 - 50;
+    
+    switch (metric) {
+      case 'population':
+        return Math.floor(baseValue * 100 + noise * 10);
+      case 'resources':
+        return {
+          ore: Math.floor(baseValue * 10 + noise),
+          energy: Math.floor(baseValue * 8 + noise),
+          techPoints: Math.floor(baseValue * 0.5 + noise * 0.1)
+        };
+      case 'events':
+        return Math.floor(Math.random() * 10);
+      case 'activeCivilizations':
+        return Math.floor(5 + Math.sin(index * 0.05) * 2);
+      case 'tradeVolume':
+        return Math.floor(baseValue * 5 + noise * 5);
+      default:
+        return Math.floor(baseValue + noise);
+    }
+  }
+
+  async getHeatmapData(): Promise<HeatmapData> {
+    this.logger.log('Generating heatmap data');
+    
+    const points: HeatmapPoint[] = [];
+    const civilizations = [
+      { id: 'civ-001', name: 'Nexus Prime', color: '#00ff88' },
+      { id: 'civ-002', name: 'Void Walkers', color: '#ff0088' },
+      { id: 'civ-003', name: 'Stellar Syndicate', color: '#0088ff' },
+      { id: 'civ-004', name: 'Quantum Collective', color: '#ff8800' },
+      { id: 'civ-005', name: 'Echo Enclave', color: '#8800ff' }
+    ];
+    
+    civilizations.forEach(civ => {
+      const centerX = Math.random() * 200 - 100;
+      const centerY = Math.random() * 200 - 100;
+      const centerZ = Math.random() * 50 - 25;
+      
+      for (let i = 0; i < 20; i++) {
+        const distance = Math.random() * 30;
+        const angle = Math.random() * Math.PI * 2;
+        
+        points.push({
+          x: centerX + Math.cos(angle) * distance,
+          y: centerY + Math.sin(angle) * distance,
+          z: centerZ + (Math.random() - 0.5) * 10,
+          value: Math.random() * 100,
+          civilizationId: civ.id,
+          civilizationName: civ.name,
+          influence: Math.max(0, 100 - distance * 2 + Math.random() * 20)
+        });
+      }
+    });
+    
+    const maxInfluence = Math.max(...points.map(p => p.influence));
+    
+    return {
+      points,
+      maxInfluence,
+      totalPoints: points.length,
+      timestamp: new Date()
+    };
+  }
+
+  async getResourceFlowData(): Promise<ResourceFlowData> {
+    this.logger.log('Generating resource flow data');
+    
+    const nodes: FlowNode[] = [
+      {
+        id: 'civ-001',
+        name: 'Nexus Prime',
+        type: 'civilization',
+        x: 50,
+        y: 80,
+        resources: { ore: 15000, energy: 12000, techPoints: 500 }
+      },
+      {
+        id: 'civ-002',
+        name: 'Void Walkers',
+        type: 'civilization',
+        x: 150,
+        y: 60,
+        resources: { ore: 8000, energy: 20000, techPoints: 300 }
+      },
+      {
+        id: 'civ-003',
+        name: 'Stellar Syndicate',
+        type: 'civilization',
+        x: 100,
+        y: 150,
+        resources: { ore: 12000, energy: 9000, techPoints: 800 }
+      },
+      {
+        id: 'hub-001',
+        name: 'Central Trade Hub',
+        type: 'resource_hub',
+        x: 100,
+        y: 100,
+        resources: { ore: 50000, energy: 45000, techPoints: 2000 }
+      },
+      {
+        id: 'station-001',
+        name: 'Frontier Station',
+        type: 'trade_station',
+        x: 180,
+        y: 120,
+        resources: { ore: 5000, energy: 8000, techPoints: 200 }
+      }
+    ];
+    
+    const links: FlowLink[] = [
+      { source: 'civ-001', target: 'hub-001', resourceType: 'ore', volume: 2000, efficiency: 0.95, routeId: 'route-001' },
+      { source: 'hub-001', target: 'civ-002', resourceType: 'ore', volume: 1500, efficiency: 0.88, routeId: 'route-002' },
+      { source: 'civ-002', target: 'hub-001', resourceType: 'energy', volume: 3000, efficiency: 0.92, routeId: 'route-003' },
+      { source: 'hub-001', target: 'civ-003', resourceType: 'energy', volume: 2500, efficiency: 0.90, routeId: 'route-004' },
+      { source: 'civ-003', target: 'hub-001', resourceType: 'techPoints', volume: 200, efficiency: 0.85, routeId: 'route-005' },
+      { source: 'hub-001', target: 'civ-001', resourceType: 'techPoints', volume: 150, efficiency: 0.95, routeId: 'route-006' },
+      { source: 'station-001', target: 'civ-002', resourceType: 'ore', volume: 800, efficiency: 0.75, routeId: 'route-007' },
+      { source: 'civ-003', target: 'station-001', resourceType: 'energy', volume: 1200, efficiency: 0.80, routeId: 'route-008' }
+    ];
+    
+    const totalVolume = {
+      ore: links.filter(l => l.resourceType === 'ore').reduce((sum, l) => sum + l.volume, 0),
+      energy: links.filter(l => l.resourceType === 'energy').reduce((sum, l) => sum + l.volume, 0),
+      techPoints: links.filter(l => l.resourceType === 'techPoints').reduce((sum, l) => sum + l.volume, 0)
+    };
+    
+    return {
+      nodes,
+      links,
+      totalVolume,
+      activeRoutes: links.length
+    };
+  }
+
+  async getCivilizationEvolution(civId: string): Promise<CivilizationEvolutionData> {
+    this.logger.log(`Fetching evolution data for civilization: ${civId}`);
+    
+    const metrics: EvolutionMetric[] = [];
+    const basePopulation = 50000;
+    const baseMilitary = 1000;
+    const baseEconomy = 5000;
+    const baseTech = 10;
+    
+    for (let tick = 0; tick < 100; tick++) {
+      const growth = 1 + tick * 0.02;
+      const fluctuation = Math.sin(tick * 0.1) * 0.1 + 1;
+      
+      metrics.push({
+        tick,
+        timestamp: new Date(Date.now() - (100 - tick) * 3600000),
+        population: Math.floor(basePopulation * growth * fluctuation),
+        militaryPower: Math.floor(baseMilitary * growth * (1 + Math.random() * 0.2)),
+        economicStrength: Math.floor(baseEconomy * growth * fluctuation),
+        techLevel: Math.floor(baseTech + tick * 0.5 + Math.random() * 2),
+        culturalInfluence: Math.floor(50 + tick * 0.8 + Math.random() * 10),
+        territorySize: Math.floor(10 + tick * 0.3 + Math.random() * 2),
+        resourceStockpile: {
+          ore: Math.floor(5000 + tick * 100 + Math.random() * 500),
+          energy: Math.floor(3000 + tick * 80 + Math.random() * 300),
+          techPoints: Math.floor(100 + tick * 20 + Math.random() * 50)
+        }
+      });
+    }
+    
+    const milestones: EvolutionMilestone[] = [
+      {
+        tick: 10,
+        type: 'breakthrough',
+        title: 'Quantum Computing Discovery',
+        description: 'Achieved quantum supremacy, unlocking new research paths',
+        impact: { techLevel: 5, researchSpeed: 0.2 }
+      },
+      {
+        tick: 25,
+        type: 'expansion',
+        title: 'First Colony Established',
+        description: 'Successfully colonized a new star system',
+        impact: { territorySize: 3, population: 5000 }
+      },
+      {
+        tick: 45,
+        type: 'war',
+        title: 'Border Conflict',
+        description: 'Engaged in territorial dispute with neighboring civilization',
+        impact: { militaryPower: -200, diplomaticStanding: -0.3 }
+      },
+      {
+        tick: 60,
+        type: 'trade',
+        title: 'Trade Agreement Signed',
+        description: 'Established major trade route with Stellar Syndicate',
+        impact: { economicStrength: 1000, resourceFlow: 0.15 }
+      },
+      {
+        tick: 80,
+        type: 'diplomacy',
+        title: 'Alliance Formed',
+        description: 'Formed defensive alliance with two neighboring civilizations',
+        impact: { diplomaticStanding: 0.5, militaryPower: 500 }
+      }
+    ];
+    
+    const civNames: Record<string, string> = {
+      'civ-001': 'Nexus Prime',
+      'civ-002': 'Void Walkers',
+      'civ-003': 'Stellar Syndicate',
+      'civ-004': 'Quantum Collective',
+      'civ-005': 'Echo Enclave'
+    };
+    
+    return {
+      civilizationId: civId,
+      civilizationName: civNames[civId] || `Civilization ${civId}`,
+      metrics,
+      milestones,
+      growthRate: {
+        population: 0.023,
+        military: 0.018,
+        economy: 0.025,
+        technology: 0.031
+      },
+      currentStatus: {
+        overallRank: Math.floor(Math.random() * 5) + 1,
+        dominantAspect: 'technology',
+        threatLevel: 'low'
+      }
+    };
+  }
+}

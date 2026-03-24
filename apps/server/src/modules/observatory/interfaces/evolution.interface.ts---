@@ -1,0 +1,50 @@
+export interface EvolutionMetric {
+  tick: number;
+  timestamp: Date;
+  population: number;
+  militaryPower: number;
+  economicStrength: number;
+  techLevel: number;
+  culturalInfluence: number;
+  territorySize: number;
+  resourceStockpile: {
+    ore: number;
+    energy: number;
+    techPoints: number;
+  };
+}
+
+export interface EvolutionMilestone {
+  tick: number;
+  type: 'breakthrough' | 'disaster' | 'expansion' | 'war' | 'diplomacy' | 'trade';
+  title: string;
+  description: string;
+  impact: Record<string, number>;
+}
+
+export interface CivilizationEvolutionData {
+  civilizationId: string;
+  civilizationName: string;
+  metrics: EvolutionMetric[];
+  milestones: EvolutionMilestone[];
+  growthRate: {
+    population: number;
+    military: number;
+    economy: number;
+    technology: number;
+  };
+  currentStatus: {
+    overallRank: number;
+    dominantAspect: string;
+    threatLevel: 'low' | 'medium' | 'high' | 'critical';
+  };
+}
+
+export interface CivilizationEvolutionResponse {
+  success: boolean;
+  data: CivilizationEvolutionData;
+  meta: {
+    generatedAt: Date;
+    dataPoints: number;
+  };
+}

@@ -1,0 +1,41 @@
+export interface FlowNode {
+  id: string;
+  name: string;
+  type: 'civilization' | 'resource_hub' | 'trade_station';
+  x: number;
+  y: number;
+  resources: {
+    ore: number;
+    energy: number;
+    techPoints: number;
+  };
+}
+
+export interface FlowLink {
+  source: string;
+  target: string;
+  resourceType: 'ore' | 'energy' | 'techPoints';
+  volume: number;
+  efficiency: number;
+  routeId?: string;
+}
+
+export interface ResourceFlowData {
+  nodes: FlowNode[];
+  links: FlowLink[];
+  totalVolume: {
+    ore: number;
+    energy: number;
+    techPoints: number;
+  };
+  activeRoutes: number;
+}
+
+export interface ResourceFlowResponse {
+  success: boolean;
+  data: ResourceFlowData;
+  meta: {
+    generatedAt: Date;
+    period: string;
+  };
+}

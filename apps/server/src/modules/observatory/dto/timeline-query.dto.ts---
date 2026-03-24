@@ -1,53 +1,11 @@
-import { IsOptional, IsNumber, IsString, IsEnum, Min, Max } from 'class-validator';
+import { IsOptional, IsNumber, IsString, Min } from 'class-validator';
 import { Type } from 'class-transformer';
-
-export enum TimelineGranularity {
-  HOUR = 'hour',
-  DAY = 'day',
-  WEEK = 'week',
-  MONTH = 'month',
-  YEAR = 'year',
-}
-
-export enum TimelineMetric {
-  POPULATION = 'population',
-  RESOURCES = 'resources',
-  TECHNOLOGY = 'technology',
-  MILITARY = 'military',
-  DIPLOMACY = 'diplomacy',
-  TRADE_VOLUME = 'trade_volume',
-}
 
 export class TimelineQueryDto {
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
-  @Min(0)
-  startTime?: number;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  @Min(0)
-  endTime?: number;
-
-  @IsOptional()
-  @IsEnum(TimelineGranularity)
-  granularity?: TimelineGranularity = TimelineGranularity.DAY;
-
-  @IsOptional()
-  @IsEnum(TimelineMetric)
-  metric?: TimelineMetric = TimelineMetric.POPULATION;
-
-  @IsOptional()
-  @IsString()
-  civilizationId?: string;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
   @Min(1)
-  @Max(1000)
   limit?: number = 100;
 
   @IsOptional()
@@ -55,4 +13,20 @@ export class TimelineQueryDto {
   @IsNumber()
   @Min(0)
   offset?: number = 0;
+
+  @IsOptional()
+  @IsString()
+  startDate?: string;
+
+  @IsOptional()
+  @IsString()
+  endDate?: string;
+
+  @IsOptional()
+  @IsString()
+  granularity?: 'hour' | 'day' | 'week' | 'month' = 'day';
+
+  @IsOptional()
+  @IsString()
+  metrics?: string;
 }

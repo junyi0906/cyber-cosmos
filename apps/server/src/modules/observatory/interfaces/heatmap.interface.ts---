@@ -1,0 +1,25 @@
+export interface HeatmapPoint {
+  x: number;
+  y: number;
+  z?: number;
+  value: number;
+  civilizationId: string;
+  civilizationName: string;
+  influence: number;
+}
+
+export interface HeatmapData {
+  points: HeatmapPoint[];
+  maxInfluence: number;
+  totalPoints: number;
+  timestamp: Date;
+}
+
+export interface HeatmapResponse {
+  success: boolean;
+  data: HeatmapData;
+  meta: {
+    generatedAt: Date;
+    version: string;
+  };
+}

@@ -1,38 +1,22 @@
-import { Controller, Get, Query, Param, ParseIntPipe } from '@nestjs/common';
-import { ObservatoryService } from './observatory.service';
-import { TimelineQueryDto } from './dto/timeline-query.dto';
-import { HeatmapQueryDto } from './dto/heatmap-data.dto';
+import { 
+  Controller, 
+  Get, 
+  Query, 
+  Param,
+  ParseIntPipe,
+  DefaultValuePipe
+} from '@nestjs/common';
+import { AnalyticsService } from './services/analytics.service';
+import { TimelineQueryDto } from './dto';
+import { 
+  HeatmapResponse, 
+  ResourceFlowResponse,
+  CivilizationEvolutionResponse 
+} from './interfaces';
 
-@Controller('observatory')
+@Controller('api/observatory')
 export class ObservatoryController {
-  constructor(private readonly observatoryService: ObservatoryService) {}
+  constructor(private readonly analyticsService: AnalyticsService) {}
 
   @Get('timeline')
-  async getTimeline(@Query() query: TimelineQueryDto) {
-    return this.observatoryService.getTimelineData(query);
-  }
-
-  @Get('heatmap')
-  async getHeatmap(@Query() query: HeatmapQueryDto) {
-    return this.observatoryService.getHeatmapData(query);
-  }
-
-  @Get('influences')
-  async getCivilizationInfluences(@Query('civilizationIds') civilizationIds?: string) {
-    const ids = civilizationIds ? civilizationIds.split(',') : undefined;
-    return this.observatoryService.getCivilizationInfluences(ids);
-  }
-
-  @Get('analytics/civilization/:id')
-  async getCivilizationAnalytics(@Param('id') civilizationId: string) {
-    return this.observatoryService.getCivilizationAnalytics(civilizationId);
-  }
-
-  @Get('analytics/universe')
-  async getUniverseAnalytics() {
-    return this.observatoryService.getUniverseAnalytics();
-  }
-
-  @Get('analytics/report')
-  async getAnalyticsReport(
-    @Query('startTime', ParseIntPipe)
+  async getTimeline(@Query() query:
