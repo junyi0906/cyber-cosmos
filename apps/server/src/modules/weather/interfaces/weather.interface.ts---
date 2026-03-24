@@ -1,60 +1,38 @@
-export enum WeatherType {
-  STORM = 'STORM',
-  DARKNESS = 'DARKNESS',
-  MATTER = 'MATTER',
+/**
+ * 天气状态枚举
+ * 定义宇宙中可能出现的各种天气类型
+ */
+export enum WeatherState {
+  /** 平静状态 - 无特殊效果 */
   CALM = 'CALM',
+  /** 资源风暴 - 特定区域矿石产出翻倍，消耗能源增加 */
+  RESOURCE_STORM = 'RESOURCE_STORM',
+  /** 黑暗波动 - 降低传感器范围，外交视野受限 */
+  DARK_FLUX = 'DARK_FLUX',
+  /** 跃迁阻塞 - 阻止跃迁航行 */
+  WARP_BLOCK = 'WARP_BLOCK',
 }
 
-export interface WeatherEffectModifiers {
-  productionRate?: number;
-  visionRange?: number;
-  techSpeed?: number;
-  energyConsumption?: number;
-  tradeAccidentRate?: number;
-  diplomacyTrustDecay?: number;
-}
-
-export interface WeatherEffect {
-  type: WeatherType;
+/**
+ * 天气基础接口
+ */
+export interface Weather {
+  /** 天气唯一标识 */
+  id: string;
+  /** 天气状态类型 */
+  state: WeatherState;
+  /** 天气名称 */
   name: string;
+  /** 天气描述 */
   description: string;
-  modifiers: WeatherEffectModifiers;
-  duration: number;
-}
-
-export interface CivilizationAttributes {
-  id: string;
-  name: string;
-  productionRate: number;
-  visionRange: number;
-  techSpeed: number;
-  energyConsumption: number;
-  baseProductionRate: number;
-  baseVisionRange: number;
-  baseTechSpeed: number;
-  baseEnergyConsumption: number;
-  activeWeatherEffects: Map<WeatherType, ActiveWeatherEffect>;
-}
-
-export interface ActiveWeatherEffect {
-  type: WeatherType;
-  appliedAt: number;
-  duration: number;
-  sectorId: string;
-}
-
-export interface Sector {
-  id: string;
-  name: string;
-  coordinates: { x: number; y: number; z: number };
-  weatherType: WeatherType | null;
-  weatherStartTime: number | null;
-  affectedCivilizationIds: string[];
-}
-
-export interface WeatherState {
-  currentWeather: WeatherType;
-  globalModifiers: WeatherEffectModifiers;
-  affectedSectors: Map<string, Sector>;
-  activeEffects: Map<string, ActiveWeatherEffect[]>;
+  /** 影响区域 */
+  affectedRegions: string[];
+  /** 开始时间 */
+  startTime: Date;
+  /** 结束时间 */
+  endTime: Date;
+  /** 天气强度 (0.0 - 1.0) */
+  intensity: number;
+  /** 是否为全局天气 */
+  isGlobal: boolean;
 }

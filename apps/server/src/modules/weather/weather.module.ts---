@@ -1,11 +1,15 @@
 import { Module } from '@nestjs/common';
 import { WeatherService } from './weather.service';
-import { WeatherController } from './weather.controller';
-import { EffectsService } from './effects.service';
+import { WeatherGateway } from './weather.gateway';
 
+/**
+ * 天气模块
+ * 负责管理宇宙天气系统，包括天气预报、效果计算和实时推送
+ */
 @Module({
-  controllers: [WeatherController],
-  providers: [WeatherService, EffectsService],
-  exports: [WeatherService, EffectsService],
+  providers: [WeatherService, WeatherGateway],
+  controllers: [],
+  exports: [WeatherService],
+  imports: [],
 })
 export class WeatherModule {}

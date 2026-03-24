@@ -1,0 +1,93 @@
+import { WeatherState } from '../interfaces/weather.interface';
+
+/**
+ * 天气预报 DTO
+ * 用于向前端推送天气预报信息
+ */
+export class WeatherForecastDto {
+  /** 天气唯一标识 */
+  id: string;
+
+  /** 天气状态类型 */
+  state: WeatherState;
+
+  /** 天气名称 */
+  name: string;
+
+  /** 天气描述 */
+  description: string;
+
+  /** 影响区域列表 */
+  affectedRegions: string[];
+
+  /** 预计开始时间 (ISO 8601 格式) */
+  startTime: string;
+
+  /** 预计结束时间 (ISO 8601 格式) */
+  endTime: string;
+
+  /** 天气强度 (0.0 - 1.0) */
+  intensity: number;
+
+  /** 是否为全局天气 */
+  isGlobal: boolean;
+
+  /** 预警等级 */
+  warningLevel: WeatherWarningLevel;
+
+  /** 剩余时间 (秒) */
+  remainingSeconds: number;
+}
+
+/**
+ * 天气预警等级
+ */
+export enum WeatherWarningLevel {
+  /** 无预警 */
+  NONE = 'NONE',
+  /** 低级预警 */
+  LOW = 'LOW',
+  /** 中级预警 */
+  MEDIUM = 'MEDIUM',
+  /** 高级预警 */
+  HIGH = 'HIGH',
+  /** 紧急预警 */
+  CRITICAL = 'CRITICAL',
+}
+
+/**
+ * 创建天气预报 DTO
+ */
+export class CreateWeatherForecastDto {
+  /** 天气状态类型 */
+  state: WeatherState;
+
+  /** 影响区域列表 */
+  affectedRegions: string[];
+
+  /** 持续时间 (秒) */
+  durationSeconds: number;
+
+  /** 天气强度 (0.0 - 1.0) */
+  intensity: number;
+
+  /** 是否为全局天气 */
+  isGlobal: boolean;
+}
+
+/**
+ * 天气状态更新 DTO
+ */
+export class WeatherUpdateDto {
+  /** 天气唯一标识 */
+  id: string;
+
+  /** 新的强度值 */
+  intensity?: number;
+
+  /** 新的影响区域 */
+  affectedRegions?: string[];
+
+  /** 延长时间 (秒) */
+  extendDuration?: number;
+}

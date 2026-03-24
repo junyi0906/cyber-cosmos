@@ -1,94 +1,177 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import {
+  Weather,
+  WeatherState,
+} from './interfaces/weather.interface';
+import {
+  WeatherEffects,
+  WEATHER_EFFECTS_MAP,
+} from './interfaces/weather-effects.interface';
+import {
+  WeatherForecastDto,
+  CreateWeatherForecastDto,
+  WeatherWarningLevel,
+} from './dto/weather-forecast.dto';
+import { v4 as uuidv4 } from 'uuid';
 
-export type WeatherType = 'calm' | 'resource_storm' | 'dark_matter_wave' | 'dark_fluctuation';
-
-export interface WeatherEffect {
-  type: WeatherType;
-  miningEfficiency: number;
-  researchSpeed: number;
-  energyConsumption: number;
-  accidentRate: number;
-  visibilityRange: number;
-  trustDecay: number;
-}
-
+/**
+ * 天气服务
+ * 管理宇宙天气的生成、更新和效果计算
+ */
 @Injectable()
 export class WeatherService {
-  private currentWeather: WeatherType = 'calm';
-  private weatherHistory: { type: WeatherType; timestamp: Date }[] = [];
+  private readonly logger = new Logger(WeatherService.name);
+  private activeWeathers: Map<string, Weather> = new Map();
 
-  // 获取当前天气
-  getCurrentWeather(): WeatherType {
-    return this.currentWeather;
+  /**
+   * 获取天气名称
+   */
+  private getWeatherName(state: WeatherState): string {
+    const names: Record<WeatherState, string> = {
+      [WeatherState.CALM]: '平静',
+      [WeatherState.RESOURCE_STORM]: '资源风暴',
+      [WeatherState.DARK_FLUX]: '黑暗波动',
+      [WeatherState.WARP_BLOCK]: '跃迁阻塞',
+    };
+    return names[state];
   }
 
-  // 设置天气（测试用）
-  setWeather(type: WeatherType): void {
-    this.currentWeather = type;
-    this.weatherHistory.push({ type, timestamp: new Date() });
+  /**
+   * 获取天气描述
+   */
+  private getWeatherDescription(state: WeatherState): string {
+    const descriptions: Record<WeatherState, string> = {
+      [WeatherState.CALM]: '宇宙处于平静状态，一切活动正常进行。',
+      [WeatherState.RESOURCE_STORM]:
+        '资源风暴席卷星域，矿石产出大幅提升，但能源消耗也随之增加。',
+      [WeatherState.DARK_FLUX]:
+        '黑暗波动干扰了传感器系统，外交视野受限，隐身系统失效。',
+      [WeatherState.WARP_BLOCK]:
+        '跃迁阻塞力场笼罩该区域，所有跃迁航行被迫中止。',
+    };
+    return descriptions[state];
   }
 
-  // 获取天气效果
-  getCurrentWeatherEffect(): WeatherEffect {
-    return this.getWeatherEffect(this.currentWeather);
+  /**
+   * 创建新天气
+   */
+  createWeather(dto: CreateWeatherForecastDto): Weather {
+    const now = new Date();
+    const endTime = new Date(now.getTime() + dto.durationSeconds * 1000);
+
+    const weather: Weather = {
+      id: uuidv4(),
+      state: dto.state,
+      name: this.getWeatherName(dto.state),
+      description: this.getWeatherDescription(dto.state),
+      affectedRegions: dto.affectedRegions,
+      startTime: now,
+      endTime: endTime,
+      intensity: dto.intensity,
+      isGlobal: dto.isGlobal,
+    };
+
+    this.activeWeathers.set(weather.id, weather);
+    this.logger.log(
+      `Created weather: ${weather.name} (${weather.state}) with intensity ${weather.intensity}`,
+    );
+
+    return weather;
   }
 
-  // 根据天气类型获取效果
-  getWeatherEffect(type: WeatherType): WeatherEffect {
-    switch (type) {
-      case 'calm':
-        return {
-          type: 'calm',
-          miningEfficiency: 1.0,
-          researchSpeed: 1.0,
-          energyConsumption: 1.0,
-          accidentRate: 0,
-          visibilityRange: 1.0,
-          trustDecay: 1.0,
-        };
-      case 'resource_storm':
-        return {
-          type: 'resource_storm',
-          miningEfficiency: 1.5,
-          researchSpeed: 1.0,
-          energyConsumption: 1.0,
-          accidentRate: 0.3,
-          visibilityRange: 0.8,
-          trustDecay: 1.0,
-        };
-      case 'dark_matter_wave':
-        return {
-          type: 'dark_matter_wave',
-          miningEfficiency: 1.0,
-          researchSpeed: 1.5,
-          energyConsumption: 2.0,
-          accidentRate: 0.1,
-          visibilityRange: 1.0,
-          trustDecay: 1.0,
-        };
-      case 'dark_fluctuation':
-        return {
-          type: 'dark_fluctuation',
-          miningEfficiency: 1.0,
-          researchSpeed: 1.0,
-          energyConsumption: 1.0,
-          accidentRate: 0.05,
-          visibilityRange: 0.5,
-          trustDecay: 1.5,
-        };
-      default:
-        return this.getWeatherEffect('calm');
+  /**
+   * 获取天气效果
+   */
+  getWeatherEffects(state: WeatherState): WeatherEffects {
+    return WEATHER_EFFECTS_MAP[state];
+  }
+
+  /**
+   * 获取所有活跃天气
+   */
+  getActiveWeathers(): Weather[] {
+    this.cleanupExpiredWeathers();
+    return Array.from(this.activeWeathers.values());
+  }
+
+  /**
+   * 获取指定区域的天气
+   */
+  getWeatherByRegion(regionId: string): Weather | null {
+    this.cleanupExpiredWeathers();
+
+    for (const weather of this.activeWeathers.values()) {
+      if (weather.isGlobal || weather.affectedRegions.includes(regionId)) {
+        return weather;
+      }
+    }
+
+    // 如果没有特定天气，返回平静状态
+    return {
+      id: 'default-calm',
+      state: WeatherState.CALM,
+      name: this.getWeatherName(WeatherState.CALM),
+      description: this.getWeatherDescription(WeatherState.CALM),
+      affectedRegions: [],
+      startTime: new Date(),
+      endTime: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 一年后
+      intensity: 0,
+      isGlobal: true,
+    };
+  }
+
+  /**
+   * 将天气转换为预报 DTO
+   */
+  toForecastDto(weather: Weather): WeatherForecastDto {
+    const now = new Date();
+    const remainingMs = weather.endTime.getTime() - now.getTime();
+    const remainingSeconds = Math.max(0, Math.floor(remainingMs / 1000));
+
+    return {
+      id: weather.id,
+      state: weather.state,
+      name: weather.name,
+      description: weather.description,
+      affectedRegions: weather.affectedRegions,
+      startTime: weather.startTime.toISOString(),
+      endTime: weather.endTime.toISOString(),
+      intensity: weather.intensity,
+      isGlobal: weather.isGlobal,
+      warningLevel: this.calculateWarningLevel(weather),
+      remainingSeconds,
+    };
+  }
+
+  /**
+   * 计算预警等级
+   */
+  private calculateWarningLevel(weather: Weather): WeatherWarningLevel {
+    if (weather.state === WeatherState.CALM) {
+      return WeatherWarningLevel.NONE;
+    }
+
+    if (weather.intensity >= 0.8) {
+      return WeatherWarningLevel.CRITICAL;
+    } else if (weather.intensity >= 0.6) {
+      return WeatherWarningLevel.HIGH;
+    } else if (weather.intensity >= 0.4) {
+      return WeatherWarningLevel.MEDIUM;
+    } else {
+      return WeatherWarningLevel.LOW;
     }
   }
 
-  // 获取天气历史
-  getWeatherHistory(): { type: WeatherType; timestamp: Date }[] {
-    return this.weatherHistory;
-  }
-
-  // 清除历史（测试用）
-  clearHistory(): void {
-    this.currentWeather = 'calm';
-    this.weatherHistory = [];
+  /**
+   * 清理过期天气
+   */
+  private cleanupExpiredWeathers(): void {
+    const now = new Date();
+    for (const [id, weather] of this.activeWeathers.entries()) {
+      if (weather.endTime < now) {
+        this.activeWeathers.delete(id);
+        this.logger.log(`Weather expired: ${weather.name} (${id})`);
+      }
+    }
   }
 }

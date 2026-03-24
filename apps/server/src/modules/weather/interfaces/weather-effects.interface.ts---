@@ -1,0 +1,67 @@
+import { WeatherState } from './weather.interface';
+
+/**
+ * 天气效果接口
+ * 定义各种天气对游戏机制的影响
+ */
+export interface WeatherEffects {
+  /** 资源加成倍率 (1.0 = 无加成, 2.0 = 双倍产出) */
+  resourceBonus: number;
+
+  /** 护盾惩罚 (0 = 无惩罚, 0.5 = 护盾效率减半) */
+  shieldMalus: number;
+
+  /** 是否禁用隐身 */
+  stealthDisabled: boolean;
+
+  /** 是否阻止跃迁 */
+  warpBlocked: boolean;
+}
+
+/**
+ * 天气效果映射
+ * 为每种天气状态定义默认效果
+ */
+export const WEATHER_EFFECTS_MAP: Record<WeatherState, WeatherEffects> = {
+  [WeatherState.CALM]: {
+    resourceBonus: 1.0,
+    shieldMalus: 0,
+    stealthDisabled: false,
+    warpBlocked: false,
+  },
+  [WeatherState.RESOURCE_STORM]: {
+    resourceBonus: 2.0,
+    shieldMalus: 0.2,
+    stealthDisabled: false,
+    warpBlocked: false,
+  },
+  [WeatherState.DARK_FLUX]: {
+    resourceBonus: 1.0,
+    shieldMalus: 0,
+    stealthDisabled: true,
+    warpBlocked: false,
+  },
+  [WeatherState.WARP_BLOCK]: {
+    resourceBonus: 1.0,
+    shieldMalus: 0,
+    stealthDisabled: false,
+    warpBlocked: true,
+  },
+};
+
+/**
+ * 天气效果计算器接口
+ */
+export interface WeatherEffectCalculator {
+  /** 计算资源产出加成 */
+  calculateResourceBonus(baseProduction: number, weatherState: WeatherState): number;
+
+  /** 计算护盾效果 */
+  calculateShieldEffect(baseShield: number, weatherState: WeatherState): number;
+
+  /** 检查隐身是否可用 */
+  isStealthAvailable(weatherState: WeatherState): boolean;
+
+  /** 检查跃迁是否可用 */
+  isWarpAvailable(weatherState: WeatherState): boolean;
+}
