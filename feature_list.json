@@ -160,9 +160,10 @@
         "feat-001",
         "feat-004"
       ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "依赖数据库表和文明资源系统"
+      "passes": true,
+      "last_attempt": "2026-03-25T00:19:25.687318",
+      "notes": "依赖数据库表和文明资源系统",
+      "retry_count": 0
     },
     {
       "id": "feat-008",
