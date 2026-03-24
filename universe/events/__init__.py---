@@ -1,0 +1,72 @@
+"""
+Universe Events Package
+定义所有宇宙事件的数据结构
+"""
+
+from .types import EventType, EventSeverity
+from .base import Event, EventData
+from .celestial_events import (
+    CelestialEvent,
+    SupernovaEvent,
+    BlackHoleEvent,
+    NebulaCollapseEvent,
+)
+from .civilization_events import (
+    CivilizationEvent,
+    TechBreakthroughEvent,
+    CivilWarEvent,
+    ExtinctionEvent,
+)
+from .disaster_events import (
+    DisasterEvent,
+    GammaRayBurstEvent,
+    PlagueEvent,
+    VoidInvasionEvent,
+)
+from .schemas import (
+    EventSchema,
+    SupernovaEventSchema,
+    BlackHoleEventSchema,
+    NebulaCollapseEventSchema,
+    TechBreakthroughEventSchema,
+    CivilWarEventSchema,
+    ExtinctionEventSchema,
+    GammaRayBurstEventSchema,
+    PlagueEventSchema,
+    VoidInvasionEventSchema,
+)
+
+__all__ = [
+    # Types
+    "EventType",
+    "EventSeverity",
+    # Base
+    "Event",
+    "EventData",
+    # Celestial Events
+    "CelestialEvent",
+    "SupernovaEvent",
+    "BlackHoleEvent",
+    "NebulaCollapseEvent",
+    # Civilization Events
+    "CivilizationEvent",
+    "TechBreakthroughEvent",
+    "CivilWarEvent",
+    "ExtinctionEvent",
+    # Disaster Events
+    "DisasterEvent",
+    "GammaRayBurstEvent",
+    "PlagueEvent",
+    "VoidInvasionEvent",
+    # Schemas
+    "EventSchema",
+    "SupernovaEventSchema",
+    "BlackHoleEventSchema",
+    "NebulaCollapseEventSchema",
+    "TechBreakthroughEventSchema",
+    "CivilWarEventSchema",
+    "ExtinctionEventSchema",
+    "GammaRayBurstEventSchema",
+    "PlagueEventSchema",
+    "VoidInvasionEventSchema",
+]

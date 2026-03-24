@@ -1,0 +1,137 @@
+"""
+事件类型定义
+定义所有宇宙事件的枚举类型
+"""
+
+from enum import Enum
+from typing import Literal
+
+
+class EventType(str, Enum):
+    """宇宙事件类型枚举"""
+    
+    CELESTIAL = "celestial"
+    """天体事件：超新星、黑洞、星云等"""
+    
+    CIVILIZATION = "civilization"
+    """文明事件：科技突破、内战、灭绝等"""
+    
+    DISASTER = "disaster"
+    """灾难事件：伽马射线暴、瘟疫、虚空入侵等"""
+    
+    def __str__(self) -> str:
+        return self.value
+    
+    @classmethod
+    def from_string(cls, value: str) -> "EventType":
+        """从字符串创建枚举值"""
+        try:
+            return cls(value.lower())
+        except ValueError:
+            raise ValueError(f"Invalid EventType: {value}")
+
+
+class EventSeverity(int, Enum):
+    """事件严重程度枚举"""
+    
+    TRIVIAL = 1
+    """微不足道：几乎无影响"""
+    
+    MINOR = 2
+    """轻微：小范围影响"""
+    
+    MODERATE = 3
+    """中等：显著影响"""
+    
+    MAJOR = 4
+    """重大：大范围影响"""
+    
+    CATASTROPHIC = 5
+    """灾难性：毁灭级影响"""
+    
+    def __str__(self) -> str:
+        severity_names = {
+            1: "TRIVIAL",
+            2: "MINOR",
+            3: "MODERATE",
+            4: "MAJOR",
+            5: "CATASTROPHIC",
+        }
+        return severity_names[self.value]
+    
+    @classmethod
+    def from_int(cls, value: int) -> "EventSeverity":
+        """从整数创建枚举值"""
+        try:
+            return cls(value)
+        except ValueError:
+            raise ValueError(f"Invalid EventSeverity: {value}")
+    
+    @property
+    def label(self) -> str:
+        """获取严重程度的中文标签"""
+        labels = {
+            1: "微不足道",
+            2: "轻微",
+            3: "中等",
+            4: "重大",
+            5: "灾难性",
+        }
+        return labels[self.value]
+
+
+class CelestialEventType(str, Enum):
+    """天体事件子类型"""
+    
+    SUPERNOVA = "supernova"
+    """超新星爆发"""
+    
+    BLACK_HOLE = "black_hole"
+    """黑洞形成"""
+    
+    NEBULA_COLLAPSE = "nebula_collapse"
+    """星云坍缩"""
+    
+    STAR_BIRTH = "star_birth"
+    """恒星诞生"""
+    
+    PLANETARY_FORMATION = "planetary_formation"
+    """行星形成"""
+
+
+class CivilizationEventType(str, Enum):
+    """文明事件子类型"""
+    
+    TECH_BREAKTHROUGH = "tech_breakthrough"
+    """科技突破"""
+    
+    CIVIL_WAR = "civil_war"
+    """内战"""
+    
+    EXTINCTION = "extinction"
+    """灭绝"""
+    
+    FIRST_CONTACT = "first_contact"
+    """首次接触"""
+    
+    ASCENSION = "ascension"
+    """飞升"""
+
+
+class DisasterEventType(str, Enum):
+    """灾难事件子类型"""
+    
+    GAMMA_RAY_BURST = "gamma_ray_burst"
+    """伽马射线暴"""
+    
+    PLAGUE = "plague"
+    """瘟疫"""
+    
+    VOID_INVASION = "void_invasion"
+    """虚空入侵"""
+    
+    ASTEROID_IMPACT = "asteroid_impact"
+    """小行星撞击"""
+    
+    SOLAR_FLARE = "solar_flare"
+    """太阳耀斑"""

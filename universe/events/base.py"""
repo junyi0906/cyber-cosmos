@@ -1,0 +1,192 @@
+事件基类定义
+定义所有宇宙事件的基类和通用数据结构
+"""
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any, Dict, Generic, List, Optional, TypeVar
+from uuid import uuid4
+
+from .types import EventSeverity, EventType
+
+
+@dataclass
+class EventData:
+    """事件数据基类"""
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典"""
+        return {
+            key: value for key, value in self.__dict__.items()
+            if not key.startswith('_')
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "EventData":
+        """从字典创建"""
+        return cls(**data)
+
+
+T = TypeVar("T", bound=EventData)
+
+
+@dataclass
+class Event(ABC, Generic[T]):
+    """
+    事件基类
+    
+    所有宇宙事件都继承自此类，提供统一的事件接口和属性。
+    
+    Attributes:
+        id: 事件唯一标识符
+        type: 事件类型
+        timestamp: 事件发生时间戳
+        data: 事件详细数据
+        severity: 事件严重程度
+        affected_entities: 受影响的实体ID列表
+        description: 事件描述
+        metadata: 额外元数据
+    """
+    
+    id: str = field(default_factory=lambda: str(uuid4()))
+    type: EventType = EventType.CELESTIAL
+    timestamp: datetime = field(default_factory=datetime.now)
+    data: Optional[T] = None
+    severity: EventSeverity = EventSeverity.MODERATE
+    affected_entities: List[str] = field(default_factory=list)
+    description: str = ""
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    
+    def __post_init__(self):
+        """初始化后处理"""
+        if isinstance(self.type, str):
+            self.type = EventType.from_string(self.type)
+        if isinstance(self.severity, int):
+            self.severity = EventSeverity.from_int(self.severity)
+    
+    @property
+    @abstractmethod
+    def event_name(self) -> str:
+        """获取事件名称"""
+        pass
+    
+    @property
+    @abstractmethod
+    def event_subtype(self) -> str:
+        """获取事件子类型"""
+        pass
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """将事件转换为字典格式"""
+        return {
+            "id": self.id,
+            "name": self.event_name,
+            "type": str(self.type),
+            "subtype": self.event_subtype,
+            "timestamp": self.timestamp.isoformat(),
+            "severity": {
+                "level": self.severity.value,
+                "label": self.severity.label,
+            },
+            "affected_entities": self.affected_entities,
+            "description": self.description,
+            "data": self.data.to_dict() if self.data else None,
+            "metadata": self.metadata,
+        }
+    
+    @classmethod
+    @abstractmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "Event":
+        """从字典创建事件"""
+        pass
+    
+    def __str__(self) -> str:
+        """字符串表示"""
+        return (
+            f"[{self.timestamp.isoformat()}] "
+            f"{self.event_name} "
+            f"(Severity: {self.severity.label}, "
+            f"ID: {self.id[:8]}...)"
+        )
+    
+    def __repr__(self) -> str:
+        """详细表示"""
+        return (
+            f"{self.__class__.__name__}("
+            f"id='{self.id}', "
+            f"type={self.type}, "
+            f"severity={self.severity}, "
+            f"timestamp={self.timestamp})"
+        )
+
+
+@dataclass
+class Location:
+    """位置信息"""
+    
+    x: float = 0.0
+    y: float = 0.0
+    z: float = 0.0
+    galaxy_id: Optional[str] = None
+    star_system_id: Optional[str] = None
+    planet_id: Optional[str] = None
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典"""
+        return {
+            "x": self.x,
+            "y": self.y,
+            "z": self.z,
+            "galaxy_id": self.galaxy_id,
+            "star_system_id": self.star_system_id,
+            "planet_id": self.planet_id,
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "Location":
+        """从字典创建"""
+        return cls(**data)
+    
+    def distance_to(self, other: "Location") -> float:
+        """计算到另一个位置的距离"""
+        return (
+            (self.x - other.x) ** 2 +
+            (self.y - other.y) ** 2 +
+            (self.z - other.z) ** 2
+        ) ** 0.5
+
+
+@dataclass
+class EventImpact:
+    """事件影响"""
+    
+    population_change: int = 0
+    """人口变化（负数为减少）"""
+    
+    technology_change: float = 0.0
+    """科技值变化"""
+    
+    resource_change: float = 0.0
+    """资源变化"""
+    
+    stability_change: float = 0.0
+    """稳定性变化（-1 到 1）"""
+    
+    territory_change: int = 0
+    """领土变化"""
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典"""
+        return {
+            "population_change": self.population_change,
+            "technology_change": self.technology_change,
+            "resource_change": self.resource_change,
+            "stability_change": self.stability_change,
+            "territory_change": self.territory_change,
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "EventImpact":
+        """从字典创建"""
+        return cls(**data)
