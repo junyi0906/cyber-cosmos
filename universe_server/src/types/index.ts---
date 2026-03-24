@@ -1,3 +1,64 @@
-export * from './history.types';
-export * from './civilization.types';
-export * from './intervention.types';
+export interface Civilization {
+  id: number;
+  name: string;
+  type: string;
+  status: string;
+  population: number;
+  technology_level: number;
+  military_power: number;
+  economy: number;
+  culture: number;
+  ideology: string;
+  home_planet_id: number | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface HistoryEvent {
+  id: number;
+  event_type: string;
+  event_name: string;
+  description: string;
+  civilization_id: number | null;
+  year: number;
+  impact: Record<string, any>;
+  metadata: Record<string, any>;
+  created_at: Date;
+}
+
+export interface Intervention {
+  id: number;
+  intervention_type: string;
+  target_type: string;
+  target_id: number | null;
+  parameters: Record<string, any>;
+  status: string;
+  result: Record<string, any>;
+  created_at: Date;
+  executed_at: Date | null;
+}
+
+export interface CreateInterventionDto {
+  intervention_type: string;
+  target_type: string;
+  target_id?: number;
+  parameters?: Record<string, any>;
+}
+
+export interface ApiResponse<T> {
+  success: boolean;
+  data?: T;
+  error?: string;
+  message?: string;
+}
+
+export interface PaginatedResponse<T> {
+  success: boolean;
+  data: T[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}

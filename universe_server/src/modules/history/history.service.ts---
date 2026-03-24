@@ -1,104 +1,109 @@
 import { query, queryOne } from '../../config/database';
-import { HistoryEvent, HistoryQueryParams, PaginatedHistoryResponse } from '../../types';
+import { HistoryEvent } from '../../types';
+
+export interface HistoryFilter {
+  event_type?: string;
+  civilization_id?: number;
+  year_from?: number;
+  year_to?: number;
+  page?: number;
+  limit?: number;
+}
 
 export class HistoryService {
-  async getHistory(params: HistoryQueryParams): Promise<PaginatedHistoryResponse> {
-    const { limit = 50, offset = 0, event_type, start_cycle, end_cycle } = params;
-    
+  async getHistory(filters: HistoryFilter = {}): Promise<{ events: HistoryEvent[]; total: number }> {
+    const page = filters.page || 1;
+    const limit = filters.limit || 20;
+    const offset = (page - 1) * limit;
+
     let whereConditions: string[] = [];
-    let queryParams: any[] = [];
+    let params: any[] = [];
     let paramIndex = 1;
 
-    if (event_type) {
-      whereConditions.push(`event_type = $${paramIndex}`);
-      queryParams.push(event_type);
-      paramIndex++;
+    if (filters.event_type) {
+      whereConditions.push(`event_type = $${paramIndex++}`);
+      params.push(filters.event_type);
     }
 
-    if (start_cycle !== undefined) {
-      whereConditions.push(`universe_cycle >= $${paramIndex}`);
-      queryParams.push(start_cycle);
-      paramIndex++;
+    if (filters.civilization_id) {
+      whereConditions.push(`civilization_id = $${paramIndex++}`);
+      params.push(filters.civilization_id);
     }
 
-    if (end_cycle !== undefined) {
-      whereConditions.push(`universe_cycle <= $${paramIndex}`);
-      queryParams.push(end_cycle);
-      paramIndex++;
+    if (filters.year_from !== undefined) {
+      whereConditions.push(`year >= $${paramIndex++}`);
+      params.push(filters.year_from);
+    }
+
+    if (filters.year_to !== undefined) {
+      whereConditions.push(`year <= $${paramIndex++}`);
+      params.push(filters.year_to);
     }
 
     const whereClause = whereConditions.length > 0 
       ? `WHERE ${whereConditions.join(' AND ')}` 
       : '';
 
-    // Get total count
-    const countQuery = `SELECT COUNT(*) as count FROM universe_history ${whereClause}`;
-    const countResult = await queryOne<{ count: string }>(countQuery, queryParams);
+    const countQuery = `SELECT COUNT(*) as count FROM history_events ${whereClause}`;
+    const countResult = await queryOne<{ count: string }>(countQuery, params);
     const total = parseInt(countResult?.count || '0');
 
-    // Get paginated events
-    const dataQuery = `
-      SELECT 
-        id,
-        event_type,
-        description,
-        universe_cycle,
-        affected_entities,
-        impact_data,
-        created_at
-      FROM universe_history
+    const eventsQuery = `
+      SELECT * FROM history_events 
       ${whereClause}
-      ORDER BY universe_cycle DESC, created_at DESC
+      ORDER BY year DESC, created_at DESC
       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
     `;
-    
-    const events = await query<HistoryEvent>(dataQuery, [...queryParams, limit, offset]);
+    params.push(limit, offset);
 
-    return {
-      events,
-      total,
-      limit,
-      offset,
-      has_more: offset + limit < total
-    };
+    const events = await query<HistoryEvent>(eventsQuery, params);
+
+    return { events, total };
   }
 
-  async getEventById(id: string): Promise<HistoryEvent | null> {
-    const query_text = `
-      SELECT 
-        id,
-        event_type,
-        description,
-        universe_cycle,
-        affected_entities,
-        impact_data,
-        created_at
-      FROM universe_history
-      WHERE id = $1
-    `;
-    
-    return queryOne<HistoryEvent>(query_text, [id]);
+  async getEventById(id: number): Promise<HistoryEvent | null> {
+    return queryOne<HistoryEvent>(
+      'SELECT * FROM history_events WHERE id = $1',
+      [id]
+    );
   }
 
   async createEvent(event: Omit<HistoryEvent, 'id' | 'created_at'>): Promise<HistoryEvent> {
-    const query_text = `
-      INSERT INTO universe_history (
-        event_type, description, universe_cycle, affected_entities, impact_data
-      )
-      VALUES ($1, $2, $3, $4, $5)
-      RETURNING *
-    `;
-    
-    const result = await queryOne<HistoryEvent>(query_text, [
-      event.event_type,
-      event.description,
-      event.universe_cycle,
-      JSON.stringify(event.affected_entities),
-      JSON.stringify(event.impact_data)
-    ]);
-    
+    const result = await queryOne<HistoryEvent>(
+      `INSERT INTO history_events 
+       (event_type, event_name, description, civilization_id, year, impact, metadata)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING *`,
+      [
+        event.event_type,
+        event.event_name,
+        event.description,
+        event.civilization_id,
+        event.year,
+        JSON.stringify(event.impact || {}),
+        JSON.stringify(event.metadata || {})
+      ]
+    );
     return result!;
+  }
+
+  async getTimeline(startYear: number, endYear: number): Promise<HistoryEvent[]> {
+    return query<HistoryEvent>(
+      `SELECT * FROM history_events 
+       WHERE year >= $1 AND year <= $2
+       ORDER BY year ASC`,
+      [startYear, endYear]
+    );
+  }
+
+  async getEventsByCivilization(civilizationId: number): Promise<HistoryEvent[]> {
+    return query<HistoryEvent>(
+      `SELECT * FROM history_events 
+       WHERE civilization_id = $1
+       ORDER BY year DESC`,
+      [civilizationId]
+    );
   }
 }
 
-export default new HistoryService();
+export const historyService = new HistoryService();

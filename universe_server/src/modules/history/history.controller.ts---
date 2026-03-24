@@ -1,38 +1,33 @@
 import { Request, Response, NextFunction, Router } from 'express';
-import historyService from './history.service';
-import { HistoryQueryParams } from '../../types';
+import { historyService } from './history.service';
 
 const router = Router();
 
 export const getHistory = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const params: HistoryQueryParams = {
-      limit: req.query.limit ? parseInt(req.query.limit as string) : 50,
-      offset: req.query.offset ? parseInt(req.query.offset as string) : 0,
-      event_type: req.query.event_type as string,
-      start_cycle: req.query.start_cycle ? parseInt(req.query.start_cycle as string) : undefined,
-      end_cycle: req.query.end_cycle ? parseInt(req.query.end_cycle as string) : undefined,
+    const filters = {
+      event_type: req.query.event_type as string | undefined,
+      civilization_id: req.query.civilization_id ? parseInt(req.query.civilization_id as string) : undefined,
+      year_from: req.query.year_from ? parseInt(req.query.year_from as string) : undefined,
+      year_to: req.query.year_to ? parseInt(req.query.year_to as string) : undefined,
+      page: req.query.page ? parseInt(req.query.page as string) : 1,
+      limit: req.query.limit ? parseInt(req.query.limit as string) : 20,
     };
 
-    // Validate parameters
-    if (params.limit && (params.limit < 1 || params.limit > 500)) {
-      res.status(400).json({
-        error: 'Invalid limit',
-        message: 'Limit must be between 1 and 500'
-      });
-      return;
-    }
+    const { events, total } = await historyService.getHistory(filters);
+    const page = filters.page || 1;
+    const limit = filters.limit || 20;
 
-    if (params.offset && params.offset < 0) {
-      res.status(400).json({
-        error: 'Invalid offset',
-        message: 'Offset must be non-negative'
-      });
-      return;
-    }
-
-    const result = await historyService.getHistory(params);
-    res.status(200).json(result);
+    res.json({
+      success: true,
+      data: events,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
   } catch (error) {
     next(error);
   }
@@ -40,34 +35,53 @@ export const getHistory = async (req: Request, res: Response, next: NextFunction
 
 export const getEventById = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { id } = req.params;
+    const id = parseInt(req.params.id);
     
-    if (!id) {
+    if (isNaN(id)) {
       res.status(400).json({
-        error: 'Missing parameter',
-        message: 'Event ID is required'
+        success: false,
+        error: 'Invalid event ID',
       });
       return;
     }
 
     const event = await historyService.getEventById(id);
-    
+
     if (!event) {
       res.status(404).json({
-        error: 'Not found',
-        message: `Event with ID ${id} not found`
+        success: false,
+        error: 'Event not found',
       });
       return;
     }
 
-    res.status(200).json(event);
+    res.json({
+      success: true,
+      data: event,
+    });
   } catch (error) {
     next(error);
   }
 };
 
-// Route definitions
-router.get('/history', getHistory);
-router.get('/history/:id', getEventById);
+export const getTimeline = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const startYear = req.query.start ? parseInt(req.query.start as string) : 0;
+    const endYear = req.query.end ? parseInt(req.query.end as string) : 10000;
+
+    const events = await historyService.getTimeline(startYear, endYear);
+
+    res.json({
+      success: true,
+      data: events,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+router.get('/', getHistory);
+router.get('/timeline', getTimeline);
+router.get('/:id', getEventById);
 
 export default router;

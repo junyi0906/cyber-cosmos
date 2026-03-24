@@ -1,312 +1,612 @@
 {
   "version": "1.0",
-  "project": "project_1774348997",
-  "total_features": 16,
+  "project": "project_1774349658",
+  "total_features": 26,
   "features": [
     {
       "id": "feat-001",
       "category": "infra",
-      "description": "数据库 Schema 设计与初始化",
+      "description": "PostgreSQL Schema 扩展 - 新增事件、外交、联盟相关表结构",
       "steps": [
-        "创建 universe_server/src/database/migrations/init.sql 文件",
-        "在 init.sql 中定义 civilizations 表（id, name, attributes JSONB, tech_level, status, created_at）",
-        "在 init.sql 中定义 universe_events 表（id, event_type, description, impact_data JSONB, tick, timestamp）",
-        "在 init.sql 中定义 diplomacy_logs 表（id, from_civ_id, to_civ_id, action_type, result, timestamp）",
-        "在 init.sql 中定义 decision_logs 表（id, civ_id, context, reasoning Text, action, tick）",
-        "创建 universe_server/src/database/seed.sql，插入 3 个初始母文明数据",
-        "配置 Redis 连接，确保 unverse:state 和 event_queue 键可用"
+        "创建 universe_server/src/models/schemas/ 目录",
+        "创建 universe_server/src/models/schemas/event.schema.ts - 定义 events 表（id, type, category, data JSONB, timestamp, source_id, target_id）",
+        "创建 universe_server/src/models/schemas/diplomacy.schema.ts - 定义 diplomacy_relations 表（civilization_a, civilization_b, relation_type, treaties JSONB）",
+        "创建 universe_server/src/models/schemas/alliance.schema.ts - 定义 alliances 表（id, name, members JSONB, created_at）",
+        "创建 universe_server/src/models/schemas/broadcast.schema.ts - 定义 broadcasts 表（id, sender_id, content, broadcast_type, is_encrypted）",
+        "创建 universe_server/src/migrations/001_extend_schema.ts - 编写迁移脚本",
+        "在 universe_server/package.json 中添加 typeorm 和 pg 依赖"
       ],
-      "test_command": "docker-compose up -d db && docker-compose exec db psql -U user -d cosmos -c '\\dt'",
+      "test_command": "cd universe_server && npm run migration:run && psql -d cybercosmos -c '\\dt' | grep -E 'events|diplomacy|alliances|broadcasts'",
       "depends_on": [],
-      "passes": true,
-      "last_attempt": "2026-03-24T18:49:18.833750",
-      "notes": "未解析到代码文件",
-      "retry_count": 0
+      "passes": false,
+      "last_attempt": null,
+      "notes": "基础数据结构，所有功能模块依赖"
     },
     {
       "id": "feat-002",
-      "category": "functional",
-      "description": "Python 宇宙事件生成器",
+      "category": "infra",
+      "description": "MongoDB 事件日志集合配置 - 用于存储变结构事件和叙事历史",
       "steps": [
-        "创建 universe/app/events/generator.py",
-        "实现 MacroEventGenerator 类，包含 generate_supernova, generate_blackhole 方法",
-        "实现 MicroEventGenerator 类，包含 generate_resource_depletion, generate_tech_singularity 方法",
-        "在 universe/app/events/__init__.py 中导出事件生成器",
-        "编写 universe/tests/test_events.py 测试事件生成逻辑"
+        "创建 universe_server/src/config/mongo.config.ts - 配置 MongoDB 连接",
+        "创建 universe_server/src/models/mongo/ 目录",
+        "创建 universe_server/src/models/mongo/eventLog.model.ts - 定义 EventLog schema（灵活结构）",
+        "创建 universe_server/src/models/mongo/narrative.model.ts - 定义 Narrative schema（编年史存储）",
+        "创建 universe_server/src/models/mongo/decisionLog.model.ts - 定义 DecisionLog schema（决策日志）",
+        "创建 universe_server/src/services/mongo.service.ts - 封装 MongoDB 连接和操作",
+        "在 universe_server/package.json 中添加 mongoose 依赖"
       ],
-      "test_command": "cd universe && pytest tests/test_events.py",
-      "depends_on": [
-        "feat-001"
-      ],
-      "passes": true,
-      "last_attempt": "2026-03-24T18:50:45.887146",
-      "notes": "核心模拟逻辑，依赖数据库表结构定义",
-      "retry_count": 0
+      "test_command": "cd universe_server && npm run test:mongo-connection",
+      "depends_on": [],
+      "passes": false,
+      "last_attempt": null,
+      "notes": "与 PostgreSQL 互补，存储非结构化数据"
     },
     {
       "id": "feat-003",
-      "category": "functional",
-      "description": "Python 叙事引擎与历史记录",
+      "category": "infra",
+      "description": "Redis Pub/Sub 通道配置 - Python 核心与 Node.js 服务通信桥梁",
       "steps": [
-        "创建 universe/app/events/narrative.py",
-        "实现 HistoryRecorder 类，方法 save_event_chain 负责将事件链写入 PostgreSQL",
-        "创建 universe/app/llm/narrator.py，封装 LLM 接口调用",
-        "实现 generate_event_description 方法，根据事件类型和上下文生成文本描述",
-        "集成事件影响计算逻辑，更新文明属性（人口、科技值）"
+        "创建 universe_server/src/config/redis.config.ts - 配置 Redis 连接参数",
+        "创建 universe_server/src/services/redis.service.ts - 封装 Redis 客户端",
+        "定义通道常量 universe_server/src/constants/channels.ts（UNIVERSE_TICK, MAJOR_EVENT, AGENT_DECISION）",
+        "创建 universe/events/channels.py - Python 端 Redis 通道定义",
+        "创建 universe/core/pubsub.py - Python Redis Pub/Sub 封装",
+        "在 universe/requirements.txt 中添加 redis 依赖",
+        "在 universe_server/package.json 中添加 ioredis 依赖"
       ],
-      "test_command": "cd universe && pytest tests/test_narrative.py",
-      "depends_on": [
-        "feat-002"
-      ],
-      "passes": true,
-      "last_attempt": "2026-03-24T18:50:37.972199",
-      "notes": "依赖事件生成器提供的事件数据",
-      "retry_count": 0
+      "test_command": "cd universe_server && npm run test:redis-pubsub",
+      "depends_on": [],
+      "passes": false,
+      "last_attempt": null,
+      "notes": "核心通信基础设施"
     },
     {
       "id": "feat-004",
       "category": "functional",
-      "description": "Python Agent 社交系统扩展（外交与联盟）",
+      "description": "事件类型定义 - 定义所有宇宙事件的数据结构",
       "steps": [
-        "创建 universe/app/social/diplomacy.py",
-        "定义外交状态枚举（WAR, PEACE, ALLIANCE, TRADE_PACT）",
-        "实现 DiplomacyManager 类，包含 declare_war, form_alliance, sign_trade_pact 方法",
-        "在 Agent 决策模型中引入 trust_score 和 threat_assessment 参数",
-        "实现 AllianceManager 类，处理联盟形成与分裂逻辑"
+        "创建 universe/events/ 目录",
+        "创建 universe/events/__init__.py",
+        "创建 universe/events/types.py - 定义 EventType 枚举（CELESTIAL, CIVILIZATION, DISASTER）",
+        "创建 universe/events/base.py - 定义 Event 基类（id, type, timestamp, data, severity）",
+        "创建 universe/events/celestial_events.py - 定义天体事件（SupernovaEvent, BlackHoleEvent, NebulaCollapseEvent）",
+        "创建 universe/events/civilization_events.py - 定义文明事件（TechBreakthroughEvent, CivilWarEvent, ExtinctionEvent）",
+        "创建 universe/events/disaster_events.py - 定义灾难事件（GammaRayBurstEvent, PlagueEvent, VoidInvasionEvent）",
+        "创建 universe/events/schemas.py - 使用 Pydantic 定义事件数据验证 schema"
       ],
-      "test_command": "cd universe && pytest tests/test_diplomacy.py",
-      "depends_on": [
-        "feat-001"
-      ],
-      "passes": true,
-      "last_attempt": "2026-03-24T18:52:03.798318",
-      "notes": "",
-      "retry_count": 0
+      "test_command": "cd universe && python -m pytest tests/events/test_types.py -v",
+      "depends_on": [],
+      "passes": false,
+      "last_attempt": null,
+      "notes": "事件系统基础，无外部依赖"
     },
     {
       "id": "feat-005",
       "category": "functional",
-      "description": "Python Agent 决策日志系统",
+      "description": "事件生成器 - 根据宇宙状态动态生成各类事件",
       "steps": [
-        "修改 universe/app/agents/core.py，引入 BDI 架构简化版",
-        "在 Agent 类中添加 log_decision 方法，格式为 {context, reasoning, action}",
-        "实现决策日志写入 PostgreSQL decision_logs 表的逻辑",
-        "在主循环中集成，确保每次 Agent 行动前记录决策过程"
+        "创建 universe/events/generator.py",
+        "实现 EventGenerator 类 - 接收宇宙状态快照",
+        "实现 _calculate_event_probability() - 基于状态计算事件触发概率",
+        "实现 generate_celestial_events() - 生成天体事件逻辑",
+        "实现 generate_civilization_events() - 生成文明事件逻辑",
+        "实现 generate_disaster_events() - 生成随机灾难事件",
+        "实现 generate() 主方法 - 汇总并返回事件队列",
+        "创建 universe/events/probabilities.py - 定义事件概率配置"
       ],
-      "test_command": "cd universe && pytest tests/test_agent_decision.py",
+      "test_command": "cd universe && python -m pytest tests/events/test_generator.py -v",
       "depends_on": [
-        "feat-001"
-      ],
-      "passes": true,
-      "last_attempt": "2026-03-24T18:53:08.475700",
-      "notes": "",
-      "retry_count": 0
-    },
-    {
-      "id": "feat-006",
-      "category": "functional",
-      "description": "Node.js REST API 接口开发",
-      "steps": [
-        "创建 universe_server/src/modules/history/history.controller.ts，实现 GET /api/universe/history",
-        "创建 universe_server/src/modules/civilization/civilization.controller.ts，实现 GET /api/civilization/:id",
-        "创建 universe_server/src/modules/intervention/intervention.controller.ts，实现 POST /api/intervention",
-        "编写 Service 层逻辑，连接 PostgreSQL 查询数据",
-        "使用 Jest 编写 API 接口单元测试"
-      ],
-      "test_command": "cd universe_server && npm test",
-      "depends_on": [
-        "feat-001"
-      ],
-      "passes": true,
-      "last_attempt": "2026-03-24T18:54:14.191953",
-      "notes": "",
-      "retry_count": 0
-    },
-    {
-      "id": "feat-007",
-      "category": "functional",
-      "description": "Node.js WebSocket 网关升级",
-      "steps": [
-        "在 universe_server/src/modules/gateway/gateway.ts 中建立 WebSocket Server",
-        "订阅 Redis 频道 'universe:updates'，接收 Python 推送的 Tick 数据",
-        "实现 broadcast_tick 方法，将数据推送给所有连接的前端客户端",
-        "实现 broadcast_decision 方法，推送 Agent 决策日志",
-        "添加心跳检测与断线重连机制"
-      ],
-      "test_command": "wscat -c ws://localhost:3000",
-      "depends_on": [
-        "feat-002",
-        "feat-005"
-      ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "依赖 Python 核心产生并推送数据到 Redis"
-    },
-    {
-      "id": "feat-008",
-      "category": "functional",
-      "description": "React 3D 宇宙可视化增强",
-      "steps": [
-        "在 web/src/components/Canvas/Scene.tsx 中引入 Three.js",
-        "实现星球材质动态更新逻辑（根据阵营 ID 变更颜色，根据科技等级变更光晕强度）",
-        "添加粒子系统组件 web/src/components/Canvas/Particles.tsx 用于渲染灾难效果",
-        "实现航线绘制组件 web/src/components/Canvas/TradeRoutes.tsx，可视化贸易路径"
-      ],
-      "test_command": "cd web && npm run test -- --testPathPattern=Canvas",
-      "depends_on": [
-        "feat-007"
-      ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "依赖后端 WebSocket 推送实时状态数据"
-    },
-    {
-      "id": "feat-009",
-      "category": "functional",
-      "description": "React 事件时间线组件",
-      "steps": [
-        "创建 web/src/components/Timeline/Timeline.tsx",
-        "使用 D3.js 绘制底部时间轴，支持缩放与拖拽交互",
-        "实现事件节点标记逻辑，从 /api/universe/history 获取数据",
-        "添加点击事件，点击节点触发 'timeline:jump' 事件，通知 3D 场景回放历史状态"
-      ],
-      "test_command": "cd web && npm run test -- --testPathPattern=Timeline",
-      "depends_on": [
-        "feat-006"
-      ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "依赖 History API 提供数据"
-    },
-    {
-      "id": "feat-010",
-      "category": "functional",
-      "description": "React 决策日志可视化面板",
-      "steps": [
-        "创建 web/src/components/DecisionLog/LogStream.tsx",
-        "建立 WebSocket 连接监听 decision:new 事件",
-        "实现日志滚动列表组件，支持自动滚动到底部",
-        "添加筛选器组件 web/src/components/DecisionLog/Filter.tsx，支持按文明 ID 筛选"
-      ],
-      "test_command": "cd web && npm run test -- --testPathPattern=DecisionLog",
-      "depends_on": [
-        "feat-007"
-      ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "依赖 WebSocket 推送决策数据"
-    },
-    {
-      "id": "feat-011",
-      "category": "functional",
-      "description": "React 文明详情面板",
-      "steps": [
-        "创建 web/src/pages/Civilization/DetailPanel.tsx",
-        "使用 Recharts 库实现文明属性雷达图（军事、经济、科技、文化）",
-        "使用 D3.js 力导向图实现外交关系网络图",
-        "集成 GET /api/civilization/:id 接口获取数据"
-      ],
-      "test_command": "cd web && npm run test -- --testPathPattern=Civilization",
-      "depends_on": [
-        "feat-006"
-      ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": ""
-    },
-    {
-      "id": "feat-012",
-      "category": "functional",
-      "description": "React 用户干预功能（神迹）",
-      "steps": [
-        "在 web/src/pages/Observatory/Toolbar.tsx 添加“神迹”按钮组",
-        "实现干预弹窗组件，允许用户选择事件类型（如陨石撞击）和目标坐标",
-        "封装 interventionService.ts，调用 POST /api/intervention 接口",
-        "前端显示干预成功的 Toast 提示"
-      ],
-      "test_command": "cd web && npm run test -- --testPathPattern=Observatory",
-      "depends_on": [
-        "feat-006"
-      ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": ""
-    },
-    {
-      "id": "feat-013",
-      "category": "config",
-      "description": "环境配置与 Docker Compose 更新",
-      "steps": [
-        "更新 universe/.env，添加 LLM_API_KEY 和 SIMULATION_SPEED 配置项",
-        "更新 universe_server/.env，添加 DATABASE_URL 和 REDIS_URL 配置项",
-        "修改根目录 docker-compose.yml，添加 PostgreSQL 和 Redis 服务定义",
-        "确保各服务网络互通，配置数据卷持久化"
-      ],
-      "test_command": "docker-compose config",
-      "depends_on": [],
-      "passes": false,
-      "last_attempt": null,
-      "notes": ""
-    },
-    {
-      "id": "feat-014",
-      "category": "test",
-      "description": "Python 核心逻辑单元测试",
-      "steps": [
-        "在 universe/tests/ 下创建 test_events.py, test_diplomacy.py, test_narrative.py",
-        "编写测试用例覆盖事件触发条件、外交状态变更、叙事生成逻辑",
-        "配置 pytest.ini 和覆盖率报告",
-        "确保测试覆盖率 > 80%"
-      ],
-      "test_command": "cd universe && pytest --cov=app",
-      "depends_on": [
-        "feat-002",
-        "feat-003",
         "feat-004"
       ],
       "passes": false,
       "last_attempt": null,
-      "notes": ""
+      "notes": "依赖事件类型定义"
+    },
+    {
+      "id": "feat-006",
+      "category": "functional",
+      "description": "事件分发器 - 处理事件并触发后续效果",
+      "steps": [
+        "创建 universe/events/dispatcher.py",
+        "实现 EventDispatcher 类",
+        "实现 register_handler() - 注册事件处理器",
+        "实现 dispatch() - 分发单个事件到对应处理器",
+        "实现 process_queue() - 批量处理事件队列",
+        "创建 universe/events/handlers/ 目录",
+        "创建 universe/events/handlers/celestial_handler.py - 天体事件处理逻辑",
+        "创建 universe/events/handlers/civilization_handler.py - 文明事件处理逻辑",
+        "创建 universe/events/handlers/disaster_handler.py - 灾难事件处理逻辑",
+        "实现事件效果应用（如资源扣除、人口变化、文明状态更新）"
+      ],
+      "test_command": "cd universe && python -m pytest tests/events/test_dispatcher.py -v",
+      "depends_on": [
+        "feat-005",
+        "feat-003"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": "依赖事件生成器和 Redis 通道"
+    },
+    {
+      "id": "feat-007",
+      "category": "functional",
+      "description": "LLM 接口封装 - 为叙事引擎提供 AI 能力",
+      "steps": [
+        "创建 universe/narrative/ 目录",
+        "创建 universe/narrative/__init__.py",
+        "创建 universe/narrative/llm_interface.py",
+        "实现 LLMInterface 类 - 封装 OpenAI/其他 LLM API 调用",
+        "实现 generate_text() - 通用文本生成方法",
+        "实现 generate_chronicle() - 编年史生成专用方法",
+        "实现 summarize_events() - 事件摘要方法",
+        "创建 universe/narrative/prompts/ 目录 - 存放 prompt 模板",
+        "创建 universe/narrative/prompts/chronicle_prompt.py - 编年史生成 prompt",
+        "在 universe/requirements.txt 中添加 openai 依赖"
+      ],
+      "test_command": "cd universe && python -m pytest tests/narrative/test_llm_interface.py -v",
+      "depends_on": [],
+      "passes": false,
+      "last_attempt": null,
+      "notes": "独立模块，可并行开发"
+    },
+    {
+      "id": "feat-008",
+      "category": "functional",
+      "description": "编年史生成器 - 基于事件链生成历史叙事",
+      "steps": [
+        "创建 universe/narrative/chronicler.py",
+        "实现 Chronicler 类",
+        "实现 collect_events() - 从 MongoDB 收集指定时间段事件",
+        "实现 build_event_chain() - 构建事件因果关系链",
+        "实现 generate_epoch_summary() - 生成宇宙纪元总结报告",
+        "实现 generate_civilization_history() - 生成单个文明历史",
+        "实现 save_narrative() - 持久化叙事到 MongoDB",
+        "创建 universe/narrative/templates/ 目录 - 叙事模板",
+        "创建 universe/narrative/templates/epoch_summary.md - 纪元总结模板"
+      ],
+      "test_command": "cd universe && python -m pytest tests/narrative/test_chronicler.py -v",
+      "depends_on": [
+        "feat-007",
+        "feat-006",
+        "feat-002"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": "依赖 LLM 接口、事件分发器和 MongoDB"
+    },
+    {
+      "id": "feat-009",
+      "category": "functional",
+      "description": "外交关系管理 - 文明间外交状态维护",
+      "steps": [
+        "创建 universe/social/ 目录",
+        "创建 universe/social/__init__.py",
+        "创建 universe/social/diplomacy.py",
+        "实现 DiplomacyManager 类",
+        "定义 RelationType 枚举（PEACE, NEUTRAL, HOSTILE）",
+        "定义 TreatyType 枚举（NON_AGGRESSION, TECH_SHARE, TRADE）",
+        "实现 get_relation() - 查询两文明外交关系",
+        "实现 set_relation() - 设置外交关系",
+        "实现 sign_treaty() - 签订条约",
+        "实现 break_treaty() - 撕毁条约",
+        "实现 get_treaties() - 获取文明所有条约",
+        "实现 relation_effect() - 计算外交关系对 Agent 决策的影响"
+      ],
+      "test_command": "cd universe && python -m pytest tests/social/test_diplomacy.py -v",
+      "depends_on": [
+        "feat-001"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": "依赖 PostgreSQL Schema"
+    },
+    {
+      "id": "feat-010",
+      "category": "functional",
+      "description": "联盟机制 - 文明联盟的组建、管理与决策",
+      "steps": [
+        "创建 universe/social/alliance.py",
+        "实现 AllianceManager 类",
+        "实现 create_alliance() - 创建联盟",
+        "实现 join_alliance() - 加入联盟",
+        "实现 leave_alliance() - 退出联盟",
+        "实现 dissolve_alliance() - 解散联盟",
+        "实现 get_alliance_members() - 获取成员列表",
+        "实现 propose_vote() - 发起联盟投票",
+        "实现 cast_vote() - 投票",
+        "实现 get_vote_result() - 统计投票结果",
+        "实现 alliance_mission() - 联盟任务（联合防御、共同开发）"
+      ],
+      "test_command": "cd universe && python -m pytest tests/social/test_alliance.py -v",
+      "depends_on": [
+        "feat-009"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": "依赖外交关系管理"
+    },
+    {
+      "id": "feat-011",
+      "category": "functional",
+      "description": "文明广播系统 - 全宇宙信息广播与加密通讯",
+      "steps": [
+        "创建 universe/social/broadcast.py",
+        "实现 BroadcastManager 类",
+        "定义 BroadcastType 枚举（TECH, THREAT, DISTRESS）",
+        "实现 broadcast() - 发送广播",
+        "实现 receive_broadcasts() - 接收广播列表",
+        "实现 encrypt_message() - 加密消息",
+        "实现 decrypt_message() - 解密消息（需科技等级判定）",
+        "实现 broadcast_range() - 计算广播覆盖范围",
+        "创建 universe/social/encryption.py - 加密算法实现"
+      ],
+      "test_command": "cd universe && python -m pytest tests/social/test_broadcast.py -v",
+      "depends_on": [
+        "feat-003"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": "依赖 Redis 进行实时广播"
+    },
+    {
+      "id": "feat-012",
+      "category": "functional",
+      "description": "Agent 决策引擎增强 - 扩展决策系统支持新功能",
+      "steps": [
+        "修改 universe/agents/decision_engine.py",
+        "实现 DecisionContext 类 - 封装决策上下文（外交关系、联盟状态、事件影响）",
+        "实现 weigh_options() - 决策权重计算增强",
+        "实现 consider_diplomacy() - 外交因素考量",
+        "实现 consider_alliance() - 联盟因素考量",
+        "实现 consider_events() - 近期事件影响",
+        "实现 explain_decision() - 生成决策解释",
+        "创建 universe/agents/decision_types.py - 定义决策类型枚举"
+      ],
+      "test_command": "cd universe && python -m pytest tests/agents/test_decision_engine.py -v",
+      "depends_on": [
+        "feat-009",
+        "feat-010"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": "依赖外交和联盟系统"
+    },
+    {
+      "id": "feat-013",
+      "category": "functional",
+      "description": "决策日志记录 - 记录 Agent 思考链和决策过程",
+      "steps": [
+        "创建 universe/agents/decision_logger.py",
+        "实现 DecisionLogger 类",
+        "实现 log_decision() - 记录决策（选项、权重、最终选择）",
+        "实现 log_thought_chain() - 记录思考链",
+        "实现 log_consequence() - 记录决策后果",
+        "实现 get_decision_history() - 查询决策历史",
+        "实现 get_thought_chain() - 获取思考链详情",
+        "实现 save_to_mongo() - 持久化到 MongoDB"
+      ],
+      "test_command": "cd universe && python -m pytest tests/agents/test_decision_logger.py -v",
+      "depends_on": [
+        "feat-012",
+        "feat-002"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": "依赖决策引擎和 MongoDB"
+    },
+    {
+      "id": "feat-014",
+      "category": "functional",
+      "description": "REST API 扩展 - 新增事件、外交、决策相关接口",
+      "steps": [
+        "创建 universe_server/src/api/routes/ 目录",
+        "创建 universe_server/src/api/routes/events.routes.ts - 事件相关 API",
+        "实现 GET /api/events/timeline - 获取事件时间线",
+        "实现 GET /api/events/:id - 获取事件详情",
+        "创建 universe_server/src/api/routes/diplomacy.routes.ts - 外交 API",
+        "实现 GET /api/diplomacy/relations - 获取外交关系",
+        "实现 POST /api/diplomacy/treaty - 签订条约",
+        "创建 universe_server/src/api/routes/alliance.routes.ts - 联盟 API",
+        "实现 GET /api/alliances - 获取联盟列表",
+        "实现 POST /api/alliances - 创建联盟",
+        "创建 universe_server/src/api/routes/decisions.routes.ts - 决策 API",
+        "实现 GET /api/agents/:id/decisions - 获取 Agent 决策历史",
+        "创建 universe_server/src/api/routes/intervention.routes.ts - 干预 API",
+        "实现 POST /api/intervention/god - 用户干预接口"
+      ],
+      "test_command": "cd universe_server && npm run test:api",
+      "depends_on": [
+        "feat-001"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": "依赖数据库 Schema"
     },
     {
       "id": "feat-015",
-      "category": "test",
-      "description": "Node.js 服务集成测试",
+      "category": "functional",
+      "description": "WebSocket 实时推送 - 宇宙状态和事件实时更新",
       "steps": [
-        "在 universe_server/test/ 下创建 api.e2e-spec.ts",
-        "使用 Supertest 库模拟 HTTP 请求测试 REST API",
-        "编写 WebSocket 连接测试脚本，验证消息广播逻辑",
-        "配置 Jest 环境变量连接测试数据库"
+        "创建 universe_server/src/websocket/ 目录",
+        "创建 universe_server/src/websocket/handlers/ 目录",
+        "创建 universe_server/src/websocket/handlers/tick.handler.ts - 处理 tick 事件",
+        "创建 universe_server/src/websocket/handlers/event.handler.ts - 处理 major_event",
+        "创建 universe_server/src/websocket/handlers/alert.handler.ts - 处理 alert 广播",
+        "创建 universe_server/src/websocket/gateway.ts - WebSocket 网关",
+        "实现 subscribe_agent() - 订阅 Agent 详情",
+        "实现 pause_simulation() - 暂停/继续模拟",
+        "实现 Redis 消息订阅并转发给客户端",
+        "在 universe_server/package.json 中添加 socket.io 依赖"
       ],
-      "test_command": "cd universe_server && npm run test:e2e",
+      "test_command": "cd universe_server && npm run test:websocket",
       "depends_on": [
-        "feat-006",
-        "feat-007"
+        "feat-003",
+        "feat-014"
       ],
       "passes": false,
       "last_attempt": null,
-      "notes": ""
+      "notes": "依赖 Redis 和 REST API"
     },
     {
       "id": "feat-016",
-      "category": "test",
-      "description": "前端 E2E 测试",
+      "category": "functional",
+      "description": "Python 核心同步服务 - Node.js 与 Python 模拟核心同步",
       "steps": [
-        "配置 Cypress 环境 web/cypress/",
-        "编写测试脚本：启动模拟 -> 等待 WebSocket 连接 -> 验证时间线更新",
-        "编写测试脚本：点击文明 -> 验证详情面板数据加载",
-        "编写测试脚本：触发神迹 -> 验证 API 调用与 UI 反馈"
+        "创建 universe_server/src/services/sync.service.ts",
+        "实现 SyncService 类",
+        "实现 start_sync_loop() - 启动同步循环",
+        "实现 request_snapshot() - 请求宇宙快照",
+        "实现 handle_tick() - 处理 tick 消息",
+        "实现 handle_event() - 处理事件消息",
+        "创建 universe_server/src/services/event.proxy.ts - 事件代理服务",
+        "实现事件格式转换（Python -> Node.js）",
+        "实现错误处理和重连机制"
       ],
-      "test_command": "cd web && npx cypress run",
+      "test_command": "cd universe_server && npm run test:sync",
       "depends_on": [
-        "feat-008",
-        "feat-009",
-        "feat-010",
-        "feat-012"
+        "feat-003",
+        "feat-006"
       ],
       "passes": false,
       "last_attempt": null,
-      "notes": ""
+      "notes": "依赖 Redis 和事件分发器"
+    },
+    {
+      "id": "feat-017",
+      "category": "functional",
+      "description": "星图热力图可视化 - 资源分布和人口密度热力图",
+      "steps": [
+        "创建 web/src/components/Observatory/Heatmap.tsx",
+        "安装依赖：npm install heatmap.js @types/heatmap.js",
+        "实现 Heatmap 组件 - 接收星系数据",
+        "实现资源分布热力图渲染",
+        "实现人口密度热力图渲染",
+        "实现热力图图层切换控制",
+        "实现热力图透明度调节",
+        "在 web/src/components/Observatory/StarMap.tsx 中集成 Heatmap"
+      ],
+      "test_command": "cd web && npm run test -- --testPathPattern=Heatmap",
+      "depends_on": [
+        "feat-014"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": "依赖 REST API 获取数据"
+    },
+    {
+      "id": "feat-018",
+      "category": "functional",
+      "description": "文明影响力边界渲染 - 动态显示文明势力范围",
+      "steps": [
+        "创建 web/src/components/Observatory/InfluenceBoundary.tsx",
+        "实现 InfluenceBoundary 组件",
+        "实现影响力范围计算算法（基于文明属性）",
+        "实现动态边界线渲染（使用 Canvas 或 SVG）",
+        "实现边界颜色映射（文明颜色）",
+        "实现边界动画效果（扩张/收缩）",
+        "实现边界悬停显示文明信息",
+        "在 StarMap.tsx 中集成 InfluenceBoundary"
+      ],
+      "test_command": "cd web && npm run test -- --testPathPattern=InfluenceBoundary",
+      "depends_on": [
+        "feat-014"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": "依赖 REST API"
+    },
+    {
+      "id": "feat-019",
+      "category": "functional",
+      "description": "事件特效渲染 - 宇宙事件视觉效果",
+      "steps": [
+        "创建 web/src/components/Observatory/EventEffects.tsx",
+        "创建 web/src/effects/ 目录 - 特效定义",
+        "创建 web/src/effects/supernova.ts - 超新星爆发特效",
+        "创建 web/src/effects/blackhole.ts - 黑洞形成特效",
+        "创建 web/src/effects/explosion.ts - 爆炸特效",
+        "创建 web/src/effects/wave.ts - 扩散波特效",
+        "实现 EventEffects 组件 - 监听 WebSocket 事件",
+        "实现特效触发和播放逻辑",
+        "实现特效队列管理（多事件同时触发）"
+      ],
+      "test_command": "cd web && npm run test -- --testPathPattern=EventEffects",
+      "depends_on": [
+        "feat-015",
+        "feat-017"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": "依赖 WebSocket 和星图组件"
+    },
+    {
+      "id": "feat-020",
+      "category": "functional",
+      "description": "事件时间线组件 - 可缩放时间轴与事件回放",
+      "steps": [
+        "创建 web/src/components/Observatory/Timeline.tsx",
+        "安装依赖：npm install d3 @types/d3",
+        "实现 Timeline 组件 - 基于 D3.js",
+        "实现可缩放时间轴（zoom in/out）",
+        "实现事件标记点渲染",
+        "实现事件悬停预览",
+        "实现事件点击详情弹窗",
+        "实现按文明/星系筛选事件",
+        "实现时间范围选择器",
+        "创建 web/src/hooks/useTimelineData.ts - 数据获取 hook"
+      ],
+      "test_command": "cd web && npm run test -- --testPathPattern=Timeline",
+      "depends_on": [
+        "feat-014",
+        "feat-015"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": "依赖 REST API 和 WebSocket"
+    },
+    {
+      "id": "feat-021",
+      "category": "functional",
+      "description": "决策日志可视化组件 - 展示 Agent 思考链和决策过程",
+      "steps": [
+        "创建 web/src/components/DecisionLog/ 目录",
+        "创建 web/src/components/DecisionLog/DecisionPanel.tsx - 主面板",
+        "创建 web/src/components/DecisionLog/ThoughtChain.tsx - 思考链展示",
+        "创建 web/src/components/DecisionLog/WeightChart.tsx - 决策权重图表",
+        "创建 web/src/components/DecisionLog/ConsequenceTracker.tsx - 后果追踪",
+        "实现树形图展示思考链",
+        "实现雷达图展示决策权重",
+        "实现时间线展示后果追踪",
+        "创建 web/src/hooks/useDecisionLog.ts - 数据获取 hook"
+      ],
+      "test_command": "cd web && npm run test -- --testPathPattern=DecisionLog",
+      "depends_on": [
+        "feat-014",
+        "feat-013"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": "依赖 REST API 和决策日志记录"
+    },
+    {
+      "id": "feat-022",
+      "category": "functional",
+      "description": "社交外交面板 - 外交关系和联盟管理界面",
+      "steps": [
+        "创建 web/src/components/Social/ 目录",
+        "创建 web/src/components/Social/DiplomacyPanel.tsx - 外交面板",
+        "创建 web/src/components/Social/AlliancePanel.tsx - 联盟面板",
+        "创建 web/src/components/Social/BroadcastPanel.tsx - 广播面板",
+        "创建 web/src/components/Social/TreatyList.tsx - 条约列表",
+        "创建 web/src/components/Social/VotingModal.tsx - 投票弹窗",
+        "实现外交关系矩阵可视化",
+        "实现联盟成员列表和管理",
+        "实现广播消息列表和发送",
+        "创建 web/src/hooks/useSocialData.ts - 数据获取 hook"
+      ],
+      "test_command": "cd web && npm run test -- --testPathPattern=Social",
+      "depends_on": [
+        "feat-014",
+        "feat-015"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": "依赖 REST API 和 WebSocket"
+    },
+    {
+      "id": "feat-023",
+      "category": "functional",
+      "description": "用户干预界面 - 神谕系统和场景触发",
+      "steps": [
+        "创建 web/src/components/Intervention/ 目录",
+        "创建 web/src/components/Intervention/GodPanel.tsx - 神谕面板",
+        "创建 web/src/components/Intervention/ScenarioTrigger.tsx - 场景触发器",
+        "创建 web/src/components/Intervention/ParameterEditor.tsx - 参数编辑器",
+        "实现 Agent 选择器",
+        "实现决策参数修改表单",
+        "实现预设场景列表（资源爆发、外星入侵等）",
+        "实现干预确认和执行",
+        "实现干预历史记录展示"
+      ],
+      "test_command": "cd web && npm run test -- --testPathPattern=Intervention",
+      "depends_on": [
+        "feat-014",
+        "feat-013"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": "依赖 REST API 和决策日志"
+    },
+    {
+      "id": "feat-024",
+      "category": "test",
+      "description": "单元测试套件 - 核心模块单元测试",
+      "steps": [
+        "创建 universe/tests/ 目录结构",
+        "创建 universe/tests/events/ - 事件系统测试",
+        "创建 universe/tests/narrative/ - 叙事引擎测试",
+        "创建 universe/tests/social/ - 社交系统测试",
+        "创建 universe/tests/agents/ - Agent 测试",
+        "创建 universe_server/src/__tests__/ 目录",
+        "创建 universe_server/src/__tests__/api/ - API 测试",
+        "创建 universe_server/src/__tests__/services/ - 服务测试",
+        "创建 universe_server/src/__tests__/websocket/ - WebSocket 测试",
+        "配置 pytest.ini 和 jest.config.js",
+        "编写测试覆盖率报告配置"
+      ],
+      "test_command": "cd universe && pytest --cov && cd ../universe_server && npm run test:coverage",
+      "depends_on": [
+        "feat-016"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": "依赖所有核心功能模块"
+    },
+    {
+      "id": "feat-025",
+      "category": "test",
+      "description": "集成测试套件 - 端到端流程测试",
+      "steps": [
+        "创建 tests/integration/ 目录",
+        "创建 tests/integration/test_simulation_flow.py - 模拟流程测试",
+        "创建 tests/integration/test_event_chain.py - 事件链测试",
+        "创建 tests/integration/test_diplomacy_flow.py - 外交流程测试",
+        "创建 tests/integration/test_alliance_flow.py - 联盟流程测试",
+        "创建 tests/integration/test_broadcast_flow.py - 广播流程测试",
+        "创建 tests/integration/test_redis_communication.py - Redis 通信测试",
+        "创建 tests/fixtures/ - 测试数据 fixtures",
+        "配置 docker-compose.test.yml - 测试环境配置"
+      ],
+      "test_command": "docker-compose -f docker-compose.test.yml up --abort-on-container-exit",
+      "depends_on": [
+        "feat-024"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": "依赖单元测试"
+    },
+    {
+      "id": "feat-026",
+      "category": "test",
+      "description": "E2E 测试套件 - 用户关键路径测试",
+      "steps": [
+        "创建 web/cypress/ 目录",
+        "创建 web/cypress/e2e/observatory.cy.ts - 观测台测试",
+        "创建 web/cypress/e2e/timeline.cy.ts - 时间线测试",
+        "创建 web/cypress/e2e/decision_log.cy.ts - 决策日志测试",
+        "创建 web/cypress/e2e/social.cy.ts - 社交面板测试",
+        "创建 web/cypress/e2e/intervention.cy.ts - 干预功能测试",
+        "创建 web/cypress/fixtures/ - 测试数据",
+        "创建 web/cypress/support/ - 测试支持函数",
+        "配置 cypress.config.ts"
+      ],
+      "test_command": "cd web && npm run cypress:run",
+      "depends_on": [
+        "feat-025"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": "依赖集成测试"
     }
   ]
 }
