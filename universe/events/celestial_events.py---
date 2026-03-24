@@ -1,180 +1,102 @@
-"""
-天体事件定义
-定义超新星、黑洞、星云坍缩等天体事件
-"""
+"""天体事件定义模块
 
+定义与天体相关的宇宙事件，如超新星爆发、黑洞形成、星云坍塌等。
+"""
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Any, Dict, List, Optional
+from uuid import UUID
 
-from .base import Event, EventData, EventImpact, Location
-from .types import CelestialEventType, EventSeverity, EventType
-
-
-@dataclass
-class CelestialEventData(EventData):
-    """天体事件数据基类"""
-    
-    location: Optional[Location] = None
-    """事件发生位置"""
-    
-    radius: float = 0.0
-    """影响半径（光年）"""
-    
-    duration: int = 0
-    """持续时间（宇宙周期）"""
+from .base import Event, EventData
+from .types import EventSeverity, EventType
 
 
 @dataclass
-class SupernovaData(CelestialEventData):
-    """超新星爆发数据"""
+class SupernovaEventData(EventData):
+    """超新星爆发事件数据
     
-    star_id: str = ""
-    """爆发恒星ID"""
-    
+    Attributes:
+        star_id: 恒星ID
+        star_name: 恒星名称
+        star_mass: 恒星质量（太阳质量单位）
+        explosion_radius: 爆炸影响半径（光年）
+        affected_planets: 受影响的行星ID列表
+        energy_output: 能量输出（以太阳光度为单位）
+        remnant_type: 残留天体类型（中子星/黑洞）
+    """
+    star_id: UUID = field(default_factory=lambda: UUID("00000000-0000-0000-0000-000000000000"))
     star_name: str = ""
-    """恒星名称"""
-    
     star_mass: float = 0.0
-    """恒星质量（太阳质量）"""
-    
-    explosion_power: float = 0.0
-    """爆发能量（FOE）"""
-    
-    remnant_type: str = "neutron_star"
-    """残骸类型：neutron_star, black_hole"""
-    
-    heavy_elements_produced: float = 0.0
-    """产生的重元素质量（地球质量）"""
+    explosion_radius: float = 0.0
+    affected_planets: List[UUID] = field(default_factory=list)
+    energy_output: float = 0.0
+    remnant_type: str = "neutron_star"  # neutron_star or black_hole
 
 
 @dataclass
-class BlackHoleData(CelestialEventData):
-    """黑洞形成数据"""
+class SupernovaEvent(Event[SupernovaEventData]):
+    """超新星爆发事件
     
-    mass: float = 0.0
-    """黑洞质量（太阳质量）"""
-    
-    event_horizon_radius: float = 0.0
-    """事件视界半径（史瓦西半径，公里）"""
-    
-    spin: float = 0.0
-    """自旋参数（0-1）"""
-    
-    charge: float = 0.0
-    """电荷参数"""
-    
-    accretion_disk: bool = False
-    """是否有吸积盘"""
-    
-    gravitational_waves: bool = False
-    """是否产生引力波"""
-
-
-@dataclass
-class NebulaCollapseData(CelestialEventData):
-    """星云坍缩数据"""
-    
-    nebula_id: str = ""
-    """星云ID"""
-    
-    nebula_name: str = ""
-    """星云名称"""
-    
-    initial_size: float = 0.0
-    """初始大小（光年）"""
-    
-    final_size: float = 0.0
-    """最终大小（光年）"""
-    
-    stars_formed: int = 0
-    """形成的恒星数量"""
-    
-    protostars: List[str] = field(default_factory=list)
-    """原恒星ID列表"""
-
-
-class CelestialEvent(Event[CelestialEventData]):
-    """天体事件基类"""
-    
+    大质量恒星生命末期的剧烈爆炸事件。
+    """
     type: EventType = EventType.CELESTIAL
+    severity: EventSeverity = EventSeverity.COSMIC
+    data: Optional[SupernovaEventData] = None
     
-    @property
-    def event_subtype(self) -> str:
-        """获取事件子类型"""
-        return ""
+    def __post_init__(self):
+        if self.description == "":
+            star_name = self.data.star_name if self.data else "未知恒星"
+            self.description = f"超新星爆发: {star_name}"
+    
+    def get_impact_description(self) -> str:
+        if not self.data:
+            return "超新星爆发，影响范围未知"
+        
+        return (
+            f"超新星爆发释放能量 {self.data.energy_output:.2e} 太阳光度，"
+            f"影响半径 {self.data.explosion_radius:.2f} 光年，"
+            f"影响 {len(self.data.affected_planets)} 颗行星，"
+            f"残留天体: {self.data.remnant_type}"
+        )
+    
+    def calculate_impact(self) -> Dict[str, Any]:
+        if not self.data:
+            return {}
+        
+        return {
+            "energy_release": self.data.energy_output,
+            "radius": self.data.explosion_radius,
+            "affected_planets_count": len(self.data.affected_planets),
+            "remnant_type": self.data.remnant_type,
+            "potential_damage": self.severity.value,
+        }
 
 
-class SupernovaEvent(CelestialEvent):
-    """超新星爆发事件"""
+@dataclass
+class BlackHoleEventData(EventData):
+    """黑洞形成事件数据
     
-    data: Optional[SupernovaData] = None
+    Attributes:
+        black_hole_id: 黑洞ID
+        mass: 黑洞质量（太阳质量单位）
+        event_horizon_radius: 事件视界半径（史瓦西半径，公里）
+        gravitational_influence_radius: 引力影响半径（光年）
+        absorbed_objects: 被吸收的天体ID列表
+        formation_type: 形成方式（超新星残骸/直接坍缩/合并）
+    """
+    black_hole_id: UUID = field(default_factory=lambda: UUID("00000000-0000-0000-0000-000000000000"))
+    mass: float = 0.0
+    event_horizon_radius: float = 0.0
+    gravitational_influence_radius: float = 0.0
+    absorbed_objects: List[UUID] = field(default_factory=list)
+    formation_type: str = "supernova_remnant"  # supernova_remnant, direct_collapse, merger
+
+
+@dataclass
+class BlackHoleEvent(Event[BlackHoleEventData]):
+    """黑洞形成事件
     
-    def __init__(
-        self,
-        star_id: str = "",
-        star_name: str = "",
-        star_mass: float = 0.0,
-        explosion_power: float = 0.0,
-        remnant_type: str = "neutron_star",
-        location: Optional[Location] = None,
-        radius: float = 50.0,
-        severity: EventSeverity = EventSeverity.MAJOR,
-        affected_entities: Optional[List[str]] = None,
-        description: str = "",
-        **kwargs
-    ):
-        """
-        初始化超新星爆发事件
-        
-        Args:
-            star_id: 爆发恒星ID
-            star_name: 恒星名称
-            star_mass: 恒星质量（太阳质量）
-            explosion_power: 爆发能量
-            remnant_type: 残骸类型
-            location: 事件位置
-            radius: 影响半径
-            severity: 严重程度
-            affected_entities: 受影响的实体
-            description: 事件描述
-        """
-        data = SupernovaData(
-            star_id=star_id,
-            star_name=star_name,
-            star_mass=star_mass,
-            explosion_power=explosion_power,
-            remnant_type=remnant_type,
-            location=location,
-            radius=radius,
-        )
-        super().__init__(
-            data=data,
-            severity=severity,
-            affected_entities=affected_entities or [],
-            description=description or f"恒星 {star_name} 发生超新星爆发",
-            **kwargs
-        )
-        self.data = data
-    
-    @property
-    def event_name(self) -> str:
-        return "超新星爆发"
-    
-    @property
-    def event_subtype(self) -> str:
-        return CelestialEventType.SUPERNOVA.value
-    
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "SupernovaEvent":
-        event_data = data.get("data", {})
-        location = None
-        if event_data.get("location"):
-            location = Location.from_dict(event_data["location"])
-        
-        return cls(
-            id=data.get("id", ""),
-            star_id=event_data.get("star_id", ""),
-            star_name=event_data.get("star_name", ""),
-            star_mass=event_data.get("star_mass", 0.0),
-            explosion_power=event_data.get("explosion_power", 0.0
+    大质量天体坍缩或合并形成黑洞的事件。
+    """
+    type: EventType = EventType.CELESTIAL
+    severity: EventSeverity = EventSeverity.COSMIC
+    data:

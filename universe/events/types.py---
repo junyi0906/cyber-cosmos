@@ -1,168 +1,41 @@
+"""事件类型定义模块
+
+定义宇宙模拟系统中所有事件的类型枚举和严重程度枚举。
 """
-Event type definitions for the Cyber-Cosmos universe simulation.
-"""
-from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional
-from datetime import datetime
-import uuid
 
 
-class EventType(Enum):
-    """Main event type categories."""
+class EventType(str, Enum):
+    """事件类型枚举
+    
+    定义宇宙中可能发生的三种主要事件类型：
+    - CELESTIAL: 天体事件（超新星、黑洞形成等）
+    - CIVILIZATION: 文明事件（科技突破、内战、灭绝等）
+    - DISASTER: 灾难事件（伽马射线暴、瘟疫、虚空入侵等）
+    """
     CELESTIAL = "celestial"
     CIVILIZATION = "civilization"
     DISASTER = "disaster"
+    
+    def __str__(self) -> str:
+        return self.value
 
 
-class CelestialEventType(Enum):
-    """Celestial event subtypes."""
-    SUPERNOVA = "supernova"
-    BLACK_HOLE_FORMATION = "black_hole_formation"
-    NEBULA_COLLAPSE = "nebula_collapse"
-    RESOURCE_DEPLETION = "resource_depletion"
-    STAR_BIRTH = "star_birth"
-    PLANET_FORMATION = "planet_formation"
-    ASTEROID_IMPACT = "asteroid_impact"
-    SOLAR_FLARE = "solar_flare"
-
-
-class CivilizationEventType(Enum):
-    """Civilization event subtypes."""
-    TECH_BREAKTHROUGH = "tech_breakthrough"
-    CULTURAL_RENAISSANCE = "cultural_renaissance"
-    CIVIL_WAR = "civil_war"
-    EXTINCTION = "extinction"
-    FIRST_CONTACT = "first_contact"
-    COLONIZATION = "colonization"
-    POPULATION_BOOM = "population_boom"
-    ECONOMIC_CRISIS = "economic_crisis"
-    SCIENTIFIC_DISCOVERY = "scientific_discovery"
-    RELIGIOUS_AWAKENING = "religious_awakening"
-
-
-class DisasterEventType(Enum):
-    """Disaster event subtypes."""
-    GAMMA_RAY_BURST = "gamma_ray_burst"
-    INTERSTELLAR_PLAGUE = "interstellar_plague"
-    VOID_INVASION = "void_invasion"
-    COSMIC_STORM = "cosmic_storm"
-    DIMENSIONAL_RIFT = "dimensional_rift"
-    DARK_MATTER_SURGE = "dark_matter_surge"
-    QUANTUM_COLLAPSE = "quantum_collapse"
-    ENTROPY_WAVE = "entropy_wave"
-
-
-class EventSeverity(Enum):
-    """Event severity levels."""
-    TRIVIAL = 1      # Minor impact, local scope
-    MINOR = 2        # Small impact, regional scope
-    MODERATE = 3     # Noticeable impact, system-wide
-    MAJOR = 4        # Significant impact, multi-system
-    CATASTROPHIC = 5 # Devastating impact, civilization-altering
-    COSMIC = 6       # Universe-altering events
-
-
-@dataclass
-class EventContext:
-    """Context information for an event."""
-    source_id: Optional[str] = None
-    target_ids: List[str] = field(default_factory=list)
-    location: Optional[Dict[str, float]] = None
-    affected_entities: List[str] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
-class Event:
+class EventSeverity(str, Enum):
+    """事件严重程度枚举
+    
+    定义事件对宇宙或文明影响的严重程度：
+    - LOW: 轻微影响，几乎不影响正常运作
+    - MEDIUM: 中等影响，需要关注和处理
+    - HIGH: 严重影响，可能造成重大损失
+    - CRITICAL: 危急影响，可能导致毁灭性后果
+    - COSMIC: 宇宙级影响，改变宇宙格局
     """
-    Represents a single event in the universe.
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+    COSMIC = "cosmic"
     
-    Attributes:
-        id: Unique identifier for the event
-        event_type: Main category of the event
-        subtype: Specific type within the category
-        name: Human-readable name
-        description: Detailed description
-        severity: Impact level of the event
-        timestamp: When the event occurred (universe time)
-        context: Additional context information
-        effects: List of effects this event causes
-        probability: The calculated probability that triggered this event
-        chain_events: Potential follow-up events
-    """
-    event_type: EventType
-    subtype: Enum
-    name: str
-    description: str
-    severity: EventSeverity
-    timestamp: int
-    context: EventContext = field(default_factory=EventContext)
-    effects: Dict[str, Any] = field(default_factory=dict)
-    probability: float = 0.0
-    chain_events: List[str] = field(default_factory=list)
-    id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
-    processed: bool = False
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert event to dictionary for serialization."""
-        return {
-            "id": self.id,
-            "event_type": self.event_type.value,
-            "subtype": self.subtype.value,
-            "name": self.name,
-            "description": self.description,
-            "severity": self.severity.value,
-            "timestamp": self.timestamp,
-            "context": {
-                "source_id": self.context.source_id,
-                "target_ids": self.context.target_ids,
-                "location": self.context.location,
-                "affected_entities": self.context.affected_entities,
-                "metadata": self.context.metadata,
-            },
-            "effects": self.effects,
-            "probability": self.probability,
-            "chain_events": self.chain_events,
-            "processed": self.processed,
-        }
-    
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Event":
-        """Create an Event from a dictionary."""
-        event_type = EventType(data["event_type"])
-        
-        # Determine the correct subtype enum based on event type
-        if event_type == EventType.CELESTIAL:
-            subtype = CelestialEventType(data["subtype"])
-        elif event_type == EventType.CIVILIZATION:
-            subtype = CivilizationEventType(data["subtype"])
-        else:
-            subtype = DisasterEventType(data["subtype"])
-        
-        context_data = data.get("context", {})
-        context = EventContext(
-            source_id=context_data.get("source_id"),
-            target_ids=context_data.get("target_ids", []),
-            location=context_data.get("location"),
-            affected_entities=context_data.get("affected_entities", []),
-            metadata=context_data.get("metadata", {}),
-        )
-        
-        return cls(
-            id=data.get("id", str(uuid.uuid4())[:8]),
-            event_type=event_type,
-            subtype=subtype,
-            name=data["name"],
-            description=data["description"],
-            severity=EventSeverity(data["severity"]),
-            timestamp=data["timestamp"],
-            context=context,
-            effects=data.get("effects", {}),
-            probability=data.get("probability", 0.0),
-            chain_events=data.get("chain_events", []),
-            processed=data.get("processed", False),
-        )
-    
-    def __repr__(self) -> str:
-        return f"Event({self.id}, {self.event_type.value}.{self.subtype.value}, {self.name})"
+    def __str__(self) -> str:
+        return self.value
