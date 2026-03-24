@@ -485,9 +485,10 @@
       "depends_on": [
         "feat-019"
       ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "需要安装 three 和 @react-three/fiber"
+      "passes": true,
+      "last_attempt": "2026-03-24T23:45:23.179273",
+      "notes": "需要安装 three 和 @react-three/fiber",
+      "retry_count": 0
     },
     {
       "id": "feat-023",
