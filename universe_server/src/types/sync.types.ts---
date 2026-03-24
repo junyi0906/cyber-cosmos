@@ -1,0 +1,114 @@
+export interface UniverseSnapshot {
+  tick: number;
+  timestamp: number;
+  civilizations: Civilization[];
+  celestialBodies: CelestialBody[];
+  events: UniverseEvent[];
+  globalState: GlobalState;
+}
+
+export interface Civilization {
+  id: string;
+  name: string;
+  population: number;
+  technologyLevel: number;
+  resources: Resource[];
+  position: Position;
+  relations: DiplomaticRelation[];
+  status: 'active' | 'extinct' | 'dormant';
+}
+
+export interface CelestialBody {
+  id: string;
+  name: string;
+  type: 'star' | 'planet' | 'moon' | 'asteroid' | 'blackhole' | 'nebula';
+  position: Position;
+  resources: Resource[];
+  ownerId?: string;
+}
+
+export interface Resource {
+  type: string;
+  amount: number;
+  maxAmount?: number;
+}
+
+export interface Position {
+  x: number;
+  y: number;
+  z: number;
+}
+
+export interface DiplomaticRelation {
+  civilizationId: string;
+  status: 'ally' | 'neutral' | 'enemy' | 'at_war';
+  treaties: string[];
+}
+
+export interface UniverseEvent {
+  id: string;
+  type: EventType;
+  tick: number;
+  timestamp: number;
+  data: EventData;
+  affectedEntities: string[];
+  narrative?: string;
+}
+
+export type EventType = 
+  | 'supernova'
+  | 'blackhole_formation'
+  | 'nebula_collapse'
+  | 'resource_depletion'
+  | 'tech_breakthrough'
+  | 'cultural_renaissance'
+  | 'civil_war'
+  | 'extinction'
+  | 'gamma_ray_burst'
+  | 'plague'
+  | 'first_contact'
+  | 'treaty_signed'
+  | 'alliance_formed'
+  | 'broadcast_sent';
+
+export interface EventData {
+  [key: string]: unknown;
+}
+
+export interface GlobalState {
+  universeAge: number;
+  totalPopulation: number;
+  activeCivilizations: number;
+  majorEvents: string[];
+}
+
+export interface TickMessage {
+  type: 'tick';
+  tick: number;
+  timestamp: number;
+  delta: DeltaChange[];
+}
+
+export interface DeltaChange {
+  entity: string;
+  entityId: string;
+  field: string;
+  oldValue: unknown;
+  newValue: unknown;
+}
+
+export interface SyncConfig {
+  pythonCoreUrl: string;
+  syncInterval: number;
+  maxRetries: number;
+  retryDelay: number;
+  timeout: number;
+}
+
+export interface SyncStatus {
+  connected: boolean;
+  lastSync: number;
+  currentTick: number;
+  errorCount: number;
+  lastError?: string;
+}
