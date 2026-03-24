@@ -1,21 +1,16 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import * as echarts from 'echarts';
-import { useWebSocket } from '../../hooks/useWebSocket';
+import { MarketData } from './TradeDashboard';
 import './MarketPanel.css';
 
-interface Resource {
-  id: string;
-  name: string;
-  type: 'mineral' | 'energy' | 'technology' | 'rare';
-  basePrice: number;
-  currentPrice: number;
-  priceChange: number;
-  supply: number;
-  demand: number;
-  volatility: number;
+interface MarketPanelProps {
+  marketData: MarketData[];
+  selectedResource: string | null;
+  onSelectResource: (id: string) => void;
+  onCreateOrder: (order: any) => void;
 }
 
-interface PriceData {
+interface PriceHistory {
   timestamp: number;
   open: number;
   close: number;
@@ -24,80 +19,86 @@ interface PriceData {
   volume: number;
 }
 
-interface Order {
-  id: string;
+interface OrderFormData {
   type: 'buy' | 'sell';
-  resourceId: string;
-  resourceName: string;
   price: number;
   quantity: number;
-  status: 'pending' | 'filled' | 'cancelled';
-  createdAt: string;
-}
-
-interface MarketPanelProps {
-  civilizationId?: string;
-  onTrade?: () => void;
-  isConnected?: boolean;
 }
 
 export const MarketPanel: React.FC<MarketPanelProps> = ({
-  civilizationId,
-  onTrade,
-  isConnected = false
+  marketData,
+  selectedResource,
+  onSelectResource,
+  onCreateOrder
 }) => {
-  const [resources, setResources] = useState<Resource[]>([]);
-  const [selectedResource, setSelectedResource] = useState<Resource | null>(null);
-  const [priceHistory, setPriceHistory] = useState<PriceData[]>([]);
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [orderForm, setOrderForm] = useState({
-    type: 'buy' as 'buy' | 'sell',
+  const chartRef = useRef<HTMLDivElement>(null);
+  const chartInstance = useRef<echarts.ECharts | null>(null);
+  const [priceHistory, setPriceHistory] = useState<PriceHistory[]>([]);
+  const [orderForm, setOrderForm] = useState<OrderFormData>({
+    type: 'buy',
     price: 0,
     quantity: 1
   });
-  const [loading, setLoading] = useState(false);
-  const chartRef = useRef<HTMLDivElement>(null);
-  const chartInstance = useRef<echarts.ECharts | null>(null);
+  const [timeRange, setTimeRange] = useState<'1h' | '6h' | '24h' | '7d'>('24h');
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
-  const resourceTypes = {
-    mineral: { icon: '⛏️', color: '#8B7355' },
-    energy: { icon: '⚡', color: '#FFD700' },
-    technology: { icon: '🔬', color: '#00BFFF' },
-    rare: { icon: '💎', color: '#9932CC' }
-  };
-
-  useEffect(() => {
-    fetchResources();
-    fetchOrders();
-  }, [civilizationId]);
+  const selectedMarket = marketData.find(m => m.resourceId === selectedResource);
 
   useEffect(() => {
     if (selectedResource) {
-      fetchPriceHistory(selectedResource.id);
+      fetchPriceHistory(selectedResource, timeRange);
     }
-  }, [selectedResource]);
+  }, [selectedResource, timeRange]);
+
+  const fetchPriceHistory = async (resourceId: string, range: string) => {
+    setIsLoadingHistory(true);
+    try {
+      const response = await fetch(`/api/trade/market/${resourceId}/history?range=${range}`);
+      const data = await response.json();
+      setPriceHistory(data.history || []);
+    } catch (error) {
+      console.error('Failed to fetch price history:', error);
+      // Generate mock data for demo
+      setPriceHistory(generateMockHistory());
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+
+  const generateMockHistory = (): PriceHistory[] => {
+    const data: PriceHistory[] = [];
+    const basePrice = selectedMarket?.currentPrice || 100;
+    const now = Date.now();
+    
+    for (let i = 100; i >= 0; i--) {
+      const timestamp = now - i * 3600000;
+      const volatility = basePrice * 0.05;
+      const open = basePrice + (Math.random() - 0.5) * volatility;
+      const close = open + (Math.random() - 0.5) * volatility;
+      const high = Math.max(open, close) + Math.random() * volatility * 0.5;
+      const low = Math.min(open, close) - Math.random() * volatility * 0.5;
+      
+      data.push({
+        timestamp,
+        open: Math.max(1, open),
+        close: Math.max(1, close),
+        high: Math.max(1, high),
+        low: Math.max(1, low),
+        volume: Math.floor(Math.random() * 1000 + 100)
+      });
+    }
+    
+    return data;
+  };
 
   useEffect(() => {
-    if (chartRef.current && priceHistory.length > 0) {
-      initChart();
-    }
-    return () => {
-      chartInstance.current?.dispose();
-    };
-  }, [priceHistory]);
+    if (!chartRef.current || priceHistory.length === 0) return;
 
-  const initChart = () => {
-    if (!chartRef.current) return;
-
-    if (chartInstance.current) {
-      chartInstance.current.dispose();
+    if (!chartInstance.current) {
+      chartInstance.current = echarts.init(chartRef.current);
     }
 
-    chartInstance.current = echarts.init(chartRef.current, 'dark');
-
-    const dates = priceHistory.map(d => 
-      new Date(d.timestamp).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
-    );
+    const dates = priceHistory.map(d => new Date(d.timestamp).toLocaleString());
     const klineData = priceHistory.map(d => [d.open, d.close, d.low, d.high]);
     const volumes = priceHistory.map(d => d.volume);
 
@@ -105,39 +106,35 @@ export const MarketPanel: React.FC<MarketPanelProps> = ({
       backgroundColor: 'transparent',
       animation: true,
       legend: {
-        data: ['K线', '成交量'],
+        data: ['Price', 'Volume'],
         top: 10,
-        textStyle: { color: '#aaa' }
+        textStyle: { color: '#8b949e' }
       },
       tooltip: {
         trigger: 'axis',
         axisPointer: { type: 'cross' },
-        backgroundColor: 'rgba(20, 25, 35, 0.9)',
-        borderColor: '#3a4a5a',
-        textStyle: { color: '#fff' },
+        backgroundColor: 'rgba(22, 27, 34, 0.95)',
+        borderColor: '#30363d',
+        textStyle: { color: '#c9d1d9' },
         formatter: function(params: any) {
-          const kline = params[0];
-          const volume = params[1];
-          if (!kline || !kline.data) return '';
-          const [open, close, low, high] = kline.data;
-          const change = ((close - open) / open * 100).toFixed(2);
-          const changeColor = close >= open ? '#00ff88' : '#ff4466';
+          const data = params[0];
+          const idx = data.dataIndex;
+          const kline = klineData[idx];
           return `
             <div style="padding: 8px;">
-              <div style="font-weight: bold; margin-bottom: 8px;">${kline.axisValue}</div>
-              <div>开盘: ${open.toFixed(2)}</div>
-              <div>收盘: <span style="color: ${changeColor}">${close.toFixed(2)}</span></div>
-              <div>最高: ${high.toFixed(2)}</div>
-              <div>最低: ${low.toFixed(2)}</div>
-              <div style="margin-top: 4px;">涨跌: <span style="color: ${changeColor}">${change}%</span></div>
-              ${volume ? `<div>成交量: ${volume.data}</div>` : ''}
+              <div style="font-weight: bold; margin-bottom: 8px;">${dates[idx]}</div>
+              <div>Open: ${kline[0]?.toFixed(2)}</div>
+              <div>Close: ${kline[1]?.toFixed(2)}</div>
+              <div>Low: ${kline[2]?.toFixed(2)}</div>
+              <div>High: ${kline[3]?.toFixed(2)}</div>
+              <div>Volume: ${volumes[idx]}</div>
             </div>
           `;
         }
       },
       axisPointer: {
         link: [{ xAxisIndex: 'all' }],
-        label: { backgroundColor: '#1a2030' }
+        label: { backgroundColor: '#21262d' }
       },
       grid: [
         { left: '10%', right: '8%', top: '15%', height: '50%' },
@@ -148,176 +145,8 @@ export const MarketPanel: React.FC<MarketPanelProps> = ({
           type: 'category',
           data: dates,
           boundaryGap: false,
-          axisLine: { lineStyle: { color: '#3a4a5a' } },
-          axisLabel: { color: '#888' },
+          axisLine: { lineStyle: { color: '#30363d' } },
+          axisLabel: { color: '#8b949e', fontSize: 10 },
           splitLine: { show: false },
           min: 'dataMin',
-          max: 'dataMax'
-        },
-        {
-          type: 'category',
-          gridIndex: 1,
-          data: dates,
-          boundaryGap: false,
-          axisLine: { lineStyle: { color: '#3a4a5a' } },
-          axisLabel: { show: false },
-          splitLine: { show: false },
-          min: 'dataMin',
-          max: 'dataMax'
-        }
-      ],
-      yAxis: [
-        {
-          scale: true,
-          axisLine: { lineStyle: { color: '#3a4a5a' } },
-          axisLabel: { color: '#888' },
-          splitLine: { 
-            lineStyle: { 
-              color: '#2a3a4a',
-              type: 'dashed'
-            } 
-          }
-        },
-        {
-          scale: true,
-          gridIndex: 1,
-          splitNumber: 2,
-          axisLine: { lineStyle: { color: '#3a4a5a' } },
-          axisLabel: { color: '#888' },
-          splitLine: { 
-            lineStyle: { 
-              color: '#2a3a4a',
-              type: 'dashed'
-            } 
-          }
-        }
-      ],
-      dataZoom: [
-        {
-          type: 'inside',
-          xAxisIndex: [0, 1],
-          start: 70,
-          end: 100
-        },
-        {
-          show: true,
-          xAxisIndex: [0, 1],
-          type: 'slider',
-          bottom: '2%',
-          start: 70,
-          end: 100,
-          borderColor: '#3a4a5a',
-          backgroundColor: '#1a2030',
-          fillerColor: 'rgba(58, 74, 90, 0.3)',
-          handleStyle: { color: '#5a9fd4' },
-          textStyle: { color: '#888' }
-        }
-      ],
-      series: [
-        {
-          name: 'K线',
-          type: 'candlestick',
-          data: klineData,
-          itemStyle: {
-            color: '#00ff88',
-            color0: '#ff4466',
-            borderColor: '#00ff88',
-            borderColor0: '#ff4466'
-          },
-          emphasis: {
-            itemStyle: {
-              borderWidth: 2
-            }
-          }
-        },
-        {
-          name: '成交量',
-          type: 'bar',
-          xAxisIndex: 1,
-          yAxisIndex: 1,
-          data: volumes,
-          itemStyle: {
-            color: function(params: any) {
-              const idx = params.dataIndex;
-              if (idx < klineData.length) {
-                const [open, close] = klineData[idx];
-                return close >= open ? 'rgba(0, 255, 136, 0.5)' : 'rgba(255, 68, 102, 0.5)';
-              }
-              return 'rgba(128, 128, 128, 0.5)';
-            }
-          }
-        }
-      ]
-    };
-
-    chartInstance.current.setOption(option);
-
-    const handleResize = () => {
-      chartInstance.current?.resize();
-    };
-    window.addEventListener('resize', handleResize);
-
-    return () => {
-      window.removeEventListener('resize', handleResize);
-    };
-  };
-
-  const fetchResources = async () => {
-    try {
-      const response = await fetch('/api/trade/resources');
-      if (response.ok) {
-        const data = await response.json();
-        setResources(data);
-        if (data.length > 0 && !selectedResource) {
-          setSelectedResource(data[0]);
-          setOrderForm(prev => ({ ...prev, price: data[0].currentPrice }));
-        }
-      }
-    } catch (error) {
-      console.error('Failed to fetch resources:', error);
-    }
-  };
-
-  const fetchPriceHistory = async (resourceId: string) => {
-    try {
-      const response = await fetch(`/api/trade/resources/${resourceId}/history?period=30d`);
-      if (response.ok) {
-        const data = await response.json();
-        setPriceHistory(data);
-      }
-    } catch (error) {
-      console.error('Failed to fetch price history:', error);
-    }
-  };
-
-  const fetchOrders = async () => {
-    if (!civilizationId) return;
-    try {
-      const response = await fetch(`/api/trade/orders?civilizationId=${civilizationId}`);
-      if (response.ok) {
-        const data = await response.json();
-        setOrders(data);
-      }
-    } catch (error) {
-      console.error('Failed to fetch orders:', error);
-    }
-  };
-
-  const handleCreateOrder = async () => {
-    if (!selectedResource || !civilizationId) return;
-    
-    setLoading(true);
-    try {
-      const response = await fetch('/api/trade/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          civilizationId,
-          resourceId: selectedResource.id,
-          type: orderForm.type,
-          price: orderForm.price,
-          quantity: orderForm.quantity
-        })
-      });
-
-      if (response.ok
+          max: '

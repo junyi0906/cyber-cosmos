@@ -6,207 +6,333 @@ import { TradeHistory } from './TradeHistory';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import './TradeDashboard.css';
 
-interface TradeStats {
-  totalVolume: number;
-  totalTransactions: number;
-  activeRoutes: number;
-  priceIndex: number;
-}
-
-interface TradeUpdate {
-  type: 'order_filled' | 'order_created' | 'route_update' | 'price_change';
+export interface TradeUpdate {
+  type: 'order_filled' | 'order_created' | 'price_change' | 'route_update';
+  timestamp: number;
   data: any;
-  timestamp: string;
 }
 
-interface TradeDashboardProps {
-  civilizationId?: string;
-  onNotification?: (message: string, type: 'success' | 'error' | 'info') => void;
+export interface MarketData {
+  resourceId: string;
+  resourceName: string;
+  currentPrice: number;
+  previousPrice: number;
+  change24h: number;
+  volume24h: number;
+  high24h: number;
+  low24h: number;
+  supply: number;
+  demand: number;
 }
 
-export const TradeDashboard: React.FC<TradeDashboardProps> = ({
-  civilizationId,
-  onNotification
-}) => {
-  const [activeTab, setActiveTab] = useState<'market' | 'routes' | 'history'>('market');
-  const [stats, setStats] = useState<TradeStats>({
-    totalVolume: 0,
-    totalTransactions: 0,
-    activeRoutes: 0,
-    priceIndex: 100
-  });
-  const [tradeUpdates, setTradeUpdates] = useState<TradeUpdate[]>([]);
-  const [isConnected, setIsConnected] = useState(false);
+export interface TradeRoute {
+  id: string;
+  fromCivilization: string;
+  toCivilization: string;
+  resource: string;
+  quantity: number;
+  efficiency: number;
+  status: 'active' | 'paused' | 'blocked' | 'under_attack';
+  lastUpdate: number;
+  profitPerCycle: number;
+}
+
+export interface TradeOrder {
+  id: string;
+  civilizationId: string;
+  civilizationName: string;
+  resource: string;
+  type: 'buy' | 'sell';
+  price: number;
+  quantity: number;
+  filledQuantity: number;
+  status: 'open' | 'partial' | 'filled' | 'cancelled';
+  createdAt: number;
+}
+
+export const TradeDashboard: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<'market' | 'routes' | 'orders' | 'history'>('market');
+  const [marketData, setMarketData] = useState<MarketData[]>([]);
+  const [tradeRoutes, setTradeRoutes] = useState<TradeRoute[]>([]);
+  const [orders, setOrders] = useState<TradeOrder[]>([]);
+  const [selectedResource, setSelectedResource] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [notifications, setNotifications] = useState<TradeUpdate[]>([]);
+
+  const { subscribe, isConnected } = useWebSocket();
 
   const handleTradeUpdate = useCallback((update: TradeUpdate) => {
-    setTradeUpdates(prev => [update, ...prev].slice(0, 100));
-    
-    if (update.type === 'order_filled' && onNotification) {
-      onNotification(
-        `订单已成交: ${update.data.resource} x${update.data.quantity}`,
-        'success'
-      );
-    }
-    
-    if (update.type === 'price_change') {
-      setStats(prev => ({
-        ...prev,
-        priceIndex: update.data.newIndex || prev.priceIndex
-      }));
-    }
-  }, [onNotification]);
+    setNotifications(prev => [update, ...prev].slice(0, 50));
 
-  const { subscribe, unsubscribe, send, status } = useWebSocket({
-    url: `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`,
-    onMessage: (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.channel === 'trade_updates') {
-          handleTradeUpdate(data.payload);
+    switch (update.type) {
+      case 'price_change':
+        setMarketData(prev => prev.map(item => 
+          item.resourceId === update.data.resourceId 
+            ? { ...item, ...update.data }
+            : item
+        ));
+        break;
+      case 'order_filled':
+      case 'order_created':
+        if (update.data.order) {
+          setOrders(prev => {
+            const existingIndex = prev.findIndex(o => o.id === update.data.order.id);
+            if (existingIndex >= 0) {
+              const updated = [...prev];
+              updated[existingIndex] = update.data.order;
+              return updated;
+            }
+            return [update.data.order, ...prev];
+          });
         }
-      } catch (e) {
-        console.error('Failed to parse trade update:', e);
-      }
-    },
-    onOpen: () => {
-      setIsConnected(true);
-      subscribe('trade_updates');
-      if (civilizationId) {
-        send({ type: 'subscribe', channel: `civilization_${civilizationId}` });
-      }
-    },
-    onClose: () => setIsConnected(false)
-  });
-
-  useEffect(() => {
-    fetchTradeStats();
-    return () => {
-      unsubscribe('trade_updates');
-    };
+        break;
+      case 'route_update':
+        setTradeRoutes(prev => prev.map(route =>
+          route.id === update.data.route?.id
+            ? { ...route, ...update.data.route }
+            : route
+        ));
+        break;
+    }
   }, []);
 
-  const fetchTradeStats = async () => {
+  useEffect(() => {
+    if (isConnected) {
+      const unsubscribe = subscribe('trade_updates', handleTradeUpdate);
+      return () => unsubscribe();
+    }
+  }, [isConnected, subscribe, handleTradeUpdate]);
+
+  useEffect(() => {
+    const fetchInitialData = async () => {
+      try {
+        setIsLoading(true);
+        
+        const [marketRes, routesRes, ordersRes] = await Promise.all([
+          fetch('/api/trade/market').then(r => r.json()),
+          fetch('/api/trade/routes').then(r => r.json()),
+          fetch('/api/trade/orders').then(r => r.json())
+        ]);
+
+        setMarketData(marketRes.data || []);
+        setTradeRoutes(routesRes.data || []);
+        setOrders(ordersRes.data || []);
+
+        if (marketRes.data?.length > 0) {
+          setSelectedResource(marketRes.data[0].resourceId);
+        }
+      } catch (error) {
+        console.error('Failed to fetch trade data:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchInitialData();
+  }, []);
+
+  const handleCreateOrder = async (order: Partial<TradeOrder>) => {
     try {
-      const response = await fetch('/api/trade/stats');
-      if (response.ok) {
-        const data = await response.json();
-        setStats(data);
+      const response = await fetch('/api/trade/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(order)
+      });
+      const data = await response.json();
+      if (data.success) {
+        setOrders(prev => [data.order, ...prev]);
       }
     } catch (error) {
-      console.error('Failed to fetch trade stats:', error);
+      console.error('Failed to create order:', error);
     }
   };
 
-  const renderTabContent = () => {
-    switch (activeTab) {
-      case 'market':
-        return (
-          <MarketPanel 
-            civilizationId={civilizationId}
-            onTrade={fetchTradeStats}
-            isConnected={isConnected}
-          />
-        );
-      case 'routes':
-        return (
-          <RouteManager 
-            civilizationId={civilizationId}
-            onRouteUpdate={fetchTradeStats}
-          />
-        );
-      case 'history':
-        return (
-          <TradeHistory 
-            updates={tradeUpdates}
-            civilizationId={civilizationId}
-          />
-        );
-      default:
-        return null;
+  const handleCancelOrder = async (orderId: string) => {
+    try {
+      await fetch(`/api/trade/orders/${orderId}`, { method: 'DELETE' });
+      setOrders(prev => prev.map(o => 
+        o.id === orderId ? { ...o, status: 'cancelled' } : o
+      ));
+    } catch (error) {
+      console.error('Failed to cancel order:', error);
     }
   };
+
+  const handleCreateRoute = async (route: Partial<TradeRoute>) => {
+    try {
+      const response = await fetch('/api/trade/routes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(route)
+      });
+      const data = await response.json();
+      if (data.success) {
+        setTradeRoutes(prev => [...prev, data.route]);
+      }
+    } catch (error) {
+      console.error('Failed to create route:', error);
+    }
+  };
+
+  const handleToggleRoute = async (routeId: string, activate: boolean) => {
+    try {
+      await fetch(`/api/trade/routes/${routeId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: activate ? 'active' : 'paused' })
+      });
+      setTradeRoutes(prev => prev.map(r =>
+        r.id === routeId ? { ...r, status: activate ? 'active' : 'paused' } : r
+      ));
+    } catch (error) {
+      console.error('Failed to toggle route:', error);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="trade-dashboard loading">
+        <div className="loading-spinner">
+          <div className="spinner"></div>
+          <span>Loading Trade Data...</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="trade-dashboard">
       <header className="trade-header">
-        <h1 className="trade-title">
-          <span className="title-icon">💹</span>
-          星际贸易中心
-        </h1>
+        <h1>Interstellar Trade Center</h1>
         <div className="connection-status">
-          <span className={`status-dot ${isConnected ? 'connected' : 'disconnected'}`} />
-          {isConnected ? '实时连接' : '连接中断'}
+          <span className={`status-indicator ${isConnected ? 'connected' : 'disconnected'}`}></span>
+          {isConnected ? 'Live' : 'Disconnected'}
         </div>
       </header>
 
-      <TradeStats stats={stats} />
-
       <nav className="trade-tabs">
-        <button
-          className={`tab-btn ${activeTab === 'market' ? 'active' : ''}`}
+        <button 
+          className={`tab ${activeTab === 'market' ? 'active' : ''}`}
           onClick={() => setActiveTab('market')}
         >
           <span className="tab-icon">📊</span>
-          交易市场
+          Market
         </button>
-        <button
-          className={`tab-btn ${activeTab === 'routes' ? 'active' : ''}`}
+        <button 
+          className={`tab ${activeTab === 'routes' ? 'active' : ''}`}
           onClick={() => setActiveTab('routes')}
         >
-          <span className="tab-icon">🛸</span>
-          贸易路线
-          {stats.activeRoutes > 0 && (
-            <span className="badge">{stats.activeRoutes}</span>
+          <span className="tab-icon">🚀</span>
+          Trade Routes
+          {tradeRoutes.filter(r => r.status === 'active').length > 0 && (
+            <span className="badge">{tradeRoutes.filter(r => r.status === 'active').length}</span>
           )}
         </button>
-        <button
-          className={`tab-btn ${activeTab === 'history' ? 'active' : ''}`}
+        <button 
+          className={`tab ${activeTab === 'orders' ? 'active' : ''}`}
+          onClick={() => setActiveTab('orders')}
+        >
+          <span className="tab-icon">📋</span>
+          Orders
+          {orders.filter(o => o.status === 'open').length > 0 && (
+            <span className="badge">{orders.filter(o => o.status === 'open').length}</span>
+          )}
+        </button>
+        <button 
+          className={`tab ${activeTab === 'history' ? 'active' : ''}`}
           onClick={() => setActiveTab('history')}
         >
           <span className="tab-icon">📜</span>
-          交易记录
+          History
         </button>
       </nav>
 
+      <div className="trade-notifications">
+        {notifications.slice(0, 3).map((notif, index) => (
+          <div key={`${notif.timestamp}-${index}`} className={`notification ${notif.type}`}>
+            <span className="notif-icon">
+              {notif.type === 'order_filled' ? '✅' : 
+               notif.type === 'price_change' ? '📈' : 
+               notif.type === 'route_update' ? '🚀' : '📝'}
+            </span>
+            <span className="notif-text">
+              {notif.type === 'order_filled' && `Order filled: ${notif.data.order?.quantity} ${notif.data.order?.resource}`}
+              {notif.type === 'price_change' && `${notif.data.resourceName}: ${notif.data.change24h > 0 ? '+' : ''}${notif.data.change24h?.toFixed(2)}%`}
+              {notif.type === 'route_update' && `Route ${notif.data.route?.id}: ${notif.data.route?.status}`}
+              {notif.type === 'order_created' && `New ${notif.data.order?.type} order created`}
+            </span>
+            <span className="notif-time">
+              {new Date(notif.timestamp).toLocaleTimeString()}
+            </span>
+          </div>
+        ))}
+      </div>
+
       <main className="trade-content">
-        {renderTabContent()}
+        {activeTab === 'market' && (
+          <MarketPanel 
+            marketData={marketData}
+            selectedResource={selectedResource}
+            onSelectResource={setSelectedResource}
+            onCreateOrder={handleCreateOrder}
+          />
+        )}
+
+        {activeTab === 'routes' && (
+          <RouteManager 
+            routes={tradeRoutes}
+            onCreateRoute={handleCreateRoute}
+            onToggleRoute={handleToggleRoute}
+          />
+        )}
+
+        {activeTab === 'orders' && (
+          <div className="orders-panel">
+            <div className="orders-header">
+              <h2>Active Orders</h2>
+            </div>
+            <div className="orders-list">
+              {orders.map(order => (
+                <div key={order.id} className={`order-card ${order.type} ${order.status}`}>
+                  <div className="order-main">
+                    <span className="order-type">{order.type.toUpperCase()}</span>
+                    <span className="order-resource">{order.resource}</span>
+                    <span className="order-quantity">
+                      {order.filledQuantity}/{order.quantity}
+                    </span>
+                    <span className="order-price">{order.price} credits</span>
+                  </div>
+                  <div className="order-meta">
+                    <span className="order-civ">{order.civilizationName}</span>
+                    <span className="order-status">{order.status}</span>
+                    {order.status === 'open' && (
+                      <button 
+                        className="cancel-btn"
+                        onClick={() => handleCancelOrder(order.id)}
+                      >
+                        Cancel
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {orders.length === 0 && (
+                <div className="empty-state">No active orders</div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'history' && (
+          <TradeHistory orders={orders.filter(o => o.status !== 'open')} />
+        )}
       </main>
 
-      <div className="live-updates">
-        <h3>实时动态</h3>
-        <div className="updates-list">
-          {tradeUpdates.slice(0, 5).map((update, index) => (
-            <div key={index} className={`update-item ${update.type}`}>
-              <span className="update-time">
-                {new Date(update.timestamp).toLocaleTimeString()}
-              </span>
-              <span className="update-content">
-                {formatUpdateMessage(update)}
-              </span>
-            </div>
-          ))}
-          {tradeUpdates.length === 0 && (
-            <div className="no-updates">暂无实时动态</div>
-          )}
-        </div>
-      </div>
+      <aside className="trade-sidebar">
+        <TradeStats marketData={marketData} routes={tradeRoutes} />
+      </aside>
     </div>
   );
-};
-
-const formatUpdateMessage = (update: TradeUpdate): string => {
-  switch (update.type) {
-    case 'order_filled':
-      return `成交: ${update.data.resource} x${update.data.quantity} @ ${update.data.price}`;
-    case 'order_created':
-      return `新订单: ${update.data.type === 'buy' ? '买入' : '卖出'} ${update.data.resource}`;
-    case 'route_update':
-      return `航线更新: ${update.data.routeName} - ${update.data.status}`;
-    case 'price_change':
-      return `价格变动: ${update.data.resource} ${update.data.change > 0 ? '↑' : '↓'}${Math.abs(update.data.change).toFixed(1)}%`;
-    default:
-      return '未知更新';
-  }
 };
 
 export default TradeDashboard;
