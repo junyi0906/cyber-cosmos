@@ -1,0 +1,105 @@
+-- Migration: 001_init_schema
+-- Description: 初始化基础表结构
+-- Created at: 2024-01-01
+
+-- 迁移版本记录表
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    version VARCHAR(20) PRIMARY KEY,
+    description TEXT,
+    applied_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+-- ============================================================================
+-- civilizations 表：文明基础信息
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS civilizations (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    description TEXT,
+    traits JSONB DEFAULT '{}'::jsonb,
+    resources JSONB DEFAULT '{}'::jsonb,
+    technology_level INTEGER NOT NULL DEFAULT 1,
+    military_power INTEGER NOT NULL DEFAULT 100,
+    location_x DECIMAL(10, 2),
+    location_y DECIMAL(10, 2),
+    status VARCHAR(20) NOT NULL DEFAULT 'active',
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    
+    CONSTRAINT chk_status_valid CHECK (status IN ('active', 'dormant', 'collapsed', 'ascended'))
+);
+
+-- 索引
+CREATE INDEX idx_civilizations_status ON civilizations(status);
+CREATE INDEX idx_civilizations_location ON civilizations(location_x, location_y);
+
+-- ============================================================================
+-- events 表：事件记录
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS events (
+    id SERIAL PRIMARY KEY,
+    event_type VARCHAR(100) NOT NULL,
+    title VARCHAR(200) NOT NULL,
+    description TEXT,
+    participants JSONB DEFAULT '[]'::jsonb,
+    location_x DECIMAL(10, 2),
+    location_y DECIMAL(10, 2),
+    impact_data JSONB DEFAULT '{}'::jsonb,
+    cycle_number INTEGER NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+-- 索引
+CREATE INDEX idx_events_type ON events(event_type);
+CREATE INDEX idx_events_cycle ON events(cycle_number);
+CREATE INDEX idx_events_location ON events(location_x, location_y);
+
+-- ============================================================================
+-- diplomacy 表：外交关系
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS diplomacy (
+    id SERIAL PRIMARY KEY,
+    civ_a_id INTEGER NOT NULL,
+    civ_b_id INTEGER NOT NULL,
+    relation_type VARCHAR(50) NOT NULL DEFAULT 'neutral',
+    trust_level DECIMAL(5, 2) NOT NULL DEFAULT 50.00,
+    treaties JSONB DEFAULT '[]'::jsonb,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    
+    CONSTRAINT fk_diplomacy_civ_a FOREIGN KEY (civ_a_id) REFERENCES civilizations(id) ON DELETE CASCADE,
+    CONSTRAINT fk_diplomacy_civ_b FOREIGN KEY (civ_b_id) REFERENCES civilizations(id) ON DELETE CASCADE,
+    CONSTRAINT chk_different_civs CHECK (civ_a_id != civ_b_id),
+    CONSTRAINT chk_trust_range CHECK (trust_level >= 0 AND trust_level <= 100),
+    CONSTRAINT chk_relation_valid CHECK (relation_type IN ('neutral', 'friendly', 'allied', 'hostile', 'war')),
+    UNIQUE(civ_a_id, civ_b_id)
+);
+
+-- 索引
+CREATE INDEX idx_diplomacy_civ_a ON diplomacy(civ_a_id);
+CREATE INDEX idx_diplomacy_civ_b ON diplomacy(civ_b_id);
+CREATE INDEX idx_diplomacy_relation ON diplomacy(relation_type);
+
+-- ============================================================================
+-- universe_state 表：宇宙全局状态
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS universe_state (
+    id SERIAL PRIMARY KEY,
+    current_cycle INTEGER NOT NULL DEFAULT 0,
+    current_weather VARCHAR(50) NOT NULL DEFAULT 'calm',
+    weather_intensity DECIMAL(5, 2) NOT NULL DEFAULT 1.00,
+    season_id INTEGER,
+    season_name VARCHAR(100),
+    global_modifiers JSONB DEFAULT '{}'::jsonb,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+-- 插入初始状态
+INSERT INTO universe_state (current_cycle, current_weather, weather_intensity)
+VALUES (0, 'calm', 1.00)
+ON CONFLICT DO NOTHING;
+
+-- 记录迁移
+INSERT INTO schema_migrations (version, description, applied_at)
+VALUES ('001', 'initial schema', NOW())
+ON CONFLICT (version) DO NOTHING;
