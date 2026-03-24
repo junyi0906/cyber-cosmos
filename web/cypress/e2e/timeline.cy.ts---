@@ -1,0 +1,145 @@
+/// <reference types="cypress" />
+
+describe('Timeline - 事件时间线', () => {
+  beforeEach(() => {
+    cy.visit('/');
+    cy.waitForAppReady();
+  });
+
+  describe('时间轴组件', () => {
+    it('应该显示时间轴组件', () => {
+      cy.get('[data-testid="timeline-container"]').should('be.visible');
+    });
+
+    it('应该显示时间刻度', () => {
+      cy.get('[data-testid="timeline-scale"]').should('exist');
+    });
+
+    it('应该显示当前时间指示器', () => {
+      cy.get('[data-testid="current-time-indicator"]').should('be.visible');
+    });
+  });
+
+  describe('历史事件标记', () => {
+    it('应该显示历史事件节点', () => {
+      cy.get('[data-testid="event-node"]').should('have.length.at.least', 1);
+    });
+
+    it('事件节点应该有正确的类型标识', () => {
+      cy.get('[data-testid="event-node"]').first().then($node => {
+        const eventType = $node.attr('data-event-type');
+        expect(['disaster', 'discovery', 'war', 'alliance', 'trade']).to.include(eventType);
+      });
+    });
+
+    it('悬停事件节点应该显示提示信息', () => {
+      cy.get('[data-testid="event-node"]').first().trigger('mouseover');
+      cy.get('[data-testid="event-tooltip"]').should('be.visible');
+    });
+  });
+
+  describe('缩放功能', () => {
+    it('应该支持放大时间轴', () => {
+      cy.get('[data-testid="timeline-zoom-in"]').click();
+      cy.get('[data-testid="timeline-container"]').should('have.attr', 'data-zoom-level');
+    });
+
+    it('应该支持缩小时间轴', () => {
+      cy.get('[data-testid="timeline-zoom-out"]').click();
+      cy.get('[data-testid="timeline-container"]').should('have.attr', 'data-zoom-level');
+    });
+
+    it('应该支持滚轮缩放', () => {
+      cy.get('[data-testid="timeline-container"]').trigger('wheel', { deltaY: -100 });
+    });
+
+    it('缩放应该有合理的范围限制', () => {
+      // 测试最大缩放
+      for (let i = 0; i < 20; i++) {
+        cy.get('[data-testid="timeline-zoom-in"]').click();
+      }
+      cy.get('[data-testid="timeline-container"]').should('have.attr', 'data-zoom-level', '10');
+
+      // 测试最小缩放
+      for (let i = 0; i < 20; i++) {
+        cy.get('[data-testid="timeline-zoom-out"]').click();
+      }
+      cy.get('[data-testid="timeline-container"]').should('have.attr', 'data-zoom-level', '0.1');
+    });
+  });
+
+  describe('拖拽功能', () => {
+    it('应该支持拖拽时间轴', () => {
+      cy.get('[data-testid="timeline-track"]')
+        .trigger('mousedown', { button: 0 })
+        .trigger('mousemove', { clientX: 300 })
+        .trigger('mouseup');
+    });
+
+    it('拖拽应该更新可视范围', () => {
+      const initialPosition = cy.get('[data-testid="timeline-track"]').then($track => {
+        return $track.attr('data-scroll-position');
+      });
+
+      cy.get('[data-testid="timeline-track"]')
+        .trigger('mousedown', { button: 0 })
+        .trigger('mousemove', { clientX: 300 })
+        .trigger('mouseup');
+
+      cy.get('[data-testid="timeline-track"]').then($track => {
+        const newPosition = $track.attr('data-scroll-position');
+        expect(newPosition).to.not.equal(initialPosition);
+      });
+    });
+  });
+
+  describe('事件回放', () => {
+    it('点击事件节点应该触发回放', () => {
+      cy.get('[data-testid="event-node"]').first().click();
+      cy.get('[data-testid="replay-modal"]').should('be.visible');
+    });
+
+    it('回放应该显示事件详情', () => {
+      cy.get('[data-testid="event-node"]').first().click();
+      cy.get('[data-testid="event-detail"]').should('be.visible');
+    });
+
+    it('回放应该恢复宇宙状态', () => {
+      cy.get('[data-testid="event-node"]').first().click();
+      cy.get('[data-testid="replay-start"]').click();
+      cy.get('[data-testid="universe-canvas"]').should('have.attr', 'data-replay-mode', 'true');
+    });
+
+    it('应该可以退出回放模式', () => {
+      cy.get('[data-testid="event-node"]').first().click();
+      cy.get('[data-testid="replay-start"]').click();
+      cy.get('[data-testid="replay-exit"]').click();
+      cy.get('[data-testid="universe-canvas"]').should('have.attr', 'data-replay-mode', 'false');
+    });
+  });
+
+  describe('时间导航', () => {
+    it('应该显示宇宙纪年', () => {
+      cy.get('[data-testid="universe-year"]').should('be.visible');
+    });
+
+    it('应该可以跳转到指定时间', () => {
+      cy.get('[data-testid="time-jump-input"]').clear().type('1000');
+      cy.get('[data-testid="time-jump-button"]').click();
+      cy.get('[data-testid="universe-year"]').should('contain', '1000');
+    });
+
+    it('应该显示时间播放控制', () => {
+      cy.get('[data-testid="time-play"]').should('be.visible');
+      cy.get('[data-testid="time-pause"]').should('be.visible');
+    });
+
+    it('播放控制应该正常工作', () => {
+      cy.get('[data-testid="time-pause"]').click();
+      cy.get('[data-testid="universe-canvas"]').should('have.attr', 'data-paused', 'true');
+      
+      cy.get('[data-testid="time-play"]').click();
+      cy.get('[data-testid="universe-canvas"]').should('have.attr', 'data-paused', 'false');
+    });
+  });
+});

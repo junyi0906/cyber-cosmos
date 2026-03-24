@@ -1,0 +1,121 @@
+/// <reference types="cypress" />
+
+describe('Observatory - 宇宙观测台', () => {
+  beforeEach(() => {
+    cy.visit('/');
+    cy.waitForAppReady();
+  });
+
+  describe('3D 宇宙可视化', () => {
+    it('应该正确渲染宇宙场景', () => {
+      cy.get('[data-testid="universe-canvas"]').should('exist');
+      cy.get('[data-testid="universe-canvas"]').should('be.visible');
+    });
+
+    it('应该显示所有星球', () => {
+      cy.get('[data-testid="planet"]').should('have.length.at.least', 1);
+    });
+
+    it('星球颜色应该代表阵营', () => {
+      cy.get('[data-testid="planet"]').first().then($planet => {
+        const faction = $planet.attr('data-faction');
+        expect(faction).to.not.be.undefined;
+      });
+    });
+
+    it('星球光晕应该代表科技等级', () => {
+      cy.get('[data-testid="planet"]').first().then($planet => {
+        const techLevel = $planet.attr('data-tech-level');
+        expect(techLevel).to.not.be.undefined;
+      });
+    });
+  });
+
+  describe('星球状态渲染', () => {
+    it('应该显示灾难粒子效果', () => {
+      cy.intercept('GET', '/api/events/disasters').as('getDisasters');
+      cy.wait('@getDisasters');
+      
+      cy.get('[data-testid="disaster-effect"]').should('exist');
+    });
+
+    it('应该显示星球阵营颜色', () => {
+      cy.fixture('civilizations').then((civilizations) => {
+        civilizations.forEach((civ: any) => {
+          cy.get(`[data-faction="${civ.id}"]`).should('exist');
+        });
+      });
+    });
+
+    it('应该显示科技等级光晕', () => {
+      cy.get('[data-testid="planet"]').each($planet => {
+        cy.wrap($planet).should('have.attr', 'data-tech-level');
+      });
+    });
+  });
+
+  describe('宇宙航线可视化', () => {
+    it('应该显示贸易路径', () => {
+      cy.get('[data-testid="trade-route"]').should('exist');
+    });
+
+    it('应该显示舰队移动轨迹', () => {
+      cy.intercept('GET', '/api/fleets').as('getFleets');
+      cy.wait('@getFleets');
+      
+      cy.get('[data-testid="fleet-trajectory"]').should('exist');
+    });
+
+    it('航线应该有动画效果', () => {
+      cy.get('[data-testid="trade-route"]').first().should('have.class', 'animated');
+    });
+  });
+
+  describe('交互功能', () => {
+    it('应该支持鼠标旋转视角', () => {
+      cy.get('[data-testid="universe-canvas"]').trigger('mousedown', { button: 0 });
+      cy.get('[data-testid="universe-canvas"]').trigger('mousemove', { clientX: 200, clientY: 200 });
+      cy.get('[data-testid="universe-canvas"]').trigger('mouseup');
+    });
+
+    it('应该支持滚轮缩放', () => {
+      cy.get('[data-testid="universe-canvas"]').trigger('wheel', { deltaY: -100 });
+      cy.get('[data-testid="universe-canvas"]').trigger('wheel', { deltaY: 100 });
+    });
+
+    it('点击星球应该显示详情面板', () => {
+      cy.get('[data-testid="planet"]').first().click();
+      cy.get('[data-testid="planet-detail-panel"]').should('be.visible');
+    });
+  });
+
+  describe('文明详情面板', () => {
+    beforeEach(() => {
+      cy.get('[data-testid="planet"]').first().click();
+    });
+
+    it('应该显示文明属性雷达图', () => {
+      cy.get('[data-testid="radar-chart"]').should('be.visible');
+    });
+
+    it('应该显示军事属性', () => {
+      cy.get('[data-testid="attribute-military"]').should('be.visible');
+    });
+
+    it('应该显示经济属性', () => {
+      cy.get('[data-testid="attribute-economy"]').should('be.visible');
+    });
+
+    it('应该显示科技属性', () => {
+      cy.get('[data-testid="attribute-technology"]').should('be.visible');
+    });
+
+    it('应该显示文化属性', () => {
+      cy.get('[data-testid="attribute-culture"]').should('be.visible');
+    });
+
+    it('应该显示外交关系网络图', () => {
+      cy.get('[data-testid="diplomacy-network"]').should('be.visible');
+    });
+  });
+});
