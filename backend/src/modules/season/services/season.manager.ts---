@@ -1,0 +1,468 @@
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Inject } from '@nestjs/common';
+import {
+  SeasonPhase,
+  SeasonRules,
+  SeasonData,
+  SeasonProgress,
+  PhaseConfig,
+  SeasonSettlement,
+} from '../interfaces/season.interface';
+
+/**
+ * 赛季管理器服务
+ * 负责赛季状态机管理和阶段流转
+ */
+@Injectable()
+export class SeasonManager implements OnModuleInit {
+  private readonly logger = new Logger(SeasonManager.name);
+  
+  /** Redis 客户端注入 */
+  private redisClient: any;
+  
+  /** 赛季状态存储键 */
+  private readonly SEASON_KEY = 'cyber_cosmos:current_season';
+  private readonly SEASON_HISTORY_KEY = 'cyber_cosmos:season_history';
+  
+  /** 阶段配置映射 */
+  private readonly phaseConfigs: Map<SeasonPhase, PhaseConfig> = new Map([
+    [
+      SeasonPhase.EXPLORATION,
+      {
+        name: '开拓期',
+        description: '文明初入宇宙，探索未知星域，建立初始据点',
+        duration: 250,
+        rules: {
+          resourceMultiplier: 1.0,
+          eventFrequency: 0.8,
+          diplomacyModifier: 1.2,
+          warCostMultiplier: 1.5,
+          researchSpeed: 1.0,
+        },
+      },
+    ],
+    [
+      SeasonPhase.EXPANSION,
+      {
+        name: '扩张期',
+        description: '文明蓬勃发展，疆域快速扩张，资源争夺加剧',
+        duration: 300,
+        rules: {
+          resourceMultiplier: 1.2,
+          eventFrequency: 1.0,
+          diplomacyModifier: 1.0,
+          warCostMultiplier: 1.0,
+          researchSpeed: 1.2,
+        },
+      },
+    ],
+    [
+      SeasonPhase.CONFLICT,
+      {
+        name: '纷争期',
+        description: '矛盾激化，战争频发，文明间冲突不断',
+        duration: 300,
+        rules: {
+          resourceMultiplier: 0.9,
+          eventFrequency: 1.5,
+          diplomacyModifier: 0.7,
+          warCostMultiplier: 0.8,
+          researchSpeed: 1.3,
+        },
+      },
+    ],
+    [
+      SeasonPhase.FINALE,
+      {
+        name: '终焉期',
+        description: '赛季即将结束，最终决战，决定传奇归属',
+        duration: 150,
+        rules: {
+          resourceMultiplier: 1.5,
+          eventFrequency: 2.0,
+          diplomacyModifier: 0.5,
+          warCostMultiplier: 0.5,
+          researchSpeed: 1.5,
+        },
+      },
+    ],
+  ]);
+
+  /** 当前赛季缓存 */
+  private currentSeason: SeasonData | null = null;
+
+  constructor() {
+    // Redis 客户端将在模块初始化时注入
+  }
+
+  /**
+   * 模块初始化时加载当前赛季
+   */
+  async onModuleInit(): Promise<void> {
+    try {
+      await this.loadCurrentSeason();
+      this.logger.log('Season manager initialized successfully');
+    } catch (error) {
+      this.logger.error('Failed to initialize season manager', error);
+    }
+  }
+
+  /**
+   * 设置 Redis 客户端
+   */
+  setRedisClient(client: any): void {
+    this.redisClient = client;
+  }
+
+  /**
+   * 开始新赛季
+   * @param customName 自定义赛季名称（可选）
+   * @param customModifiers 自定义规则修正（可选）
+   * @returns 新赛季数据
+   */
+  async startNewSeason(
+    customName?: string,
+    customModifiers?: Partial<SeasonRules>,
+  ): Promise<SeasonData> {
+    // 如果有进行中的赛季，先结束它
+    if (this.currentSeason?.isActive) {
+      await this.endCurrentSeason();
+    }
+
+    const seasonId = this.generateSeasonId();
+    const seasonName = customName || this.generateSeasonName();
+    const baseModifiers = this.generateSeasonModifiers();
+
+    // 合并自定义修正
+    const seasonModifiers: SeasonRules = {
+      ...baseModifiers,
+      ...customModifiers,
+    };
+
+    const newSeason: SeasonData = {
+      id: seasonId,
+      name: seasonName,
+      description: this.generateSeasonDescription(seasonName, seasonModifiers),
+      currentPhase: SeasonPhase.EXPLORATION,
+      startTime: new Date(),
+      currentYear: 0,
+      totalDuration: this.calculateTotalDuration(),
+      seasonModifiers,
+      isActive: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    // 保存到 Redis
+    await this.saveSeason(newSeason);
+    this.currentSeason = newSeason;
+
+    this.logger.log(`New season started: ${seasonName} (${seasonId})`);
+    return newSeason;
+  }
+
+  /**
+   * 推进到下一阶段
+   * @returns 更新后的赛季数据
+   */
+  async advancePhase(): Promise<SeasonData> {
+    if (!this.currentSeason || !this.currentSeason.isActive) {
+      throw new Error('No active season to advance');
+    }
+
+    const phases = [
+      SeasonPhase.EXPLORATION,
+      SeasonPhase.EXPANSION,
+      SeasonPhase.CONFLICT,
+      SeasonPhase.FINALE,
+    ];
+
+    const currentIndex = phases.indexOf(this.currentSeason.currentPhase);
+    
+    if (currentIndex === -1) {
+      throw new Error('Invalid current phase');
+    }
+
+    if (currentIndex >= phases.length - 1) {
+      // 已经是最后阶段，结束赛季
+      return await this.endCurrentSeason();
+    }
+
+    const previousPhase = this.currentSeason.currentPhase;
+    this.currentSeason.currentPhase = phases[currentIndex + 1];
+    this.currentSeason.updatedAt = new Date();
+
+    await this.saveSeason(this.currentSeason);
+
+    this.logger.log(
+      `Season phase advanced: ${previousPhase} -> ${this.currentSeason.currentPhase}`,
+    );
+
+    return this.currentSeason;
+  }
+
+  /**
+   * 推进时间（模拟年份）
+   * @param years 推进的年数
+   * @returns 更新后的赛季数据
+   */
+  async advanceTime(years: number = 1): Promise<SeasonData> {
+    if (!this.currentSeason || !this.currentSeason.isActive) {
+      throw new Error('No active season');
+    }
+
+    this.currentSeason.currentYear += years;
+    this.currentSeason.updatedAt = new Date();
+
+    // 检查是否需要推进阶段
+    const phaseConfig = this.phaseConfigs.get(this.currentSeason.currentPhase);
+    if (phaseConfig) {
+      const phaseStartYear = this.getPhaseStartYear(this.currentSeason.currentPhase);
+      const phaseElapsed = this.currentSeason.currentYear - phaseStartYear;
+      
+      if (phaseElapsed >= phaseConfig.duration) {
+        await this.advancePhase();
+      }
+    }
+
+    // 检查赛季是否结束
+    if (this.currentSeason.currentYear >= this.currentSeason.totalDuration) {
+      return await this.endCurrentSeason();
+    }
+
+    await this.saveSeason(this.currentSeason);
+    return this.currentSeason;
+  }
+
+  /**
+   * 获取当前阶段的规则修正
+   * @returns 规则修正对象
+   */
+  getCurrentRules(): SeasonRules {
+    if (!this.currentSeason) {
+      // 返回默认规则
+      return {
+        resourceMultiplier: 1.0,
+        eventFrequency: 1.0,
+        diplomacyModifier: 1.0,
+        warCostMultiplier: 1.0,
+        researchSpeed: 1.0,
+      };
+    }
+
+    const phaseConfig = this.phaseConfigs.get(this.currentSeason.currentPhase);
+    if (!phaseConfig) {
+      return this.currentSeason.seasonModifiers;
+    }
+
+    // 合并阶段规则和赛季修正
+    return this.mergeRules(
+      phaseConfig.rules,
+      this.currentSeason.seasonModifiers,
+    );
+  }
+
+  /**
+   * 获取赛季进度
+   * @returns 进度信息
+   */
+  getSeasonProgress(): SeasonProgress {
+    if (!this.currentSeason) {
+      return {
+        phase: SeasonPhase.EXPLORATION,
+        currentYear: 0,
+        totalYears: 1000,
+        progressPercentage: 0,
+        phaseProgressPercentage: 0,
+        remainingYears: 1000,
+      };
+    }
+
+    const progressPercentage = Math.min(
+      100,
+      (this.currentSeason.currentYear / this.currentSeason.totalDuration) * 100,
+    );
+
+    const phaseConfig = this.phaseConfigs.get(this.currentSeason.currentPhase);
+    const phaseStartYear = this.getPhaseStartYear(this.currentSeason.currentPhase);
+    const phaseElapsed = this.currentSeason.currentYear - phaseStartYear;
+    const phaseProgressPercentage = phaseConfig
+      ? Math.min(100, (phaseElapsed / phaseConfig.duration) * 100)
+      : 0;
+
+    const remainingYears = Math.max(
+      0,
+      this.currentSeason.totalDuration - this.currentSeason.currentYear,
+    );
+
+    return {
+      phase: this.currentSeason.currentPhase,
+      currentYear: this.currentSeason.currentYear,
+      totalYears: this.currentSeason.totalDuration,
+      progressPercentage: Math.round(progressPercentage * 100) / 100,
+      phaseProgressPercentage: Math.round(phaseProgressPercentage * 100) / 100,
+      remainingYears,
+      estimatedEndTime: this.calculateEstimatedEndTime(),
+    };
+  }
+
+  /**
+   * 获取当前赛季数据
+   */
+  getCurrentSeason(): SeasonData | null {
+    return this.currentSeason;
+  }
+
+  /**
+   * 获取指定阶段的配置
+   */
+  getPhaseConfig(phase: SeasonPhase): PhaseConfig | undefined {
+    return this.phaseConfigs.get(phase);
+  }
+
+  /**
+   * 获取所有阶段配置
+   */
+  getAllPhaseConfigs(): Map<SeasonPhase, PhaseConfig> {
+    return new Map(this.phaseConfigs);
+  }
+
+  /**
+   * 结束当前赛季
+   */
+  private async endCurrentSeason(): Promise<SeasonData> {
+    if (!this.currentSeason) {
+      throw new Error('No active season to end');
+    }
+
+    this.currentSeason.isActive = false;
+    this.currentSeason.endTime = new Date();
+    this.currentSeason.updatedAt = new Date();
+
+    // 保存到历史记录
+    await this.saveSeasonToHistory(this.currentSeason);
+    await this.saveSeason(this.currentSeason);
+
+    this.logger.log(`Season ended: ${this.currentSeason.name}`);
+
+    const endedSeason = this.currentSeason;
+    this.currentSeason = null;
+
+    return endedSeason;
+  }
+
+  /**
+   * 生成赛季ID
+   */
+  private generateSeasonId(): string {
+    const timestamp = Date.now().toString(36);
+    const random = Math.random().toString(36).substring(2, 8);
+    return `season_${timestamp}_${random}`;
+  }
+
+  /**
+   * 生成赛季名称
+   */
+  private generateSeasonName(): string {
+    const prefixes = [
+      '星辰',
+      '虚空',
+      '银河',
+      '暗物质',
+      '量子',
+      '光子',
+      '引力',
+      '脉冲',
+    ];
+    const suffixes = [
+      '纪元',
+      '时代',
+      '周期',
+      '轮回',
+      '篇章',
+      '历程',
+    ];
+    const adjectives = [
+      '辉煌',
+      '动荡',
+      '神秘',
+      '繁荣',
+      '混沌',
+      '觉醒',
+      '永恒',
+    ];
+
+    const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
+    const suffix = suffixes[Math.floor(Math.random() * suffixes.length)];
+    const adjective = adjectives[Math.floor(Math.random() * adjectives.length)];
+
+    return `${adjectives[Math.floor(Math.random() * adjectives.length)]}的${prefix}${suffix}`;
+  }
+
+  /**
+   * 生成赛季修正规则
+   */
+  private generateSeasonModifiers(): SeasonRules {
+    const randomVariation = () => 0.8 + Math.random() * 0.4; // 0.8 - 1.2
+
+    return {
+      resourceMultiplier: Math.round(randomVariation() * 100) / 100,
+      eventFrequency: Math.round(randomVariation() * 100) / 100,
+      diplomacyModifier: Math.round(randomVariation() * 100) / 100,
+      warCostMultiplier: Math.round(randomVariation() * 100) / 100,
+      researchSpeed: Math.round(randomVariation() * 100) / 100,
+    };
+  }
+
+  /**
+   * 生成赛季描述
+   */
+  private generateSeasonDescription(
+    name: string,
+    modifiers: SeasonRules,
+  ): string {
+    const features: string[] = [];
+
+    if (modifiers.resourceMultiplier > 1.1) {
+      features.push('资源丰沛');
+    } else if (modifiers.resourceMultiplier < 0.9) {
+      features.push('资源匮乏');
+    }
+
+    if (modifiers.eventFrequency > 1.1) {
+      features.push('事件频发');
+    }
+
+    if (modifiers.diplomacyModifier > 1.1) {
+      features.push('外交和谐');
+    } else if (modifiers.diplomacyModifier < 0.9) {
+      features.push('外交紧张');
+    }
+
+    if (modifiers.researchSpeed > 1.1) {
+      features.push('科技昌盛');
+    }
+
+    const featureText =
+      features.length > 0 ? `，这是一个${features.join('、')}的时代` : '';
+
+    return `${name}${featureText}。文明的命运将在此书写新的篇章。`;
+  }
+
+  /**
+   * 计算总时长
+   */
+  private calculateTotalDuration(): number {
+    let total = 0;
+    this.phaseConfigs.forEach((config) => {
+      total += config.duration;
+    });
+    return total;
+  }
+
+  /**
+   * 获取阶段起始年份
+   */
+  private getPhaseStartYear(phase: SeasonPhase): number {
+    const phases = [
+      SeasonPhase.EXPLORATION,

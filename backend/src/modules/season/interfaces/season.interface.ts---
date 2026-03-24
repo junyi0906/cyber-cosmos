@@ -1,0 +1,136 @@
+/**
+ * 赛季阶段枚举
+ * 定义赛季的四个主要阶段
+ */
+export enum SeasonPhase {
+  /** 开拓期 - 文明初始探索阶段 */
+  EXPLORATION = 'EXPLORATION',
+  /** 扩张期 - 文明扩张发展阶段 */
+  EXPANSION = 'EXPANSION',
+  /** 纷争期 - 文明冲突竞争阶段 */
+  CONFLICT = 'CONFLICT',
+  /** 终焉期 - 赛季结束结算阶段 */
+  FINALE = 'FINALE',
+}
+
+/**
+ * 赛季规则配置接口
+ * 定义影响游戏玩法的各种修正参数
+ */
+export interface SeasonRules {
+  /** 资源产出倍率 */
+  resourceMultiplier: number;
+  /** 事件触发频率 */
+  eventFrequency: number;
+  /** 外交关系修正系数 */
+  diplomacyModifier: number;
+  /** 战争消耗系数 */
+  warCostMultiplier: number;
+  /** 科技研发速度 */
+  researchSpeed: number;
+}
+
+/**
+ * 赛季阶段配置
+ * 定义每个阶段的持续时间和规则修正
+ */
+export interface PhaseConfig {
+  /** 阶段名称 */
+  name: string;
+  /** 阶段描述 */
+  description: string;
+  /** 阶段持续时间（模拟年） */
+  duration: number;
+  /** 该阶段的规则修正 */
+  rules: SeasonRules;
+}
+
+/**
+ * 赛季数据接口
+ */
+export interface SeasonData {
+  /** 赛季唯一标识 */
+  id: string;
+  /** 赛季名称 */
+  name: string;
+  /** 赛季描述 */
+  description: string;
+  /** 当前阶段 */
+  currentPhase: SeasonPhase;
+  /** 赛季开始时间 */
+  startTime: Date;
+  /** 赛季结束时间 */
+  endTime?: Date;
+  /** 当前模拟年份 */
+  currentYear: number;
+  /** 赛季总时长（模拟年） */
+  totalDuration: number;
+  /** 赛季特殊规则 */
+  seasonModifiers: SeasonRules;
+  /** 是否激活 */
+  isActive: boolean;
+  /** 创建时间 */
+  createdAt: Date;
+  /** 更新时间 */
+  updatedAt: Date;
+}
+
+/**
+ * 赛季进度信息
+ */
+export interface SeasonProgress {
+  /** 当前阶段 */
+  phase: SeasonPhase;
+  /** 当前年份 */
+  currentYear: number;
+  /** 总年数 */
+  totalYears: number;
+  /** 进度百分比 (0-100) */
+  progressPercentage: number;
+  /** 阶段进度百分比 (0-100) */
+  phaseProgressPercentage: number;
+  /** 剩余年数 */
+  remainingYears: number;
+  /** 预计结束时间 */
+  estimatedEndTime?: Date;
+}
+
+/**
+ * 赛季结算数据
+ */
+export interface SeasonSettlement {
+  /** 赛季ID */
+  seasonId: string;
+  /** 赛季名称 */
+  seasonName: string;
+  /** 结算时间 */
+  settledAt: Date;
+  /** 文明排名 */
+  civilizationRankings: CivilizationRanking[];
+  /** 赛季亮点事件 */
+  highlightEvents: string[];
+  /** 遗产数据（传递给下赛季） */
+  legacyData: Record<string, unknown>;
+}
+
+/**
+ * 文明排名数据
+ */
+export interface CivilizationRanking {
+  /** 文明ID */
+  civilizationId: string;
+  /** 文明名称 */
+  name: string;
+  /** 综合评分 */
+  score: number;
+  /** 领土评分 */
+  territoryScore: number;
+  /** 经济评分 */
+  economyScore: number;
+  /** 科技评分 */
+  technologyScore: number;
+  /** 军事评分 */
+  militaryScore: number;
+  /** 排名 */
+  rank: number;
+}
