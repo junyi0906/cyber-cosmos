@@ -1,0 +1,301 @@
+import { Router, Request, Response } from 'express';
+import { 
+  DiplomaticRelation, 
+  Treaty, 
+  TreatyRequest,
+  RelationQuery 
+} from '../models/diplomacy.model';
+
+const router = Router();
+
+// In-memory stores
+let relationsStore: DiplomaticRelation[] = [];
+let treatiesStore: Treaty[] = [];
+let treatyCounter = 1;
+
+/**
+ * Initialize diplomacy stores
+ */
+export function initializeDiplomacyStores(
+  relations: DiplomaticRelation[], 
+  treaties: Treaty[]
+) {
+  relationsStore = relations;
+  treatiesStore = treaties;
+  treatyCounter = treaties.length > 0 ? Math.max(...treaties.map(t => t.id)) + 1 : 1;
+}
+
+/**
+ * GET /api/diplomacy/relations - 获取外交关系
+ * Query params: agentId, targetId, status
+ */
+router.get('/relations', async (req: Request, res: Response) => {
+  try {
+    const query: RelationQuery = {
+      agentId: req.query.agentId ? parseInt(req.query.agentId as string) : undefined,
+      targetId: req.query.targetId ? parseInt(req.query.targetId as string) : undefined,
+      status: req.query.status as string
+    };
+
+    let filteredRelations = relationsStore.filter(relation => {
+      const agentMatch = !query.agentId || 
+        relation.agentId === query.agentId || 
+        relation.targetId === query.agentId;
+      const targetMatch = !query.targetId || 
+        relation.agentId === query.targetId || 
+        relation.targetId === query.targetId;
+      const statusMatch = !query.status || relation.status === query.status;
+      return agentMatch && targetMatch && statusMatch;
+    });
+
+    res.json({
+      success: true,
+      data: {
+        relations: filteredRelations,
+        total: filteredRelations.length
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching diplomatic relations:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch diplomatic relations'
+    });
+  }
+});
+
+/**
+ * GET /api/diplomacy/relations/:agentId/:targetId - 获取两个文明间的具体关系
+ */
+router.get('/relations/:agentId/:targetId', async (req: Request, res: Response) => {
+  try {
+    const agentId = parseInt(req.params.agentId);
+    const targetId = parseInt(req.params.targetId);
+
+    if (isNaN(agentId) || isNaN(targetId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid agent ID or target ID'
+      });
+    }
+
+    const relation = relationsStore.find(r => 
+      (r.agentId === agentId && r.targetId === targetId) ||
+      (r.agentId === targetId && r.targetId === agentId)
+    );
+
+    if (!relation) {
+      return res.status(404).json({
+        success: false,
+        error: 'Diplomatic relation not found'
+      });
+    }
+
+    // Get related treaties
+    const relatedTreaties = treatiesStore.filter(t => 
+      (t.partyA === agentId && t.partyB === targetId) ||
+      (t.partyA === targetId && t.partyB === agentId)
+    );
+
+    res.json({
+      success: true,
+      data: {
+        relation,
+        treaties: relatedTreaties
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching specific relation:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch diplomatic relation'
+    });
+  }
+});
+
+/**
+ * POST /api/diplomacy/treaty - 签订条约
+ */
+router.post('/treaty', async (req: Request, res: Response) => {
+  try {
+    const treatyRequest: TreatyRequest = req.body;
+
+    // Validate request
+    if (!treatyRequest.partyA || !treatyRequest.partyB) {
+      return res.status(400).json({
+        success: false,
+        error: 'Both partyA and partyB are required'
+      });
+    }
+
+    if (treatyRequest.partyA === treatyRequest.partyB) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cannot create treaty with self'
+      });
+    }
+
+    if (!treatyRequest.type) {
+      return res.status(400).json({
+        success: false,
+        error: 'Treaty type is required'
+      });
+    }
+
+    // Check for existing active treaty of same type
+    const existingTreaty = treatiesStore.find(t => 
+      t.type === treatyRequest.type &&
+      t.status === 'active' &&
+      ((t.partyA === treatyRequest.partyA && t.partyB === treatyRequest.partyB) ||
+       (t.partyA === treatyRequest.partyB && t.partyB === treatyRequest.partyA))
+    );
+
+    if (existingTreaty) {
+      return res.status(409).json({
+        success: false,
+        error: 'Active treaty of this type already exists between parties',
+        data: existingTreaty
+      });
+    }
+
+    const newTreaty: Treaty = {
+      id: treatyCounter++,
+      partyA: treatyRequest.partyA,
+      partyB: treatyRequest.partyB,
+      type: treatyRequest.type,
+      status: 'active',
+      terms: treatyRequest.terms || {},
+      signedAt: new Date().toISOString(),
+      expiresAt: treatyRequest.duration 
+        ? new Date(Date.now() + treatyRequest.duration * 1000).toISOString()
+        : undefined
+    };
+
+    treatiesStore.push(newTreaty);
+
+    // Update or create diplomatic relations
+    updateOrCreateRelation(treatyRequest.partyA, treatyRequest.partyB, treatyRequest.type);
+
+    res.status(201).json({
+      success: true,
+      data: newTreaty,
+      message: `Treaty signed successfully between Agent ${treatyRequest.partyA} and Agent ${treatyRequest.partyB}`
+    });
+  } catch (error) {
+    console.error('Error creating treaty:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to create treaty'
+    });
+  }
+});
+
+/**
+ * DELETE /api/diplomacy/treaty/:id - 废除条约
+ */
+router.delete('/treaty/:id', async (req: Request, res: Response) => {
+  try {
+    const treatyId = parseInt(req.params.id);
+
+    if (isNaN(treatyId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid treaty ID'
+      });
+    }
+
+    const treatyIndex = treatiesStore.findIndex(t => t.id === treatyId);
+
+    if (treatyIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        error: 'Treaty not found'
+      });
+    }
+
+    const treaty = treatiesStore[treatyIndex];
+    treaty.status = 'terminated';
+    treaty.terminatedAt = new Date().toISOString();
+
+    res.json({
+      success: true,
+      data: treaty,
+      message: 'Treaty terminated successfully'
+    });
+  } catch (error) {
+    console.error('Error terminating treaty:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to terminate treaty'
+    });
+  }
+});
+
+/**
+ * GET /api/diplomacy/treaties - 获取所有条约
+ */
+router.get('/treaties', async (req: Request, res: Response) => {
+  try {
+    const status = req.query.status as string;
+    const agentId = req.query.agentId ? parseInt(req.query.agentId as string) : undefined;
+
+    let filteredTreaties = treatiesStore.filter(treaty => {
+      const statusMatch = !status || treaty.status === status;
+      const agentMatch = !agentId || 
+        treaty.partyA === agentId || 
+        treaty.partyB === agentId;
+      return statusMatch && agentMatch;
+    });
+
+    res.json({
+      success: true,
+      data: {
+        treaties: filteredTreaties,
+        total: filteredTreaties.length
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching treaties:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch treaties'
+    });
+  }
+});
+
+/**
+ * Helper function to update or create diplomatic relation
+ */
+function updateOrCreateRelation(partyA: number, partyB: number, treatyType: string) {
+  const existingRelation = relationsStore.find(r =>
+    (r.agentId === partyA && r.targetId === partyB) ||
+    (r.agentId === partyB && r.targetId === partyA)
+  );
+
+  const statusMap: Record<string, string> = {
+    'alliance': 'allied',
+    'non_aggression': 'neutral',
+    'trade': 'friendly',
+    'peace': 'neutral',
+    'mutual_defense': 'allied'
+  };
+
+  if (existingRelation) {
+    existingRelation.status = statusMap[treatyType] || existingRelation.status;
+    existingRelation.trust = Math.min(100, existingRelation.trust + 10);
+    existingRelation.lastInteraction = new Date().toISOString();
+  } else {
+    const newRelation: DiplomaticRelation = {
+      agentId: partyA,
+      targetId: partyB,
+      status: statusMap[treatyType] || 'neutral',
+      trust: 50,
+      threat: 10,
+      history: [],
+      lastInteraction: new Date().toISOString()
+    };
+    relationsStore.push(newRelation);
+  }
+}
+
+export default router;

@@ -1,0 +1,88 @@
+import { Router, Request, Response } from 'express';
+import { Alliance, AllianceMember, AllianceRequest, AllianceQuery } from '../models/alliance.model';
+
+const router = Router();
+
+// In-memory stores
+let alliancesStore: Alliance[] = [];
+let allianceMembersStore: AllianceMember[] = [];
+let allianceCounter = 1;
+
+/**
+ * Initialize alliance stores
+ */
+export function initializeAllianceStores(
+  alliances: Alliance[], 
+  members: AllianceMember[]
+) {
+  alliancesStore = alliances;
+  allianceMembersStore = members;
+  allianceCounter = alliances.length > 0 ? Math.max(...alliances.map(a => a.id)) + 1 : 1;
+}
+
+/**
+ * GET /api/alliances - 获取联盟列表
+ * Query params: status, agentId
+ */
+router.get('/', async (req: Request, res: Response) => {
+  try {
+    const query: AllianceQuery = {
+      status: req.query.status as string,
+      agentId: req.query.agentId ? parseInt(req.query.agentId as string) : undefined
+    };
+
+    let filteredAlliances = alliancesStore.filter(alliance => {
+      const statusMatch = !query.status || alliance.status === query.status;
+      
+      let agentMatch = true;
+      if (query.agentId) {
+        const memberIds = allianceMembersStore
+          .filter(m => m.allianceId === alliance.id)
+          .map(m => m.agentId);
+        agentMatch = memberIds.includes(query.agentId);
+      }
+      
+      return statusMatch && agentMatch;
+    });
+
+    // Enrich alliances with member information
+    const enrichedAlliances = filteredAlliances.map(alliance => {
+      const members = allianceMembersStore.filter(m => m.allianceId === alliance.id);
+      return {
+        ...alliance,
+        members: members,
+        memberCount: members.length
+      };
+    });
+
+    res.json({
+      success: true,
+      data: {
+        alliances: enrichedAlliances,
+        total: enrichedAlliances.length
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching alliances:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch alliances'
+    });
+  }
+});
+
+/**
+ * GET /api/alliances/:id - 获取联盟详情
+ */
+router.get('/:id', async (req: Request, res: Response) => {
+  try {
+    const allianceId = parseInt(req.params.id);
+
+    if (isNaN(allianceId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid alliance ID'
+      });
+    }
+
+    const alliance

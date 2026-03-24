@@ -1,0 +1,154 @@
+import { Router, Request, Response } from 'express';
+import { EventModel, EventTimelineQuery, EventTimelineResponse } from '../models/event.model';
+
+const router = Router();
+
+// In-memory store for events (would be replaced with database in production)
+let eventsStore: EventModel[] = [];
+let eventCounter = 1;
+
+/**
+ * Initialize events store with existing events
+ */
+export function initializeEventsStore(events: EventModel[]) {
+  eventsStore = events;
+  eventCounter = events.length > 0 ? Math.max(...events.map(e => e.id)) + 1 : 1;
+}
+
+/**
+ * GET /api/events/timeline - 获取事件时间线
+ * Query params: startTick, endTick, type, limit
+ */
+router.get('/timeline', async (req: Request, res: Response) => {
+  try {
+    const query: EventTimelineQuery = {
+      startTick: req.query.startTick ? parseInt(req.query.startTick as string) : 0,
+      endTick: req.query.endTick ? parseInt(req.query.endTick as string) : Number.MAX_SAFE_INTEGER,
+      type: req.query.type as string,
+      limit: req.query.limit ? parseInt(req.query.limit as string) : 100
+    };
+
+    let filteredEvents = eventsStore.filter(event => {
+      const tickMatch = event.tick >= query.startTick && event.tick <= query.endTick;
+      const typeMatch = !query.type || event.type === query.type;
+      return tickMatch && typeMatch;
+    });
+
+    // Sort by tick ascending
+    filteredEvents.sort((a, b) => a.tick - b.tick);
+
+    // Apply limit
+    filteredEvents = filteredEvents.slice(0, query.limit);
+
+    const response: EventTimelineResponse = {
+      events: filteredEvents,
+      total: filteredEvents.length,
+      query: query
+    };
+
+    res.json({
+      success: true,
+      data: response
+    });
+  } catch (error) {
+    console.error('Error fetching event timeline:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch event timeline'
+    });
+  }
+});
+
+/**
+ * GET /api/events/:id - 获取事件详情
+ */
+router.get('/:id', async (req: Request, res: Response) => {
+  try {
+    const eventId = parseInt(req.params.id);
+    
+    if (isNaN(eventId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid event ID'
+      });
+    }
+
+    const event = eventsStore.find(e => e.id === eventId);
+
+    if (!event) {
+      return res.status(404).json({
+        success: false,
+        error: 'Event not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: event
+    });
+  } catch (error) {
+    console.error('Error fetching event details:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch event details'
+    });
+  }
+});
+
+/**
+ * POST /api/events - 创建新事件 (内部使用)
+ */
+router.post('/', async (req: Request, res: Response) => {
+  try {
+    const eventData: Omit<EventModel, 'id'> = req.body;
+
+    const newEvent: EventModel = {
+      id: eventCounter++,
+      ...eventData,
+      timestamp: eventData.timestamp || new Date().toISOString()
+    };
+
+    eventsStore.push(newEvent);
+
+    res.status(201).json({
+      success: true,
+      data: newEvent
+    });
+  } catch (error) {
+    console.error('Error creating event:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to create event'
+    });
+  }
+});
+
+/**
+ * GET /api/events - 获取所有事件
+ */
+router.get('/', async (req: Request, res: Response) => {
+  try {
+    const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+    const offset = req.query.offset ? parseInt(req.query.offset as string) : 0;
+
+    const events = eventsStore.slice(offset, offset + limit);
+
+    res.json({
+      success: true,
+      data: {
+        events,
+        total: eventsStore.length,
+        limit,
+        offset
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching events:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch events'
+    });
+  }
+});
+
+export default router;
