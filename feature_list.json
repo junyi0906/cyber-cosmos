@@ -18,7 +18,7 @@
       "test_command": "docker exec -it cyber-cosmos-postgres psql -U postgres -d cyber_cosmos -c \"\\dt\"",
       "depends_on": [],
       "passes": true,
-      "last_attempt": "2026-03-24T22:12:02.543996",
+      "last_attempt": "2026-03-24T22:13:31.947022",
       "notes": "未解析到代码文件",
       "retry_count": 0
     },
