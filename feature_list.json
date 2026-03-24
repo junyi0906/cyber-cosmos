@@ -103,7 +103,7 @@
         "feat-004"
       ],
       "passes": true,
-      "last_attempt": "2026-03-24T19:00:59.265414",
+      "last_attempt": "2026-03-24T19:01:02.228901",
       "notes": "依赖事件类型定义",
       "retry_count": 0
     },
