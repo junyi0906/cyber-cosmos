@@ -1,227 +1,107 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import Heatmap, { HeatmapLayer } from './Heatmap';
+import React, { useRef, useEffect, useState, Suspense, useMemo } from 'react';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import { OrbitControls, Stars, Html, Line } from '@react-three/drei';
+import * as THREE from 'three';
+import InfluenceBoundary, { Civilization, calculateInfluenceRadius } from './InfluenceBoundary';
 
-interface StarSystem {
+// 星球数据接口
+interface Star {
   id: string;
   name: string;
-  x: number;
-  y: number;
-  z: number;
-  resources?: {
+  position: [number, number, number];
+  color: string;
+  size: number;
+  type: 'main' | 'colony' | 'outpost';
+  civilizationId?: string;
+  resources: {
     minerals: number;
     energy: number;
-    water: number;
+    population: number;
   };
-  population?: number;
-  civilizationId?: string;
-  type?: string;
+}
+
+// 航线数据接口
+interface Route {
+  id: string;
+  from: string;
+  to: string;
+  type: 'trade' | 'military' | 'exploration';
+  activity: number;
+}
+
+// 星云数据接口
+interface Nebula {
+  id: string;
+  position: [number, number, number];
+  size: number;
+  color: string;
+  opacity: number;
 }
 
 interface StarMapProps {
-  starSystems?: StarSystem[];
-  width?: number;
-  height?: number;
-  showHeatmap?: boolean;
-  onStarClick?: (star: StarSystem) => void;
+  stars?: Star[];
+  civilizations?: Civilization[];
+  routes?: Route[];
+  nebulae?: Nebula[];
+  showInfluenceBoundaries?: boolean;
+  showRoutes?: boolean;
+  showNebulae?: boolean;
+  onStarClick?: (star: Star) => void;
+  onCivilizationClick?: (civilization: Civilization) => void;
+  selectedStarId?: string;
+  selectedCivilizationId?: string;
 }
 
-interface ViewState {
-  zoom: number;
-  centerX: number;
-  centerY: number;
-}
+// 默认示例数据
+const DEFAULT_CIVILIZATIONS: Civilization[] = [
+  {
+    id: 'civ-001',
+    name: '星际联邦',
+    color: '#4fc3f7',
+    position: { x: 0, y: 0, z: 0 },
+    attributes: { military: 75, economy: 85, technology: 90, culture: 70, population: 80 },
+    level: 'galactic',
+    status: 'active',
+  },
+  {
+    id: 'civ-002',
+    name: '暗影帝国',
+    color: '#ab47bc',
+    position: { x: 50, y: 0, z: 30 },
+    attributes: { military: 95, economy: 60, technology: 80, culture: 40, population: 70 },
+    level: 'stellar',
+    status: 'active',
+  },
+  {
+    id: 'civ-003',
+    name: '贸易联盟',
+    color: '#66bb6a',
+    position: { x: -40, y: 0, z: -20 },
+    attributes: { military: 40, economy: 95, technology: 70, culture: 85, population: 60 },
+    level: 'stellar',
+    status: 'active',
+  },
+  {
+    id: 'civ-004',
+    name: '古老文明',
+    color: '#ffa726',
+    position: { x: 20, y: 0, z: -50 },
+    attributes: { military: 50, economy: 40, technology: 95, culture: 90, population: 30 },
+    level: 'interstellar',
+    status: 'declining',
+  },
+  {
+    id: 'civ-005',
+    name: '新兴部落',
+    color: '#ef5350',
+    position: { x: -60, y: 0, z: 40 },
+    attributes: { military: 30, economy: 35, technology: 25, culture: 60, population: 45 },
+    level: 'tribal',
+    status: 'active',
+  },
+];
 
-const StarMap: React.FC<StarMapProps> = ({
-  starSystems = [],
-  width = 800,
-  height = 600,
-  showHeatmap = true,
-  onStarClick,
-}) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [viewState, setViewState] = useState<ViewState>({
-    zoom: 1,
-    centerX: 0,
-    centerY: 0,
-  });
-  const [selectedStar, setSelectedStar] = useState<StarSystem | null>(null);
-  const [heatmapLayer, setHeatmapLayer] = useState<HeatmapLayer>('none');
-  const [heatmapOpacity, setHeatmapOpacity] = useState(0.6);
-  const [hoveredStar, setHoveredStar] = useState<StarSystem | null>(null);
-
-  // 生成模拟数据（如果没有提供）
-  useEffect(() => {
-    if (starSystems.length === 0) {
-      // 可以在这里生成模拟数据或从API获取
-    }
-  }, [starSystems]);
-
-  // 渲染星空背景和星系
-  const renderStarMap = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    // 清空画布
-    ctx.fillStyle = '#0a0a1a';
-    ctx.fillRect(0, 0, width, height);
-
-    // 绘制星空背景
-    drawStarfield(ctx, width, height);
-
-    // 绘制网格
-    drawGrid(ctx, width, height, viewState);
-
-    // 绘制星系
-    starSystems.forEach((system) => {
-      drawStarSystem(ctx, system, viewState, width, height);
-    });
-  }, [starSystems, viewState, width, height]);
-
-  // 绘制星空背景
-  const drawStarfield = (ctx: CanvasRenderingContext2D, w: number, h: number) => {
-    // 绘制随机背景星星
-    for (let i = 0; i < 200; i++) {
-      const x = Math.random() * w;
-      const y = Math.random() * h;
-      const size = Math.random() * 1.5;
-      const alpha = Math.random() * 0.5 + 0.2;
-
-      ctx.beginPath();
-      ctx.arc(x, y, size, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
-      ctx.fill();
-    }
-  };
-
-  // 绘制网格
-  const drawGrid = (
-    ctx: CanvasRenderingContext2D,
-    w: number,
-    h: number,
-    view: ViewState
-  ) => {
-    const gridSize = 100 * view.zoom;
-    ctx.strokeStyle = 'rgba(50, 50, 100, 0.3)';
-    ctx.lineWidth = 0.5;
-
-    // 垂直线
-    for (let x = 0; x < w; x += gridSize) {
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, h);
-      ctx.stroke();
-    }
-
-    // 水平线
-    for (let y = 0; y < h; y += gridSize) {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(w, y);
-      ctx.stroke();
-    }
-  };
-
-  // 绘制单个星系
-  const drawStarSystem = (
-    ctx: CanvasRenderingContext2D,
-    system: StarSystem,
-    view: ViewState,
-    w: number,
-    h: number
-  ) => {
-    // 将3D坐标转换为2D屏幕坐标
-    const screenX = ((system.x + 1000) / 2000) * w * view.zoom + view.centerX;
-    const screenY = ((system.y + 1000) / 2000) * h * view.zoom + view.centerY;
-
-    // 根据星系类型确定颜色
-    let color = '#ffffff';
-    let glowColor = 'rgba(255, 255, 255, 0.3)';
-
-    if (system.population && system.population > 0) {
-      color = '#00ff88';
-      glowColor = 'rgba(0, 255, 136, 0.4)';
-    }
-
-    if (system.resources) {
-      const totalResources =
-        (system.resources.minerals || 0) +
-        (system.resources.energy || 0) +
-        (system.resources.water || 0);
-      if (totalResources > 500) {
-        color = '#ffaa00';
-        glowColor = 'rgba(255, 170, 0, 0.4)';
-      }
-    }
-
-    // 绘制光晕
-    const gradient = ctx.createRadialGradient(
-      screenX,
-      screenY,
-      0,
-      screenX,
-      screenY,
-      15 * view.zoom
-    );
-    gradient.addColorStop(0, glowColor);
-    gradient.addColorStop(1, 'transparent');
-    ctx.fillStyle = gradient;
-    ctx.beginPath();
-    ctx.arc(screenX, screenY, 15 * view.zoom, 0, Math.PI * 2);
-    ctx.fill();
-
-    // 绘制星系核心
-    const size = 3 + (system.population ? Math.log10(system.population + 1) : 1);
-    ctx.beginPath();
-    ctx.arc(screenX, screenY, size * view.zoom, 0, Math.PI * 2);
-    ctx.fillStyle = color;
-    ctx.fill();
-
-    // 如果是悬停或选中的星系，绘制高亮
-    if (hoveredStar?.id === system.id || selectedStar?.id === system.id) {
-      ctx.strokeStyle = '#00ffff';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(screenX, screenY, (size + 5) * view.zoom, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-  };
-
-  // 执行渲染
-  useEffect(() => {
-    renderStarMap();
-  }, [renderStarMap]);
-
-  // 处理鼠标移动
-  const handleMouseMove = (event: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const mouseX = event.clientX - rect.left;
-    const mouseY = event.clientY - rect.top;
-
-    // 检查是否悬停在某个星系上
-    let found: StarSystem | null = null;
-    for (const system of starSystems) {
-      const screenX = ((system.x + 1000) / 2000) * width * viewState.zoom + viewState.centerX;
-      const screenY = ((system.y + 1000) / 2000) * height * viewState.zoom + viewState.centerY;
-
-      const distance = Math.sqrt(
-        Math.pow(mouseX - screenX, 2) + Math.pow(mouseY - screenY, 2)
-      );
-
-      if (distance < 10) {
-        found = system;
-        break;
-      }
-    }
-
-    setHoveredStar(found);
-  };
-
-  // 处理点击
-  const handleClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
-    if (hoveredStar)
+const DEFAULT_STARS: Star[] = [
+  { id: 'star-001', name: '太阳', position: [0, 0, 0], color: '#ffeb3b', size: 2, type: 'main', civilizationId: 'civ-001', resources: { minerals: 80, energy: 90, population: 100 } },
+  { id: 'star-002', name: '天狼星', position: [10, 2, 5], color: '#90caf9', size: 1.5, type: 'main', civilizationId: 'civ-001', resources: { minerals: 60, energy: 70, population: 50 } },
+  { id: 'star-003', name: '参宿四', position: [50, 0, 30], color: '#ff8a65

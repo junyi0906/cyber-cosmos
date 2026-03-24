@@ -1,0 +1,353 @@
+import React, { useRef, useEffect, useState, useCallback } from 'react';
+import * as THREE from 'three';
+
+// 文明数据接口
+interface Civilization {
+  id: string;
+  name: string;
+  color: string;
+  position: { x: number; y: number; z: number };
+  attributes: {
+    military: number;
+    economy: number;
+    technology: number;
+    culture: number;
+    population: number;
+  };
+  level: 'tribal' | 'planetary' | 'stellar' | 'galactic' | 'interstellar';
+  status: 'active' | 'declining' | 'collapsed';
+}
+
+// 影响力边界配置
+interface BoundaryConfig {
+  baseRadius: number;
+  expansionSpeed: number;
+  pulseIntensity: number;
+  opacity: number;
+  lineWidth: number;
+}
+
+// 影响力计算结果
+interface InfluenceData {
+  civilization: Civilization;
+  radius: number;
+  points: THREE.Vector3[];
+  color: THREE.Color;
+  intensity: number;
+}
+
+interface InfluenceBoundaryProps {
+  civilizations: Civilization[];
+  visible?: boolean;
+  showLabels?: boolean;
+  onHover?: (civilization: Civilization | null) => void;
+  onClick?: (civilization: Civilization) => void;
+  config?: Partial<BoundaryConfig>;
+}
+
+// 默认配置
+const DEFAULT_CONFIG: BoundaryConfig = {
+  baseRadius: 10,
+  expansionSpeed: 0.5,
+  pulseIntensity: 0.2,
+  opacity: 0.6,
+  lineWidth: 2,
+};
+
+// 文明等级对应的基础半径倍数
+const LEVEL_MULTIPLIERS: Record<Civilization['level'], number> = {
+  tribal: 0.5,
+  planetary: 1.0,
+  stellar: 2.0,
+  galactic: 4.0,
+  interstellar: 8.0,
+};
+
+// 影响力范围计算算法
+function calculateInfluenceRadius(civilization: Civilization, baseRadius: number): number {
+  const { attributes, level, status } = civilization;
+  
+  // 基础半径由文明等级决定
+  const levelMultiplier = LEVEL_MULTIPLIERS[level];
+  
+  // 属性权重计算
+  const attributeWeight = (
+    attributes.military * 0.2 +
+    attributes.economy * 0.25 +
+    attributes.technology * 0.3 +
+    attributes.culture * 0.15 +
+    attributes.population * 0.1
+  ) / 100;
+  
+  // 状态修正
+  const statusMultiplier = status === 'active' ? 1.0 : 
+                          status === 'declining' ? 0.7 : 0.3;
+  
+  // 最终半径计算
+  const radius = baseRadius * levelMultiplier * (0.5 + attributeWeight) * statusMultiplier;
+  
+  return Math.max(radius, baseRadius * 0.3);
+}
+
+// 生成边界点（多边形近似圆形）
+function generateBoundaryPoints(
+  center: THREE.Vector3,
+  radius: number,
+  segments: number = 64,
+  irregularity: number = 0.1
+): THREE.Vector3[] {
+  const points: THREE.Vector3[] = [];
+  
+  for (let i = 0; i < segments; i++) {
+    const angle = (i / segments) * Math.PI * 2;
+    
+    // 添加不规则性（模拟真实势力边界的锯齿状）
+    const noise = 1 + (Math.sin(angle * 5) * 0.5 + Math.cos(angle * 7) * 0.3) * irregularity;
+    const r = radius * noise;
+    
+    const x = center.x + Math.cos(angle) * r;
+    const z = center.z + Math.sin(angle) * r;
+    const y = center.y + Math.sin(angle * 3) * irregularity * radius * 0.2;
+    
+    points.push(new THREE.Vector3(x, y, z));
+  }
+  
+  return points;
+}
+
+// 颜色解析工具
+function parseColor(colorStr: string): THREE.Color {
+  try {
+    return new THREE.Color(colorStr);
+  } catch {
+    return new THREE.Color('#ffffff');
+  }
+}
+
+// 单个文明边界组件
+const CivilizationBoundary: React.FC<{
+  data: InfluenceData;
+  config: BoundaryConfig;
+  time: number;
+  onHover: (hovered: boolean) => void;
+  onClick: () => void;
+}> = ({ data, config, time, onHover, onClick }) => {
+  const groupRef = useRef<THREE.Group>(null);
+  const lineRef = useRef<THREE.Line>(null);
+  const glowRef = useRef<THREE.Mesh>(null);
+  const [hovered, setHovered] = useState(false);
+  
+  // 动画效果：脉冲和扩张/收缩
+  useEffect(() => {
+    if (!lineRef.current || !glowRef.current) return;
+    
+    const pulseScale = 1 + Math.sin(time * config.expansionSpeed) * config.pulseIntensity;
+    const hoverScale = hovered ? 1.1 : 1.0;
+    const finalScale = pulseScale * hoverScale;
+    
+    // 更新线条
+    const positions = data.points.map(p => 
+      new THREE.Vector3(
+        (p.x - data.civilization.position.x) * finalScale + data.civilization.position.x,
+        p.y * finalScale,
+        (p.z - data.civilization.position.z) * finalScale + data.civilization.position.z
+      )
+    );
+    
+    const geometry = new THREE.BufferGeometry().setFromPoints(positions);
+    lineRef.current.geometry.dispose();
+    lineRef.current.geometry = geometry;
+    
+    // 更新光晕
+    glowRef.current.scale.setScalar(finalScale);
+    
+  }, [time, data, config, hovered]);
+  
+  // 创建边界线几何体
+  const lineGeometry = useMemo(() => {
+    const positions = data.points.map(p => 
+      new THREE.Vector3(p.x, p.y, p.z)
+    );
+    positions.push(positions[0].clone()); // 闭合路径
+    return new THREE.BufferGeometry().setFromPoints(positions);
+  }, [data.points]);
+  
+  // 线条材质
+  const lineMaterial = useMemo(() => {
+    return new THREE.LineBasicMaterial({
+      color: data.color,
+      transparent: true,
+      opacity: hovered ? config.opacity + 0.2 : config.opacity,
+      linewidth: config.lineWidth,
+    });
+  }, [data.color, config, hovered]);
+  
+  // 光晕材质
+  const glowMaterial = useMemo(() => {
+    return new THREE.MeshBasicMaterial({
+      color: data.color,
+      transparent: true,
+      opacity: hovered ? 0.15 : 0.08,
+      side: THREE.DoubleSide,
+    });
+  }, [data.color, hovered]);
+  
+  // 光晕几何体（圆形平面）
+  const glowGeometry = useMemo(() => {
+    return new THREE.CircleGeometry(data.radius, 64);
+  }, [data.radius]);
+  
+  const handlePointerOver = useCallback(() => {
+    setHovered(true);
+    onHover(true);
+    document.body.style.cursor = 'pointer';
+  }, [onHover]);
+  
+  const handlePointerOut = useCallback(() => {
+    setHovered(false);
+    onHover(false);
+    document.body.style.cursor = 'default';
+  }, [onHover]);
+  
+  return (
+    <group ref={groupRef}>
+      {/* 边界线 */}
+      <line
+        ref={lineRef}
+        geometry={lineGeometry}
+        material={lineMaterial}
+        onPointerOver={handlePointerOver}
+        onPointerOut={handlePointerOut}
+        onClick={onClick}
+      />
+      
+      {/* 光晕效果 */}
+      <mesh
+        ref={glowRef}
+        geometry={glowGeometry}
+        material={glowMaterial}
+        rotation={[-Math.PI / 2, 0, 0]}
+        position={[data.civilization.position.x, data.civilization.position.y - 0.5, data.civilization.position.z]}
+        onPointerOver={handlePointerOver}
+        onPointerOut={handlePointerOut}
+        onClick={onClick}
+      />
+    </group>
+  );
+};
+
+// 主组件
+const InfluenceBoundary: React.FC<InfluenceBoundaryProps> = ({
+  civilizations,
+  visible = true,
+  showLabels = true,
+  onHover,
+  onClick,
+  config: userConfig,
+}) => {
+  const config = { ...DEFAULT_CONFIG, ...userConfig };
+  const [time, setTime] = useState(0);
+  const [hoveredCiv, setHoveredCiv] = useState<Civilization | null>(null);
+  const animationRef = useRef<number>();
+  
+  // 动画循环
+  useEffect(() => {
+    let startTime = Date.now();
+    
+    const animate = () => {
+      const elapsed = (Date.now() - startTime) / 1000;
+      setTime(elapsed);
+      animationRef.current = requestAnimationFrame(animate);
+    };
+    
+    animationRef.current = requestAnimationFrame(animate);
+    
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    };
+  }, []);
+  
+  // 计算所有文明的影响力数据
+  const influenceDataList = useMemo(() => {
+    return civilizations.map(civ => {
+      const radius = calculateInfluenceRadius(civ, config.baseRadius);
+      const center = new THREE.Vector3(
+        civ.position.x,
+        civ.position.y,
+        civ.position.z
+      );
+      const points = generateBoundaryPoints(center, radius);
+      const color = parseColor(civ.color);
+      const intensity = radius / config.baseRadius;
+      
+      return {
+        civilization: civ,
+        radius,
+        points,
+        color,
+        intensity,
+      };
+    });
+  }, [civilizations, config.baseRadius]);
+  
+  // 处理悬停
+  const handleBoundaryHover = useCallback((civ: Civilization) => (hovered: boolean) => {
+    const newHoveredCiv = hovered ? civ : null;
+    setHoveredCiv(newHoveredCiv);
+    onHover?.(newHoveredCiv);
+  }, [onHover]);
+  
+  // 处理点击
+  const handleBoundaryClick = useCallback((civ: Civilization) => () => {
+    onClick?.(civ);
+  }, [onClick]);
+  
+  if (!visible) return null;
+  
+  return (
+    <group name="influence-boundaries">
+      {influenceDataList.map(data => (
+        <CivilizationBoundary
+          key={data.civilization.id}
+          data={data}
+          config={config}
+          time={time}
+          onHover={handleBoundaryHover(data.civilization)}
+          onClick={handleBoundaryClick(data.civilization)}
+        />
+      ))}
+      
+      {/* 悬停信息标签 */}
+      {showLabels && hoveredCiv && (
+        <Html position={[hoveredCiv.position.x, hoveredCiv.position.y + 5, hoveredCiv.position.z]}>
+          <div style={{
+            background: 'rgba(0, 0, 0, 0.8)',
+            color: 'white',
+            padding: '8px 12px',
+            borderRadius: '4px',
+            fontSize: '12px',
+            whiteSpace: 'nowrap',
+            pointerEvents: 'none',
+            border: `2px solid ${hoveredCiv.color}`,
+          }}>
+            <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>{hoveredCiv.name}</div>
+            <div>等级: {hoveredCiv.level}</div>
+            <div>状态: {hoveredCiv.status}</div>
+            <div style={{ marginTop: '4px', fontSize: '10px', opacity: 0.8 }}>
+              军事: {hoveredCiv.attributes.military} | 
+              经济: {hoveredCiv.attributes.economy} | 
+              科技: {hoveredCiv.attributes.technology}
+            </div>
+          </div>
+        </Html>
+      )}
+    </group>
+  );
+};
+
+// 导出工具函数供外部使用
+export { calculateInfluenceRadius, generateBoundaryPoints, parseColor };
+export type { Civilization, InfluenceData, BoundaryConfig };
+export default InfluenceBoundary;
