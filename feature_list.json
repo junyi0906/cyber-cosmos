@@ -1,314 +1,498 @@
 {
   "version": "1.0",
-  "project": "project_1774360716",
-  "total_features": 15,
+  "project": "project_1774360856",
+  "total_features": 22,
   "features": [
     {
       "id": "feat-001",
       "category": "infra",
-      "description": "项目初始化与 Monorepo 架构搭建",
+      "description": "项目初始化与目录结构创建",
       "steps": [
         "创建项目根目录 ~/cyber-cosmos",
-        "初始化 Git 仓库 (git init)",
-        "创建目录结构: apps, packages, infra, memory, scripts, specs, tests",
-        "创建 pnpm-workspace.yaml 文件，配置 packages 目录",
-        "创建根目录 package.json，配置 private: true",
-        "创建 .gitignore 文件，忽略 node_modules, target, .env 等"
+        "创建 cmd/server 目录",
+        "创建 cmd/evolutiond 目录",
+        "创建 internal/agent 目录",
+        "创建 internal/evolution 目录",
+        "创建 internal/sandbox 目录",
+        "创建 internal/knowledge 目录",
+        "创建 web/app 目录",
+        "创建 web/components 目录",
+        "创建 web/public 目录",
+        "创建 ai/models 目录",
+        "创建 ai/prompts 目录",
+        "创建 ai/rag 目录",
+        "创建 pkg 目录",
+        "创建 api 目录",
+        "创建 configs 目录",
+        "创建 scripts 目录",
+        "创建 deployments 目录",
+        "创建 docs 目录",
+        "初始化 go.mod 文件"
       ],
-      "test_command": "ls -la && cat pnpm-workspace.yaml",
+      "test_command": "ls -la ~/cyber-cosmos && test -f ~/cyber-cosmos/go.mod",
       "depends_on": [],
       "passes": false,
       "last_attempt": null,
-      "notes": "基础骨架，所有后续功能的前提"
+      "notes": "所有其他 Feature 依赖此基础结构"
     },
     {
       "id": "feat-002",
-      "category": "functional",
-      "description": "共享类型定义包 (shared-types)",
+      "category": "infra",
+      "description": "Docker 基础设施配置",
       "steps": [
-        "在 packages/shared-types 下初始化 package.json (name: @cyber-cosmos/shared-types)",
-        "创建 src/index.ts 文件",
-        "定义 CelestialBody 接口 (id, mass, position, velocity, type)",
-        "定义 SimulationState 接口 (timestamp, bodies: CelestialBody[])",
-        "定义 ApiErrorResponse 接口",
-        "配置 tsconfig.json 支持 ESNext",
-        "导出所有接口"
+        "创建 deployments/docker-compose.yml",
+        "在 docker-compose.yml 中定义 PostgreSQL 服务（端口5432）",
+        "在 docker-compose.yml 中定义 Redis 服务（端口6379）",
+        "在 docker-compose.yml 中定义 Neo4j 服务（端口7474, 7687）",
+        "在 docker-compose.yml 中定义 Milvus 服务（端口19530）",
+        "创建 deployments/.env.example 环境变量模板",
+        "创建 Makefile 并添加 infra-up 目标",
+        "创建 Makefile 并添加 infra-down 目标"
       ],
-      "test_command": "cd packages/shared-types && pnpm install && pnpm build",
+      "test_command": "cd ~/cyber-cosmos && docker-compose -f deployments/docker-compose.yml config",
       "depends_on": [
         "feat-001"
       ],
       "passes": false,
       "last_attempt": null,
-      "notes": "前后端通信契约"
+      "notes": "数据库服务依赖此配置"
     },
     {
       "id": "feat-003",
-      "category": "functional",
-      "description": "后端服务初始化与基础 API (Rust/Axum)",
+      "category": "infra",
+      "description": "PostgreSQL 数据库 Schema 初始化",
       "steps": [
-        "在 apps/server 目录下运行 cargo init",
-        "配置 Cargo.toml: 添加 axum, tokio, serde, tracing 依赖",
-        "创建 src/api/mod.rs 和 src/api/health.rs",
-        "实现 /health 健康检查路由",
-        "创建 src/main.rs，配置 Tokio runtime 和 Axum 路由器",
-        "绑定端口 3000 并启动服务"
+        "创建 scripts/init-db.sql 文件",
+        "在 init-db.sql 中创建 evolution_records 表（id, status, diff_url, score, created_at, updated_at）",
+        "在 init-db.sql 中创建 agents_state 表（id, agent_name, state, snapshot, created_at）",
+        "在 init-db.sql 中创建 evolution_steps 表（id, evolution_id, step_name, status, details）",
+        "创建 pkg/database/postgres.go 数据库连接池封装",
+        "实现 GetPostgresDB() 单例函数"
       ],
-      "test_command": "cd apps/server && cargo run & sleep 3 && curl http://localhost:3000/health",
+      "test_command": "cd ~/cyber-cosmos && go build ./pkg/database/",
       "depends_on": [
-        "feat-001"
+        "feat-002"
       ],
       "passes": false,
       "last_attempt": null,
-      "notes": "后端核心骨架"
+      "notes": "元数据存储基础"
     },
     {
       "id": "feat-004",
-      "category": "functional",
-      "description": "数据库 Schema 设计与连接 (PostgreSQL/TimescaleDB)",
+      "category": "infra",
+      "description": "Redis 缓存服务封装",
       "steps": [
-        "创建 infra/docker/dev.yml，配置 PostgreSQL 和 TimescaleDB 服务",
-        "编写 SQL 迁移脚本: 创建 users 表",
-        "编写 SQL 迁移脚本: 创建 celestial_bodies 表",
-        "编写 SQL 迁移脚本: 创建 evolution_logs 表",
-        "在 apps/server 中添加 sqlx 依赖",
-        "实现数据库连接池初始化逻辑",
-        "实现 /api/v1/db-test 测试接口"
+        "创建 pkg/cache/redis.go 文件",
+        "实现 RedisClient 结构体",
+        "实现 NewRedisClient(addr, password string, db int) 构造函数",
+        "实现 Set(key, value string, expiration time.Duration) 方法",
+        "实现 Get(key string) (string, error) 方法",
+        "实现 Publish(channel, message string) 方法",
+        "实现 Subscribe(channel string) *redis.PubSub 方法"
       ],
-      "test_command": "docker-compose -f infra/docker/dev.yml up -d && cd apps/server && cargo test db_connection",
+      "test_command": "cd ~/cyber-cosmos && go build ./pkg/cache/",
       "depends_on": [
-        "feat-003"
+        "feat-002"
       ],
       "passes": false,
       "last_attempt": null,
-      "notes": "数据持久化基础"
+      "notes": "用于消息队列和缓存"
     },
     {
       "id": "feat-005",
-      "category": "functional",
-      "description": "物理引擎核心算法 (N体模拟)",
+      "category": "infra",
+      "description": "Neo4j 图数据库连接封装",
       "steps": [
-        "创建 apps/server/src/engine/mod.rs",
-        "实现 Vector3 结构体及基本运算 (add, sub, scale)",
-        "实现 calculate_gravitational_force 函数 (牛顿万有引力)",
-        "实现 update_velocities 函数 (计算加速度并更新速度)",
-        "实现 update_positions 函数 (更新位置)",
-        "编写单元测试验证物理计算精度",
-        "集成到主循环模拟器中"
+        "创建 pkg/graph/neo4j.go 文件",
+        "实现 Neo4jClient 结构体",
+        "实现 NewNeo4jClient(uri, username, password string) 构造函数",
+        "实现 CreateNode(label string, properties map[string]interface{}) 方法",
+        "实现 CreateRelationship(fromID, toID, relType string) 方法",
+        "实现 Query(cypher string, params map[string]interface{}) 方法",
+        "实现 Close() 方法"
       ],
-      "test_command": "cd apps/server && cargo test physics_engine",
+      "test_command": "cd ~/cyber-cosmos && go build ./pkg/graph/",
       "depends_on": [
-        "feat-003",
         "feat-002"
       ],
       "passes": false,
       "last_attempt": null,
-      "notes": "核心业务逻辑"
+      "notes": "代码知识图谱存储"
     },
     {
       "id": "feat-006",
-      "category": "functional",
-      "description": "WebSocket 实时状态流",
+      "category": "infra",
+      "description": "Milvus 向量数据库连接封装",
       "steps": [
-        "在 apps/server 添加 axum 的 ws feature",
-        "创建 src/api/ws.rs 模块",
-        "实现 WebSocket 升级处理函数",
-        "创建广播通道 用于模拟状态分发",
-        "实现消息序列化 (JSON/Protobuf)，使用 feat-002 定义的类型",
-        "注册 /api/v1/universe/stream 路由"
+        "创建 pkg/vector/milvus.go 文件",
+        "实现 MilvusClient 结构体",
+        "实现 NewMilvusClient(addr string) 构造函数",
+        "实现 CreateCollection(name string, dimension int64) 方法",
+        "实现 Insert(collection string, vectors [][]float32) 方法",
+        "实现 Search(collection string, vector []float32, topK int) 方法"
       ],
-      "test_command": "cd apps/server && cargo run & sleep 2 && wscat -c ws://localhost:3000/api/v1/universe/stream",
+      "test_command": "cd ~/cyber-cosmos && go build ./pkg/vector/",
       "depends_on": [
-        "feat-005",
         "feat-002"
       ],
       "passes": false,
       "last_attempt": null,
-      "notes": "实时数据传输通道"
+      "notes": "代码语义向量存储"
     },
     {
       "id": "feat-007",
       "category": "functional",
-      "description": "前端应用初始化 (React/TS)",
+      "description": "Go 后端 API 服务框架搭建",
       "steps": [
-        "在 apps/web 下使用 Vite 创建 React TS 项目",
-        "安装核心依赖: three, @react-three/fiber, @react-three/drei, zustand",
-        "配置 tsconfig.json 路径别名",
-        "创建基础目录结构: components, scenes, hooks, stores",
-        "创建 App.tsx 主框架布局",
-        "配置开发服务器代理到后端端口"
+        "创建 cmd/server/main.go 入口文件",
+        "创建 internal/server/server.go 文件",
+        "实现 Server 结构体（包含 Router, DB, Cache 字段）",
+        "实现 NewServer() 构造函数",
+        "实现 SetupRouter() 方法配置 Gin 路由",
+        "添加 /api/health 健康检查端点",
+        "添加 CORS 中间件配置",
+        "创建 Makefile run-server 目标"
       ],
-      "test_command": "cd apps/web && pnpm install && pnpm dev",
+      "test_command": "cd ~/cyber-cosmos && go build -o bin/server ./cmd/server/",
+      "depends_on": [
+        "feat-003",
+        "feat-004"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": "后端服务基础"
+    },
+    {
+      "id": "feat-008",
+      "category": "functional",
+      "description": "gRPC 服务定义与代码生成",
+      "steps": [
+        "创建 api/proto/evolution.proto 文件",
+        "定义 EvolutionService 服务",
+        "定义 AnalyzeCode RPC 方法",
+        "定义 GenerateCode RPC 方法",
+        "定义 ExecuteTest RPC 方法",
+        "创建 scripts/gen-proto.sh 脚本",
+        "生成 Go 代码到 api/gen/go/",
+        "创建 pkg/grpc/client.go gRPC 客户端封装"
+      ],
+      "test_command": "cd ~/cyber-cosmos && test -d api/gen/go/",
       "depends_on": [
         "feat-001"
       ],
       "passes": false,
       "last_attempt": null,
-      "notes": "前端可视化基础"
-    },
-    {
-      "id": "feat-008",
-      "category": "functional",
-      "description": "3D 宇宙场景渲染",
-      "steps": [
-        "创建 scenes/UniverseScene.tsx 组件",
-        "配置 Canvas 和 PerspectiveCamera",
-        "实现 InstancedMesh 组件用于高性能渲染大量天体",
-        "添加 OrbitControls 实现视角控制",
-        "添加环境光和点光源",
-        "在 App.tsx 中挂载 UniverseScene"
-      ],
-      "test_command": "cd apps/web && pnpm dev",
-      "depends_on": [
-        "feat-007"
-      ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "核心可视化功能"
+      "notes": "Go 与 Python AI 服务通信基础"
     },
     {
       "id": "feat-009",
       "category": "functional",
-      "description": "前后端状态同步与交互",
+      "description": "Python AI 服务基础框架",
       "steps": [
-        "创建 hooks/useUniverseStream.ts",
-        "实现 WebSocket 连接逻辑，连接 feat-006 提供的接口",
-        "解析二进制/JSON 数据并更新 Zustand store",
-        "在 UniverseScene 中订阅 store 状态",
-        "将 store 中的天体数据映射到 InstancedMatrix",
-        "实现时间缩放滑块 UI，发送控制指令到后端"
+        "创建 ai/requirements.txt（langchain, openai, grpcio, milvus-client）",
+        "创建 ai/server/main.py 入口文件",
+        "创建 ai/server/grpc_server.py 文件",
+        "实现 EvolutionServiceServicer 类",
+        "实现 AnalyzeCode 方法（占位实现）",
+        "实现 GenerateCode 方法（占位实现）",
+        "创建 ai/config.py 配置管理",
+        "创建 Dockerfile.python 容器化配置"
       ],
-      "test_command": "cd apps/server && cargo run & cd apps/web && pnpm dev",
+      "test_command": "cd ~/cyber-cosmos/ai && python -c \"import server.main\"",
       "depends_on": [
-        "feat-008",
-        "feat-006"
+        "feat-008"
       ],
       "passes": false,
       "last_attempt": null,
-      "notes": "打通全栈数据流"
+      "notes": "AI 服务基础框架"
     },
     {
       "id": "feat-010",
       "category": "functional",
-      "description": "向量数据库集成",
+      "description": "知识库接口实现",
       "steps": [
-        "在 infra/docker/dev.yml 添加 Qdrant 服务配置",
-        "创建 apps/server/src/memory/mod.rs",
-        "集成 qdrant-client Rust SDK",
-        "实现 upsert_code_embedding 方法 (存储代码片段向量)",
-        "实现 search_similar_architecture 方法 (检索相似架构)",
-        "添加 /api/v1/memory/query 接口"
+        "创建 internal/knowledge/knowledge.go 文件",
+        "定义 KnowledgeStore 接口",
+        "创建 internal/knowledge/vector_store.go 文件",
+        "实现 MilvusStore 结构体",
+        "实现 Store(code, embedding, metadata) 方法",
+        "实现 Query(queryEmbedding, topK) 方法",
+        "创建 internal/knowledge/graph_store.go 文件",
+        "实现 Neo4jStore 结构体",
+        "实现 StoreDependency(from, to, depType) 方法"
       ],
-      "test_command": "docker-compose -f infra/docker/dev.yml up -d qdrant && curl http://localhost:6333/collections",
+      "test_command": "cd ~/cyber-cosmos && go build ./internal/knowledge/",
       "depends_on": [
-        "feat-004"
+        "feat-005",
+        "feat-006"
       ],
       "passes": false,
       "last_attempt": null,
-      "notes": "为 AI 进化提供记忆检索能力"
+      "notes": "智能体记忆系统基础"
     },
     {
       "id": "feat-011",
       "category": "functional",
-      "description": "AI 进化代理服务搭建",
+      "description": "架构自省模块 - 代码分析器",
       "steps": [
-        "创建 packages/ai-agent 目录并初始化 Python 环境",
-        "创建 requirements.txt: langchain, openai, grpcio, qdrant-client",
-        "实现 agent/core.py: 初始化 LLM 模型",
-        "实现 agent/coder.py: 代码生成逻辑",
-        "创建 proto/evolution.proto 定义 gRPC 服务",
-        "实现 gRPC 服务端，监听 50051 端口"
+        "创建 internal/evolution/analyzer.go 文件",
+        "定义 CodeAnalyzer 结构体",
+        "实现 ScanCodebase(rootPath string) 方法",
+        "使用 go/parser 解析 Go 文件 AST",
+        "提取函数定义、结构体定义、接口定义",
+        "实现 BuildDependencyGraph() 方法",
+        "实现 DetectCircularDependencies() 方法",
+        "实现 CalculateComplexity() 方法",
+        "创建 internal/evolution/types.go 定义分析结果结构"
       ],
-      "test_command": "cd packages/ai-agent && python -m pytest tests/test_agent.py",
+      "test_command": "cd ~/cyber-cosmos && go build ./internal/evolution/",
+      "depends_on": [
+        "feat-005",
+        "feat-007"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": "F01 架构自省核心"
+    },
+    {
+      "id": "feat-012",
+      "category": "functional",
+      "description": "智能体基础框架",
+      "steps": [
+        "创建 internal/agent/base.go 文件",
+        "定义 Agent 接口",
+        "定义 AgentBase 结构体（Name, Role, State, Memory 字段）",
+        "实现 SendMessage(to Agent, content string) 方法",
+        "实现 ReceiveMessage(from Agent, content string) 方法",
+        "实现 UpdateState(newState string) 方法",
+        "创建 internal/agent/registry.go 智能体注册中心",
+        "实现 RegisterAgent(agent Agent) 方法",
+        "实现 GetAgent(name string) Agent 方法"
+      ],
+      "test_command": "cd ~/cyber-cosmos && go build ./internal/agent/",
       "depends_on": [
         "feat-010"
       ],
       "passes": false,
       "last_attempt": null,
-      "notes": "自主进化的大脑"
-    },
-    {
-      "id": "feat-012",
-      "category": "functional",
-      "description": "架构分析与提案生成",
-      "steps": [
-        "在 packages/ai-agent 实现 analyzer.py",
-        "实现 scan_codebase 函数: 遍历项目目录，读取代码文件",
-        "实现 detect_technical_debt 函数: 基于规则或 LLM 分析代码异味",
-        "实现 generate_proposal 函数: 生成 Feature SPEC",
-        "在 apps/server 添加 gRPC 客户端调用 AI Agent",
-        "实现 /api/v1/evolution/propose 接口触发分析"
-      ],
-      "test_command": "curl -X POST http://localhost:3000/api/v1/evolution/propose",
-      "depends_on": [
-        "feat-011",
-        "feat-003"
-      ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "实现 F3.1 和 F3.2"
+      "notes": "F06 智能体角色定义基础"
     },
     {
       "id": "feat-013",
-      "category": "config",
-      "description": "容器化与生产环境配置",
+      "category": "functional",
+      "description": "架构师智能体实现",
       "steps": [
-        "创建 apps/server/Dockerfile (多阶段构建)",
-        "创建 apps/web/Dockerfile (Nginx 托管)",
-        "创建 packages/ai-agent/Dockerfile",
-        "编写 infra/docker-compose.prod.yml 编排所有服务",
-        "编写 infra/k8s/deployment.yaml",
-        "编写 infra/k8s/service.yaml"
+        "创建 internal/agent/architect.go 文件",
+        "定义 ArchitectAgent 结构体，嵌入 AgentBase",
+        "实现 AnalyzeArchitecture(codebase string) 方法",
+        "实现 GenerateImprovementPlan(analysis Result) 方法",
+        "实现 ReviewChange(change Change) bool 方法",
+        "创建 ai/prompts/architect_system.txt 系统提示词",
+        "创建 ai/prompts/architect_analysis.txt 分析提示词模板"
       ],
-      "test_command": "docker-compose -f infra/docker-compose.prod.yml build",
+      "test_command": "cd ~/cyber-cosmos && go build ./internal/agent/",
       "depends_on": [
-        "feat-009",
-        "feat-011"
-      ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "部署准备"
-    },
-    {
-      "id": "feat-014",
-      "category": "test",
-      "description": "自动化测试与验证流水线",
-      "steps": [
-        "在 apps/web 配置 Vitest 和 React Testing Library",
-        "编写前端组件快照测试",
-        "在 apps/server 编写 Rust 集成测试",
-        "创建 tests/bench/physics_bench.rs 性能基准测试",
-        "配置测试覆盖率报告",
-        "确保所有测试通过"
-      ],
-      "test_command": "pnpm test && cd apps/server && cargo test",
-      "depends_on": [
-        "feat-009"
-      ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "质量保障"
-    },
-    {
-      "id": "feat-015",
-      "category": "config",
-      "description": "CI/CD 与自主进化闭环",
-      "steps": [
-        "创建 .github/workflows/ci.yml: 触发 Lint, Test, Build",
-        "创建 .github/workflows/evolution.yml: 定时触发进化分析",
-        "配置 GitHub Actions 自动提交 PR 的权限",
-        "实现脚本: 自动合并通过测试的进化 PR",
-        "配置 ArgoCD 或 Kubernetes 自动部署策略"
-      ],
-      "test_command": "gh workflow view ci",
-      "depends_on": [
-        "feat-013",
-        "feat-014",
+        "feat-011",
         "feat-012"
       ],
       "passes": false,
       "last_attempt": null,
-      "notes": "实现 F3.3 和 F3.4"
+      "notes": "架构决策智能体"
+    },
+    {
+      "id": "feat-014",
+      "category": "functional",
+      "description": "编码智能体实现",
+      "steps": [
+        "创建 internal/agent/coder.go 文件",
+        "定义 CoderAgent 结构体，嵌入 AgentBase",
+        "实现 GenerateCode(requirement string) 方法",
+        "实现 RefactorCode(code, instructions string) 方法",
+        "实现 OptimizeCode(code string) 方法",
+        "创建 ai/prompts/coder_system.txt 系统提示词",
+        "创建 ai/prompts/code_generation.txt 代码生成提示词模板"
+      ],
+      "test_command": "cd ~/cyber-cosmos && go build ./internal/agent/",
+      "depends_on": [
+        "feat-012",
+        "feat-009"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": "F04 自主编码代理核心"
+    },
+    {
+      "id": "feat-015",
+      "category": "functional",
+      "description": "审查智能体实现",
+      "steps": [
+        "创建 internal/agent/reviewer.go 文件",
+        "定义 ReviewerAgent 结构体，嵌入 AgentBase",
+        "实现 ReviewCode(code, context string) ReviewResult 方法",
+        "实现 CheckSecurityIssues(code string) []Issue 方法",
+        "实现 CheckPerformanceIssues(code string) []Issue 方法",
+        "实现 ApproveChange(changeID string) bool 方法",
+        "创建 ai/prompts/reviewer_system.txt 系统提示词"
+      ],
+      "test_command": "cd ~/cyber-cosmos && go build ./internal/agent/",
+      "depends_on": [
+        "feat-012"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": "代码审查智能体"
+    },
+    {
+      "id": "feat-016",
+      "category": "functional",
+      "description": "进化规划器实现",
+      "steps": [
+        "创建 internal/evolution/planner.go 文件",
+        "定义 EvolutionPlanner 结构体",
+        "实现 CreatePlan(analysis AnalysisResult) Plan 方法",
+        "实现 PrioritizeFeatures(features []Feature) []Feature 方法",
+        "实现 EstimateEffort(feature Feature) int 方法",
+        "实现 GenerateTasks(plan Plan) []Task 方法",
+        "创建 internal/evolution/types.go 定义 Plan, Task 结构"
+      ],
+      "test_command": "cd ~/cyber-cosmos && go build ./internal/evolution/",
+      "depends_on": [
+        "feat-011",
+        "feat-013"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": "F02 需求生成器 + F03 演化策略"
+    },
+    {
+      "id": "feat-017",
+      "category": "functional",
+      "description": "进化执行器实现",
+      "steps": [
+        "创建 internal/evolution/executor.go 文件",
+        "定义 EvolutionExecutor 结构体",
+        "实现 ExecuteTask(task Task) Result 方法",
+        "实现 ApplyChange(change Change) error 方法",
+        "实现 Rollback(changeID string) error 方法",
+        "实现 RecordEvolution(record EvolutionRecord) 方法",
+        "创建 internal/evolution/sandbox.go 沙箱环境管理"
+      ],
+      "test_command": "cd ~/cyber-cosmos && go build ./internal/evolution/",
+      "depends_on": [
+        "feat-014",
+        "feat-015",
+        "feat-016"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": "进化执行核心"
+    },
+    {
+      "id": "feat-018",
+      "category": "functional",
+      "description": "进化守护进程",
+      "steps": [
+        "创建 cmd/evolutiond/main.go 入口文件",
+        "实现定时触发器（使用 time.Ticker）",
+        "实现 RunEvolutionCycle() 主循环方法",
+        "集成 Analyzer -> Planner -> Executor 流程",
+        "实现错误处理与重试机制",
+        "实现优雅关闭",
+        "创建 Makefile run-evolution 目标"
+      ],
+      "test_command": "cd ~/cyber-cosmos && go build -o bin/evolutiond ./cmd/evolutiond/",
+      "depends_on": [
+        "feat-017"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": "后台自主进化守护进程"
+    },
+    {
+      "id": "feat-019",
+      "category": "functional",
+      "description": "前端 Next.js 项目初始化",
+      "steps": [
+        "在 web/ 目录初始化 Next.js 14 项目",
+        "配置 Tailwind CSS",
+        "创建 web/app/layout.tsx 根布局",
+        "创建 web/app/page.tsx 首页",
+        "创建 web/lib/api.ts API 客户端封装",
+        "创建 web/lib/websocket.ts WebSocket 客户端",
+        "创建 web/store/useEvolutionStore.ts Zustand 状态管理"
+      ],
+      "test_command": "cd ~/cyber-cosmos/web && npm run build",
+      "depends_on": [
+        "feat-007"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": "前端基础框架"
+    },
+    {
+      "id": "feat-020",
+      "category": "functional",
+      "description": "宇宙监控面板 - 3D 可视化",
+      "steps": [
+        "创建 web/components/Universe/Universe.tsx Three.js 场景组件",
+        "创建 web/components/Universe/ServiceNode.tsx 服务节点组件",
+        "创建 web/components/Universe/DataFlow.tsx 数据流动画组件",
+        "实现节点布局算法（力导向图）",
+        "实现节点点击交互（显示详情）",
+        "实现实时数据流粒子效果",
+        "创建 web/app/dashboard/page.tsx 监控页面"
+      ],
+      "test_command": "cd ~/cyber-cosmos/web && npm run build",
+      "depends_on": [
+        "feat-019"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": "F09 宇宙监控面板"
+    },
+    {
+      "id": "feat-021",
+      "category": "functional",
+      "description": "进化日志浏览器",
+      "steps": [
+        "创建 web/components/EvolutionLog/LogList.tsx 日志列表组件",
+        "创建 web/components/EvolutionLog/LogDetail.tsx 日志详情组件",
+        "创建 web/components/EvolutionLog/DiffViewer.tsx Monaco Diff 查看器",
+        "创建 web/components/EvolutionLog/DecisionTree.tsx 决策树可视化",
+        "创建 web/app/evolution-logs/page.tsx 日志浏览页面",
+        "实现分页与过滤功能",
+        "实现 WebSocket 实时日志推送"
+      ],
+      "test_command": "cd ~/cyber-cosmos/web && npm run build",
+      "depends_on": [
+        "feat-019"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": "F10 进化日志浏览器"
+    },
+    {
+      "id": "feat-022",
+      "category": "test",
+      "description": "自动化测试框架搭建",
+      "steps": [
+        "创建 tests/unit/ 目录",
+        "创建 tests/integration/ 目录",
+        "创建 tests/e2e/ 目录",
+        "创建 scripts/run-tests.sh 测试运行脚本",
+        "创建 tests/mocks/llm_mock.go LLM Mock 服务",
+        "创建 tests/fixtures/sample_code/ 测试代码样本",
+        "配置 GitHub Actions CI 流程",
+        "创建 .github/workflows/test.yml"
+      ],
+      "test_command": "cd ~/cyber-cosmos && bash scripts/run-tests.sh",
+      "depends_on": [
+        "feat-007",
+        "feat-009"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": "F05 自动化验证沙箱基础"
     }
   ]
 }
