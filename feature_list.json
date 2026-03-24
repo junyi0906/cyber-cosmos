@@ -54,9 +54,10 @@
       "depends_on": [
         "feat-001"
       ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "数据库服务依赖此配置"
+      "passes": true,
+      "last_attempt": "2026-03-24T22:04:08.290745",
+      "notes": "数据库服务依赖此配置",
+      "retry_count": 0
     },
     {
       "id": "feat-003",
