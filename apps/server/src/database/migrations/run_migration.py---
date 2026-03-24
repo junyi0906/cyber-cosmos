@@ -1,0 +1,137 @@
+#!/usr/bin/env python3
+"""
+数据库迁移运行脚本
+用于执行 PostgreSQL 数据库迁移
+"""
+
+import os
+import sys
+import psycopg2
+from psycopg2 import sql
+from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+from datetime import datetime
+import logging
+
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# 数据库配置
+DB_CONFIG = {
+    'host': os.getenv('DB_HOST', 'localhost'),
+    'port': int(os.getenv('DB_PORT', 5432)),
+    'database': os.getenv('DB_NAME', 'cyber_cosmos'),
+    'user': os.getenv('DB_USER', 'postgres'),
+    'password': os.getenv('DB_PASSWORD', 'postgres')
+}
+
+# 迁移目录
+MIGRATIONS_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# 迁移记录表
+MIGRATION_TABLE = 'schema_migrations'
+
+
+def get_connection():
+    """获取数据库连接"""
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+        return conn
+    except psycopg2.OperationalError as e:
+        logger.error(f"数据库连接失败: {e}")
+        sys.exit(1)
+
+
+def ensure_migration_table(conn):
+    """确保迁移记录表存在"""
+    create_table_sql = f"""
+    CREATE TABLE IF NOT EXISTS {MIGRATION_TABLE} (
+        id SERIAL PRIMARY KEY,
+        version VARCHAR(255) NOT NULL UNIQUE,
+        name VARCHAR(255),
+        applied_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+        execution_time_ms INTEGER
+    );
+    """
+    try:
+        with conn.cursor() as cur:
+            cur.execute(create_table_sql)
+        logger.info(f"迁移记录表 '{MIGRATION_TABLE}' 已就绪")
+    except Exception as e:
+        logger.error(f"创建迁移记录表失败: {e}")
+        raise
+
+
+def get_applied_migrations(conn):
+    """获取已应用的迁移列表"""
+    query = f"SELECT version FROM {MIGRATION_TABLE} ORDER BY id"
+    with conn.cursor() as cur:
+        cur.execute(query)
+        return [row[0] for row in cur.fetchall()]
+
+
+def get_pending_migrations():
+    """获取待执行的迁移文件列表"""
+    migrations = []
+    for filename in sorted(os.listdir(MIGRATIONS_DIR)):
+        if filename.endswith('.sql') and filename.startswith(('001', '002', '003', '004', '005', '006', '007', '008', '009')):
+            version = filename.split('_')[0]
+            name = filename
+            filepath = os.path.join(MIGRATIONS_DIR, filename)
+            migrations.append({
+                'version': version,
+                'name': name,
+                'filepath': filepath
+            })
+    return migrations
+
+
+def apply_migration(conn, migration):
+    """应用单个迁移"""
+    version = migration['version']
+    name = migration['name']
+    filepath = migration['filepath']
+    
+    logger.info(f"开始应用迁移: {name}")
+    
+    # 读取迁移文件
+    with open(filepath, 'r', encoding='utf-8') as f:
+        migration_sql = f.read()
+    
+    start_time = datetime.now()
+    
+    try:
+        with conn.cursor() as cur:
+            # 执行迁移SQL
+            cur.execute(migration_sql)
+            
+            # 记录迁移
+            execution_time = int((datetime.now() - start_time).total_seconds() * 1000)
+            cur.execute(
+                f"INSERT INTO {MIGRATION_TABLE} (version, name, execution_time_ms) VALUES (%s, %s, %s)",
+                (version, name, execution_time)
+            )
+        
+        logger.info(f"迁移 {name} 应用成功 (耗时: {execution_time}ms)")
+        return True
+        
+    except Exception as e:
+        logger.error(f"迁移 {name} 应用失败: {e}")
+        conn.rollback()
+        raise
+
+
+def run_migrations():
+    """运行所有待执行的迁移"""
+    logger.info("=" * 60)
+    logger.info("开始数据库迁移")
+    logger.info("=" * 60)
+    
+    conn = get_connection()
+    
+    try:
+        # 确保迁移表存在

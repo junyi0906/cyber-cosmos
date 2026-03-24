@@ -3,7 +3,7 @@
 -- Created at: 2024-01-01
 
 -- ============================================
--- 1. trade_routes 表 - 贸易路线
+-- 1. 贸易路线表 (trade_routes)
 -- ============================================
 CREATE TABLE IF NOT EXISTS trade_routes (
     id SERIAL PRIMARY KEY,
@@ -12,11 +12,13 @@ CREATE TABLE IF NOT EXISTS trade_routes (
     resource_type VARCHAR(50) NOT NULL,
     rate_per_tick DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
     status VARCHAR(20) NOT NULL DEFAULT 'active',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     
-    CONSTRAINT chk_rate_positive CHECK (rate_per_tick >= 0),
-    CONSTRAINT chk_valid_status CHECK (status IN ('active', 'suspended', 'closed'))
+    CONSTRAINT fk_source_civ FOREIGN KEY (source_civ_id) REFERENCES civilizations(id) ON DELETE CASCADE,
+    CONSTRAINT fk_target_civ FOREIGN KEY (target_civ_id) REFERENCES civilizations(id) ON DELETE CASCADE,
+    CONSTRAINT chk_different_civs CHECK (source_civ_id != target_civ_id),
+    CONSTRAINT chk_valid_status CHECK (status IN ('active', 'paused', 'suspended', 'closed'))
 );
 
 -- 贸易路线索引
@@ -25,69 +27,78 @@ CREATE INDEX idx_trade_routes_target ON trade_routes(target_civ_id);
 CREATE INDEX idx_trade_routes_status ON trade_routes(status);
 CREATE INDEX idx_trade_routes_resource ON trade_routes(resource_type);
 
--- 贸易路线更新触发器
-CREATE OR REPLACE FUNCTION update_trade_routes_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = CURRENT_TIMESTAMP;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trigger_trade_routes_updated_at
-    BEFORE UPDATE ON trade_routes
-    FOR EACH ROW
-    EXECUTE FUNCTION update_trade_routes_updated_at();
+-- 注释
+COMMENT ON TABLE trade_routes IS '星际贸易路线表';
+COMMENT ON COLUMN trade_routes.id IS '路线唯一标识';
+COMMENT ON COLUMN trade_routes.source_civ_id IS '发起贸易的文明ID';
+COMMENT ON COLUMN trade_routes.target_civ_id IS '接收贸易的文明ID';
+COMMENT ON COLUMN trade_routes.resource_type IS '资源类型：ore, energy, tech_points, food等';
+COMMENT ON COLUMN trade_routes.rate_per_tick IS '每周期贸易量';
+COMMENT ON COLUMN trade_routes.status IS '路线状态：active-活跃, paused-暂停, suspended-制裁中断, closed-关闭';
 
 -- ============================================
--- 2. weather_history 表 - 天气历史
+-- 2. 天气历史表 (weather_history) - TimescaleDB
 -- ============================================
 CREATE TABLE IF NOT EXISTS weather_history (
     time TIMESTAMP WITH TIME ZONE NOT NULL,
     weather_type VARCHAR(50) NOT NULL,
     intensity DECIMAL(5, 2) NOT NULL DEFAULT 1.00,
-    affected_sectors JSONB DEFAULT '[]'::jsonb,
+    affected_sectors JSONB,
     
-    CONSTRAINT chk_intensity_range CHECK (intensity >= 0 AND intensity <= 10)
+    CONSTRAINT chk_valid_weather_type CHECK (weather_type IN (
+        'calm',              -- 平静期
+        'resource_storm',    -- 资源风暴
+        'dark_matter_wave',  -- 暗物质浪潮
+        'dark_fluctuation',  -- 黑暗波动
+        'solar_flare',       -- 太阳耀斑
+        'nebula_fog'         -- 星云迷雾
+    )),
+    CONSTRAINT chk_valid_intensity CHECK (intensity >= 0 AND intensity <= 10)
 );
+
+-- 创建 TimescaleDB hypertable (如果 TimescaleDB 扩展可用)
+-- 注意：需要先启用 TimescaleDB 扩展
+CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;
+
+SELECT create_hypertable('weather_history', 'time', if_not_exists => TRUE);
 
 -- 天气历史索引
 CREATE INDEX idx_weather_history_time ON weather_history(time DESC);
 CREATE INDEX idx_weather_history_type ON weather_history(weather_type);
 
--- 配置 TimescaleDB hypertable (如果扩展已安装)
--- 注意: TimescaleDB 扩展需要预先在数据库中启用
-DO $$
-BEGIN
-    IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'timescaledb') THEN
-        PERFORM create_hypertable('weather_history', 'time', if_not_exists => TRUE);
-    END IF;
-END $$;
+-- 注释
+COMMENT ON TABLE weather_history IS '宇宙天气历史记录表（TimescaleDB时序表）';
+COMMENT ON COLUMN weather_history.time IS '天气发生时间';
+COMMENT ON COLUMN weather_history.weather_type IS '天气类型';
+COMMENT ON COLUMN weather_history.intensity IS '天气强度（0-10）';
+COMMENT ON COLUMN weather_history.affected_sectors IS '受影响的星区坐标列表（JSONB格式）';
 
 -- ============================================
--- 3. relics 表 - 文明遗迹
+-- 3. 文明遗迹表 (relics)
 -- ============================================
 CREATE TABLE IF NOT EXISTS relics (
     id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     description TEXT,
+    relic_type VARCHAR(50) NOT NULL,
     location_x DECIMAL(10, 2) NOT NULL,
     location_y DECIMAL(10, 2) NOT NULL,
-    source_event_id INTEGER,
     owner_civ_id INTEGER,
-    relic_type VARCHAR(50) NOT NULL DEFAULT 'unknown',
-    bonus_data JSONB DEFAULT '{}'::jsonb,
+    source_event_id INTEGER,
+    bonus_data JSONB,
     expires_at TIMESTAMP WITH TIME ZONE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     
+    CONSTRAINT fk_owner_civ FOREIGN KEY (owner_civ_id) REFERENCES civilizations(id) ON DELETE SET NULL,
+    CONSTRAINT fk_source_event FOREIGN KEY (source_event_id) REFERENCES events(id) ON DELETE SET NULL,
     CONSTRAINT chk_valid_relic_type CHECK (relic_type IN (
-        'precursor_factory',
-        'war_graveyard',
-        'knowledge_vault',
-        'ancient_portal',
-        'resource_cache',
-        'unknown'
+        'precursor_factory',   -- 先驱者工厂（产能加成）
+        'war_graveyard',       -- 战争坟场（军事加成）
+        'knowledge_vault',     -- 知识库（科技加成）
+        'ancient_mine',        -- 远古矿脉（资源加成）
+        'void_portal',         -- 虚空传送门（移动加成）
+        'stellar_forge'        -- 恒星熔炉（全能加成）
     ))
 );
 
@@ -96,168 +107,181 @@ CREATE INDEX idx_relics_location ON relics(location_x, location_y);
 CREATE INDEX idx_relics_owner ON relics(owner_civ_id);
 CREATE INDEX idx_relics_type ON relics(relic_type);
 CREATE INDEX idx_relics_expires ON relics(expires_at) WHERE expires_at IS NOT NULL;
-CREATE INDEX idx_relics_source_event ON relics(source_event_id);
 
--- 遗迹更新触发器
-CREATE TRIGGER trigger_relics_updated_at
-    BEFORE UPDATE ON relics
-    FOR EACH ROW
-    EXECUTE FUNCTION update_trade_routes_updated_at();
+-- 空间索引（用于位置查询）
+CREATE INDEX idx_relics_spatial ON relics USING GIST (
+    point(location_x, location_y)
+);
+
+-- 注释
+COMMENT ON TABLE relics IS '文明遗迹表';
+COMMENT ON COLUMN relics.id IS '遗迹唯一标识';
+COMMENT ON COLUMN relics.name IS '遗迹名称';
+COMMENT ON COLUMN relics.description IS '遗迹描述';
+COMMENT ON COLUMN relics.relic_type IS '遗迹类型';
+COMMENT ON COLUMN relics.location_x IS 'X坐标';
+COMMENT ON COLUMN relics.location_y IS 'Y坐标';
+COMMENT ON COLUMN relics.owner_civ_id IS '归属文明ID';
+COMMENT ON COLUMN relics.source_event_id IS '来源事件ID';
+COMMENT ON COLUMN relics.bonus_data IS '加成数据（JSONB格式）';
+COMMENT ON COLUMN relics.expires_at IS '过期时间（NULL表示永久）';
 
 -- ============================================
--- 4. market_orders 表 - 市场订单
+-- 4. 市场订单表 (market_orders)
 -- ============================================
 CREATE TABLE IF NOT EXISTS market_orders (
     id SERIAL PRIMARY KEY,
     civ_id INTEGER NOT NULL,
-    order_type VARCHAR(10) NOT NULL,
+    type VARCHAR(10) NOT NULL,
     resource VARCHAR(50) NOT NULL,
     price DECIMAL(12, 2) NOT NULL,
-    quantity INTEGER NOT NULL DEFAULT 1,
-    filled_quantity INTEGER NOT NULL DEFAULT 0,
-    status VARCHAR(20) NOT NULL DEFAULT 'pending',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    quantity DECIMAL(12, 2) NOT NULL,
+    filled_quantity DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+    status VARCHAR(20) NOT NULL DEFAULT 'open',
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     expires_at TIMESTAMP WITH TIME ZONE,
     
-    CONSTRAINT chk_valid_order_type CHECK (order_type IN ('buy', 'sell')),
-    CONSTRAINT chk_valid_order_status CHECK (status IN ('pending', 'partial', 'filled', 'cancelled', 'expired')),
-    CONSTRAINT chk_price_positive CHECK (price > 0),
-    CONSTRAINT chk_quantity_positive CHECK (quantity > 0),
-    CONSTRAINT chk_filled_valid CHECK (filled_quantity >= 0 AND filled_quantity <= quantity)
+    CONSTRAINT fk_civ_id FOREIGN KEY (civ_id) REFERENCES civilizations(id) ON DELETE CASCADE,
+    CONSTRAINT chk_valid_order_type CHECK (type IN ('buy', 'sell')),
+    CONSTRAINT chk_valid_order_status CHECK (status IN ('open', 'partial', 'filled', 'cancelled', 'expired')),
+    CONSTRAINT chk_positive_price CHECK (price > 0),
+    CONSTRAINT chk_positive_quantity CHECK (quantity > 0),
+    CONSTRAINT chk_valid_filled CHECK (filled_quantity >= 0 AND filled_quantity <= quantity)
 );
 
 -- 市场订单索引
 CREATE INDEX idx_market_orders_civ ON market_orders(civ_id);
-CREATE INDEX idx_market_orders_type ON market_orders(order_type);
+CREATE INDEX idx_market_orders_type ON market_orders(type);
 CREATE INDEX idx_market_orders_resource ON market_orders(resource);
 CREATE INDEX idx_market_orders_status ON market_orders(status);
 CREATE INDEX idx_market_orders_price ON market_orders(price);
 CREATE INDEX idx_market_orders_created ON market_orders(created_at DESC);
 CREATE INDEX idx_market_orders_expires ON market_orders(expires_at) WHERE expires_at IS NOT NULL;
 
--- 市场订单更新触发器
-CREATE TRIGGER trigger_market_orders_updated_at
+-- 复合索引（用于市场查询）
+CREATE INDEX idx_market_orders_market ON market_orders(resource, type, status, price);
+
+-- 注释
+COMMENT ON TABLE market_orders IS '星际市场订单表';
+COMMENT ON COLUMN market_orders.id IS '订单唯一标识';
+COMMENT ON COLUMN market_orders.civ_id IS '下单文明ID';
+COMMENT ON COLUMN market_orders.type IS '订单类型：buy-买入, sell-卖出';
+COMMENT ON COLUMN market_orders.resource IS '交易资源类型';
+COMMENT ON COLUMN market_orders.price IS '单价';
+COMMENT ON COLUMN market_orders.quantity IS '总数量';
+COMMENT ON COLUMN market_orders.filled_quantity IS '已成交数量';
+COMMENT ON COLUMN market_orders.status IS '订单状态：open-挂单, partial-部分成交, filled-完全成交, cancelled-已取消, expired-已过期';
+
+-- ============================================
+-- 5. 触发器：自动更新 updated_at
+-- ============================================
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+-- 为各表创建更新触发器
+CREATE TRIGGER update_trade_routes_updated_at
+    BEFORE UPDATE ON trade_routes
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_relics_updated_at
+    BEFORE UPDATE ON relics
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_market_orders_updated_at
     BEFORE UPDATE ON market_orders
     FOR EACH ROW
-    EXECUTE FUNCTION update_trade_routes_updated_at();
+    EXECUTE FUNCTION update_updated_at_column();
 
 -- ============================================
--- 5. 辅助表 - 贸易协定
+-- 6. 初始数据
 -- ============================================
-CREATE TABLE IF NOT EXISTS trade_agreements (
-    id SERIAL PRIMARY KEY,
-    civ_a_id INTEGER NOT NULL,
-    civ_b_id INTEGER NOT NULL,
-    agreement_type VARCHAR(30) NOT NULL DEFAULT 'standard',
-    terms JSONB DEFAULT '{}'::jsonb,
-    status VARCHAR(20) NOT NULL DEFAULT 'active',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    expires_at TIMESTAMP WITH TIME ZONE,
-    
-    CONSTRAINT chk_valid_agreement_type CHECK (agreement_type IN ('standard', 'preferential', 'exclusive')),
-    CONSTRAINT chk_valid_agreement_status CHECK (status IN ('pending', 'active', 'suspended', 'terminated')),
-    CONSTRAINT chk_different_civs CHECK (civ_a_id != civ_b_id)
-);
-
--- 贸易协定索引
-CREATE INDEX idx_trade_agreements_civ_a ON trade_agreements(civ_a_id);
-CREATE INDEX idx_trade_agreements_civ_b ON trade_agreements(civ_b_id);
-CREATE INDEX idx_trade_agreements_status ON trade_agreements(status);
+-- 插入初始天气记录
+INSERT INTO weather_history (time, weather_type, intensity, affected_sectors)
+VALUES 
+    (NOW() - INTERVAL '1 hour', 'calm', 1.0, '[]'::jsonb),
+    (NOW(), 'calm', 1.0, '[]'::jsonb);
 
 -- ============================================
--- 6. 辅助表 - 宇宙天气状态
--- ============================================
-CREATE TABLE IF NOT EXISTS universe_weather (
-    id SERIAL PRIMARY KEY,
-    current_weather VARCHAR(50) NOT NULL DEFAULT 'calm',
-    intensity DECIMAL(5, 2) NOT NULL DEFAULT 1.00,
-    next_change_tick BIGINT,
-    duration_ticks INTEGER NOT NULL DEFAULT 100,
-    global_effects JSONB DEFAULT '{}'::jsonb,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    
-    CONSTRAINT chk_valid_weather_type CHECK (current_weather IN (
-        'calm',
-        'resource_storm',
-        'dark_matter_wave',
-        'dark_fluctuation',
-        'solar_flare',
-        'nebula_fog'
-    ))
-);
-
--- 初始化宇宙天气
-INSERT INTO universe_weather (current_weather, intensity, duration_ticks)
-VALUES ('calm', 1.00, 100)
-ON CONFLICT DO NOTHING;
-
--- ============================================
--- 7. 辅助表 - 赛季配置
--- ============================================
-CREATE TABLE IF NOT EXISTS seasons (
-    id SERIAL PRIMARY KEY,
-    season_number INTEGER NOT NULL UNIQUE,
-    name VARCHAR(100),
-    start_tick BIGINT NOT NULL,
-    end_tick BIGINT,
-    config JSONB DEFAULT '{}'::jsonb,
-    status VARCHAR(20) NOT NULL DEFAULT 'pending',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    
-    CONSTRAINT chk_valid_season_status CHECK (status IN ('pending', 'active', 'completed'))
-);
-
--- 赛季索引
-CREATE INDEX idx_seasons_status ON seasons(status);
-CREATE INDEX idx_seasons_number ON seasons(season_number);
-
--- ============================================
--- 8. 视图 - 活跃贸易路线视图
+-- 7. 视图：活跃贸易路线视图
 -- ============================================
 CREATE OR REPLACE VIEW v_active_trade_routes AS
 SELECT 
     tr.id,
     tr.source_civ_id,
+    c1.name as source_civ_name,
     tr.target_civ_id,
+    c2.name as target_civ_name,
     tr.resource_type,
     tr.rate_per_tick,
     tr.status,
-    tr.created_at,
-    ta.agreement_type,
-    ta.status AS agreement_status
+    tr.created_at
 FROM trade_routes tr
-LEFT JOIN trade_agreements ta ON (
-    (ta.civ_a_id = tr.source_civ_id AND ta.civ_b_id = tr.target_civ_id)
-    OR (ta.civ_a_id = tr.target_civ_id AND ta.civ_b_id = tr.source_civ_id)
-)
+LEFT JOIN civilizations c1 ON tr.source_civ_id = c1.id
+LEFT JOIN civilizations c2 ON tr.target_civ_id = c2.id
 WHERE tr.status = 'active';
 
+COMMENT ON VIEW v_active_trade_routes IS '活跃贸易路线视图';
+
 -- ============================================
--- 9. 视图 - 市场深度视图
+-- 8. 视图：市场深度视图
 -- ============================================
 CREATE OR REPLACE VIEW v_market_depth AS
 SELECT 
     resource,
-    order_type,
+    type,
     price,
-    SUM(quantity - filled_quantity) AS available_quantity,
-    COUNT(*) AS order_count
+    SUM(quantity - filled_quantity) as available_quantity,
+    COUNT(*) as order_count
 FROM market_orders
-WHERE status IN ('pending', 'partial')
-GROUP BY resource, order_type, price
-ORDER BY resource, 
-    CASE WHEN order_type = 'buy' THEN -price ELSE price END;
+WHERE status IN ('open', 'partial')
+GROUP BY resource, type, price
+ORDER BY resource, type, price;
+
+COMMENT ON VIEW v_market_depth IS '市场深度视图（按资源类型聚合）';
 
 -- ============================================
--- 10. 迁移记录
+-- 9. 函数：计算全局供需指数
 -- ============================================
-CREATE TABLE IF NOT EXISTS schema_migrations (
-    version VARCHAR(20) PRIMARY KEY,
-    applied_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    description TEXT
-);
+CREATE OR REPLACE FUNCTION calculate_supply_demand_index(p_resource VARCHAR)
+RETURNS TABLE (
+    resource VARCHAR,
+    buy_volume DECIMAL,
+    sell_volume DECIMAL,
+    supply_demand_ratio DECIMAL,
+    avg_buy_price DECIMAL,
+    avg_sell_price DECIMAL
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        p_resource::VARCHAR,
+        COALESCE(SUM(CASE WHEN mo.type = 'buy' THEN mo.quantity - mo.filled_quantity ELSE 0 END), 0)::DECIMAL as buy_volume,
+        COALESCE(SUM(CASE WHEN mo.type = 'sell' THEN mo.quantity - mo.filled_quantity ELSE 0 END), 0)::DECIMAL as sell_volume,
+        CASE 
+            WHEN COALESCE(SUM(CASE WHEN mo.type = 'sell' THEN mo.quantity - mo.filled_quantity ELSE 0 END), 0) = 0 
+            THEN 999.99
+            ELSE 
+                COALESCE(SUM(CASE WHEN mo.type = 'buy' THEN mo.quantity - mo.filled_quantity ELSE 0 END), 0)::DECIMAL / 
+                COALESCE(SUM(CASE WHEN mo.type = 'sell' THEN mo.quantity - mo.filled_quantity ELSE 0 END), 0)::DECIMAL
+        END as supply_demand_ratio,
+        COALESCE(AVG(CASE WHEN mo.type = 'buy' THEN mo.price END), 0)::DECIMAL as avg_buy_price,
+        COALESCE(AVG(CASE WHEN mo.type = 'sell' THEN mo.price END), 0)::DECIMAL as avg_sell_price
+    FROM market_orders mo
+    WHERE mo.resource = p_resource
+      AND mo.status IN ('open', 'partial');
+END;
+$$ LANGUAGE plpgsql;
 
-INSERT INTO schema_migrations (version, description)
-VALUES ('002', '贸易、天气、遗迹相关表结构')
-ON CONFLICT (version) DO NOTHING;
+COMMENT ON FUNCTION calculate_supply_demand_index IS '计算指定资源的供需指数';
+
+-- ============================================
+-- Migration Complete
+-- ============================================
