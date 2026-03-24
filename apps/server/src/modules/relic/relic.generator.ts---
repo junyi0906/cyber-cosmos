@@ -1,19 +1,23 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { OnEvent } from '@nestjs/event-emitter';
 import { Relic, RelicType, RelicStatus } from '../../entities/relic.entity';
+import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 
 export interface HistoricalEvent {
   id: string;
   name: string;
-  type: string;
-  severity: number;
-  coordinateX: number;
-  coordinateY: number;
   description?: string;
-  involvedCivilians?: string[];
+  severity: number;
+  x: number;
+  y: number;
+  z?: number;
+  type?: string;
   timestamp: Date;
+  involvedCivilians?: Array<{
+    id: string;
+    name: string;
+  }>;
 }
 
 export interface RelicGeneratedEvent {
@@ -21,194 +25,289 @@ export interface RelicGeneratedEvent {
   sourceEvent: HistoricalEvent;
 }
 
+const RELIC_TYPE_MAPPING: Record<string, RelicType> = {
+  'stellar_collapse': RelicType.CRYSTAL_NEXUS,
+  'empire_fall': RelicType.WAR_GRAVEYARD,
+  'empire_split': RelicType.WAR_GRAVEYARD,
+  'war': RelicType.WAR_GRAVEYARD,
+  'battle': RelicType.WAR_GRAVEYARD,
+  'discovery': RelicType.KNOWLEDGE_VAULT,
+  'research': RelicType.KNOWLEDGE_VAULT,
+  'technology': RelicType.KNOWLEDGE_VAULT,
+  'exploration': RelicType.ANCIENT_OBSERVATORY,
+  'expansion': RelicType.PIONEER_FACTORY,
+  'colonization': RelicType.PIONEER_FACTORY,
+  'industry': RelicType.PIONEER_FACTORY,
+  'energy': RelicType.CRYSTAL_NEXUS,
+  'default': RelicType.PIONEER_FACTORY,
+};
+
+const RELIC_NAMES: Record<RelicType, string[]> = {
+  [RelicType.PIONEER_FACTORY]: [
+    '先驱者工厂遗址',
+    '远古工业核心',
+    '失落的生产枢纽',
+    '古代制造中心',
+    '星际工厂废墟',
+  ],
+  [RelicType.WAR_GRAVEYARD]: [
+    '战争坟场',
+    '星际战场遗址',
+    '陨落舰队墓地',
+    '战火余烬之地',
+    '英雄纪念碑',
+  ],
+  [RelicType.KNOWLEDGE_VAULT]: [
+    '知识库遗迹',
+    '远古数据中心',
+    '智慧圣殿',
+    '文明档案馆',
+    '先驱者图书馆',
+  ],
+  [RelicType.ANCIENT_OBSERVATORY]: [
+    '远古观测站',
+    '星际瞭望塔',
+    '宇宙监测中心',
+    '星图绘制所',
+    '深空观测台',
+  ],
+  [RelicType.CRYSTAL_NEXUS]: [
+    '水晶枢纽',
+    '能量核心遗址',
+    '量子能源站',
+    '暗物质反应堆',
+    '恒星能量收集器',
+  ],
+};
+
 @Injectable()
-export class RelicGenerator {
+export class RelicGenerator implements OnModuleInit {
   private readonly logger = new Logger(RelicGenerator.name);
-
-  // 事件类型到遗迹类型的映射
-  private readonly eventTypeToRelicType: Map<string, RelicType> = new Map([
-    ['stellar_collapse', RelicType.STELLAR_RUINS],
-    ['stellar_explosion', RelicType.STELLAR_RUINS],
-    ['empire_fall', RelicType.WAR_GRAVEYARD],
-    ['empire_split', RelicType.WAR_GRAVEYARD],
-    ['war_devastation', RelicType.WAR_GRAVEYARD],
-    ['great_war', RelicType.WAR_GRAVEYARD],
-    ['tech_breakthrough', RelicType.KNOWLEDGE_VAULT],
-    ['ancient_discovery', RelicType.KNOWLEDGE_VAULT],
-    ['ai_awakening', RelicType.KNOWLEDGE_VAULT],
-    ['industrial_revolution', RelicType.PIONEER_FACTORY],
-    ['resource_boom', RelicType.PIONEER_FACTORY],
-    ['gate_discovery', RelicType.ANCIENT_GATE],
-    ['dimensional_rift', RelicType.ANCIENT_GATE],
-  ]);
-
-  // 遗迹类型到加成的映射
-  private readonly relicBonuses: Map<RelicType, {
-    production: number;
-    military: number;
-    tech: number;
-    exploration: number;
-  }> = new Map([
-    [RelicType.PIONEER_FACTORY, { production: 0.25, military: 0, tech: 0.05, exploration: 0 }],
-    [RelicType.WAR_GRAVEYARD, { production: 0, military: 0.30, tech: 0, exploration: 0.05 }],
-    [RelicType.KNOWLEDGE_VAULT, { production: 0, military: 0, tech: 0.35, exploration: 0.10 }],
-    [RelicType.STELLAR_RUINS, { production: 0.15, military: 0.10, tech: 0.15, exploration: 0.10 }],
-    [RelicType.ANCIENT_GATE, { production: 0.05, military: 0, tech: 0.10, exploration: 0.40 }],
-  ]);
+  private readonly severityThreshold = 8;
 
   constructor(
     @InjectRepository(Relic)
     private readonly relicRepository: Repository<Relic>,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
-  /**
-   * 监听历史事件，当严重等级 > 8 时触发遗迹生成
-   */
-  @OnEvent('history.event.occurred')
+  onModuleInit() {
+    this.logger.log('Relic Generator initialized - listening for high-severity events');
+  }
+
+  @OnEvent('historical.event.created')
   async handleHistoricalEvent(event: HistoricalEvent): Promise<void> {
-    this.logger.log(`Received historical event: ${event.name} (severity: ${event.severity})`);
+    this.logger.debug(`Received historical event: ${event.name} (severity: ${event.severity})`);
 
-    if (event.severity <= 8) {
-      this.logger.debug(`Event severity ${event.severity} <= 8, skipping relic generation`);
-      return;
-    }
-
-    try {
-      const relic = await this.generateRelic(event);
-      if (relic) {
-        this.logger.log(`Generated relic ${relic.id} (${relic.type}) at (${relic.coordinateX}, ${relic.coordinateY})`);
-      }
-    } catch (error) {
-      this.logger.error(`Failed to generate relic for event ${event.id}: ${error.message}`);
+    if (event.severity > this.severityThreshold) {
+      this.logger.log(
+        `Event severity ${event.severity} > threshold ${this.severityThreshold}, triggering relic generation`
+      );
+      await this.generateRelicFromEvent(event);
     }
   }
 
-  /**
-   * 根据历史事件生成遗迹
-   */
-  async generateRelic(event: HistoricalEvent): Promise<Relic | null> {
-    // 检查是否已存在关联此事件的遗迹
-    const existingRelic = await this.relicRepository.findOne({
-      where: { relatedEventId: event.id },
-    });
+  @OnEvent('universe.event')
+  async handleUniverseEvent(payload: any): Promise<void> {
+    const event = this.normalizeEvent(payload);
+    if (event && event.severity > this.severityThreshold) {
+      this.logger.log(
+        `Universe event "${event.name}" severity ${event.severity} exceeds threshold, generating relic`
+      );
+      await this.generateRelicFromEvent(event);
+    }
+  }
 
-    if (existingRelic) {
-      this.logger.warn(`Relic already exists for event ${event.id}`);
+  private normalizeEvent(payload: any): HistoricalEvent | null {
+    if (!payload) return null;
+
+    return {
+      id: payload.id || payload.event_id || crypto.randomUUID(),
+      name: payload.name || payload.event_name || payload.title || '未知事件',
+      description: payload.description || payload.desc,
+      severity: payload.severity || payload.level || payload.importance || 5,
+      x: payload.x || payload.coordinates?.x || 0,
+      y: payload.y || payload.coordinates?.y || 0,
+      z: payload.z || payload.coordinates?.z,
+      type: payload.type || payload.event_type,
+      timestamp: payload.timestamp || payload.created_at || new Date(),
+      involvedCivilians: payload.involved_civilians || payload.civilizations,
+    };
+  }
+
+  async generateRelicFromEvent(event: HistoricalEvent): Promise<Relic | null> {
+    try {
+      const existingRelic = await this.relicRepository.findOne({
+        where: { relatedEventId: event.id },
+      });
+
+      if (existingRelic) {
+        this.logger.debug(`Relic already exists for event ${event.id}`);
+        return existingRelic;
+      }
+
+      const relicType = this.determineRelicType(event);
+      const name = this.generateRelicName(relicType);
+      const bonuses = this.calculateBonuses(relicType, event.severity);
+      const defenseStrength = this.calculateDefenseStrength(event.severity);
+
+      const relic = this.relicRepository.create({
+        name,
+        type: relicType,
+        description: this.generateDescription(event, relicType),
+        x: event.x,
+        y: event.y,
+        z: event.z || 0,
+        relatedEventId: event.id,
+        relatedEventName: event.name,
+        relatedEventSeverity: event.severity,
+        ownerId: null,
+        ownerName: null,
+        status: RelicStatus.UNCLAIMED,
+        powerLevel: Math.floor(event.severity * 10),
+        bonuses,
+        defenseStrength,
+        claimedAt: null,
+        contestHistory: [],
+      });
+
+      const savedRelic = await this.relicRepository.save(relic);
+
+      this.logger.log(
+        `Generated relic "${name}" (${relicType}) at (${event.x}, ${event.y}) from event "${event.name}"`
+      );
+
+      this.eventEmitter.emit('relic.generated', {
+        relic: savedRelic,
+        sourceEvent: event,
+      } as RelicGeneratedEvent);
+
+      return savedRelic;
+    } catch (error) {
+      this.logger.error(`Failed to generate relic from event: ${error.message}`, error.stack);
       return null;
     }
-
-    // 确定遗迹类型
-    const relicType = this.determineRelicType(event);
-    const bonuses = this.relicBonuses.get(relicType)!;
-
-    // 根据事件严重程度调整加成
-    const severityMultiplier = 1 + (event.severity - 8) * 0.1;
-
-    // 创建遗迹实体
-    const relic = this.relicRepository.create({
-      type: relicType,
-      relatedEventId: event.id,
-      coordinateX: event.coordinateX,
-      coordinateY: event.coordinateY,
-      status: RelicStatus.UNCLAIMED,
-      productionBonus: Math.round(bonuses.production * severityMultiplier * 100) / 100,
-      militaryBonus: Math.round(bonuses.military * severityMultiplier * 100) / 100,
-      techBonus: Math.round(bonuses.tech * severityMultiplier * 100) / 100,
-      explorationBonus: Math.round(bonuses.exploration * severityMultiplier * 100) / 100,
-      defensePower: 100 + (event.severity - 8) * 50, // 严重程度越高，防御越强
-      eventName: event.name,
-      eventSeverity: event.severity,
-      eventDescription: event.description || '',
-      metadata: {
-        generatedAt: new Date().toISOString(),
-        eventType: event.type,
-        involvedCivilians: event.involvedCivilians || [],
-      },
-    });
-
-    return await this.relicRepository.save(relic);
   }
 
-  /**
-   * 根据事件类型确定遗迹类型
-   */
   private determineRelicType(event: HistoricalEvent): RelicType {
-    // 直接匹配
-    const mappedType = this.eventTypeToRelicType.get(event.type);
-    if (mappedType) {
-      return mappedType;
+    const eventType = (event.type || '').toLowerCase();
+    
+    for (const [key, type] of Object.entries(RELIC_TYPE_MAPPING)) {
+      if (key !== 'default' && eventType.includes(key)) {
+        return type;
+      }
     }
 
-    // 根据事件名称关键词推断
-    const nameLower = event.name.toLowerCase();
-    
-    if (nameLower.includes('war') || nameLower.includes('battle') || 
-        nameLower.includes('destruction') || nameLower.includes('fall')) {
-      return RelicType.WAR_GRAVEYARD;
-    }
-    
-    if (nameLower.includes('tech') || nameLower.includes('discovery') || 
-        nameLower.includes('knowledge') || nameLower.includes('research')) {
-      return RelicType.KNOWLEDGE_VAULT;
-    }
-    
-    if (nameLower.includes('stellar') || nameLower.includes('star') || 
-        nameLower.includes('nova') || nameLower.includes('collapse')) {
-      return RelicType.STELLAR_RUINS;
-    }
-    
-    if (nameLower.includes('gate') || nameLower.includes('portal') || 
-        nameLower.includes('dimension')) {
-      return RelicType.ANCIENT_GATE;
-    }
-    
-    if (nameLower.includes('industry') || nameLower.includes('production') || 
-        nameLower.includes('factory')) {
-      return RelicType.PIONEER_FACTORY;
+    if (event.name) {
+      const nameLower = event.name.toLowerCase();
+      for (const [key, type] of Object.entries(RELIC_TYPE_MAPPING)) {
+        if (key !== 'default' && nameLower.includes(key)) {
+          return type;
+        }
+      }
     }
 
-    // 默认：根据严重程度随机选择
-    const types = Object.values(RelicType);
-    const index = event.severity % types.length;
-    return types[index];
+    return RELIC_TYPE_MAPPING.default;
   }
 
-  /**
-   * 手动触发遗迹生成（用于测试或管理员操作）
-   */
-  async forceGenerateRelic(event: HistoricalEvent): Promise<Relic> {
-    return await this.generateRelic(event) as Relic;
+  private generateRelicName(type: RelicType): string {
+    const names = RELIC_NAMES[type];
+    return names[Math.floor(Math.random() * names.length)];
   }
 
-  /**
-   * 获取指定坐标附近的遗迹
-   */
-  async getRelicsNearby(x: number, y: number, radius: number): Promise<Relic[]> {
-    return await this.relicRepository
+  private generateDescription(event: HistoricalEvent, type: RelicType): string {
+    const typeDescriptions: Record<RelicType, string> = {
+      [RelicType.PIONEER_FACTORY]: '这座古老的工业设施见证了文明的兴衰，仍蕴含着强大的生产能力。',
+      [RelicType.WAR_GRAVEYARD]: '战争的硝烟已散去，但这里仍残留着无数文明的记忆与军事遗产。',
+      [RelicType.KNOWLEDGE_VAULT]: '远古文明的知识宝库，蕴含着超越时代的智慧结晶。',
+      [RelicType.ANCIENT_OBSERVATORY]: '这座观测站曾凝视宇宙深处，记录了无数星系的秘密。',
+      [RelicType.CRYSTAL_NEXUS]: '能量核心仍在运转，源源不断地输出着珍贵的能源。',
+    };
+
+    return `${typeDescriptions[type]} 源于事件：${event.name}`;
+  }
+
+  private calculateBonuses(type: RelicType, severity: number): Relic['bonuses'] {
+    const baseBonus = Math.min(severity * 5, 50);
+
+    const bonusMap: Record<RelicType, Relic['bonuses']> = {
+      [RelicType.PIONEER_FACTORY]: {
+        production: baseBonus,
+        military: baseBonus * 0.2,
+      },
+      [RelicType.WAR_GRAVEYARD]: {
+        military: baseBonus,
+        production: baseBonus * 0.1,
+      },
+      [RelicType.KNOWLEDGE_VAULT]: {
+        research: baseBonus,
+        exploration: baseBonus * 0.3,
+      },
+      [RelicType.ANCIENT_OBSERVATORY]: {
+        exploration: baseBonus,
+        research: baseBonus * 0.2,
+      },
+      [RelicType.CRYSTAL_NEXUS]: {
+        energy: baseBonus,
+        production: baseBonus * 0.2,
+      },
+    };
+
+    return bonusMap[type];
+  }
+
+  private calculateDefenseStrength(severity: number): number {
+    return Math.floor(severity * 15 + Math.random() * 50);
+  }
+
+  async generateRelicManually(
+    x: number,
+    y: number,
+    type: RelicType,
+    eventId: string,
+    eventName: string,
+    severity: number = 10,
+    z?: number,
+  ): Promise<Relic> {
+    const event: HistoricalEvent = {
+      id: eventId,
+      name: eventName,
+      severity,
+      x,
+      y,
+      z: z || 0,
+      timestamp: new Date(),
+    };
+
+    const relic = await this.generateRelicFromEvent(event);
+    if (!relic) {
+      throw new Error('Failed to generate relic');
+    }
+    return relic;
+  }
+
+  async getRelicsInArea(x: number, y: number, radius: number): Promise<Relic[]> {
+    return this.relicRepository
       .createQueryBuilder('relic')
-      .where(
-        'POWER(relic.coordinate_x - :x, 2) + POWER(relic.coordinate_y - :y, 2) <= POWER(:radius, 2)',
+      .where('relic.status != :destroyed', { destroyed: RelicStatus.DESTROYED })
+      .andWhere(
+        'SQRT(POWER(relic.x - :x, 2) + POWER(relic.y - :y, 2)) <= :radius',
         { x, y, radius }
       )
-      .andWhere('relic.status != :destroyed', { destroyed: RelicStatus.DESTROYED })
       .getMany();
   }
 
-  /**
-   * 获取所有未占领的遗迹
-   */
-  async getUnclaimedRelics(): Promise<Relic[]> {
-    return await this.relicRepository.find({
+  async getAllActiveRelics(): Promise<Relic[]> {
+    return this.relicRepository.find({
       where: { status: RelicStatus.UNCLAIMED },
+      order: { createdAt: 'DESC' },
     });
   }
 
-  /**
-   * 获取文明拥有的遗迹
-   */
   async getRelicsByOwner(ownerId: string): Promise<Relic[]> {
-    return await this.relicRepository.find({
+    return this.relicRepository.find({
       where: { ownerId, status: RelicStatus.CLAIMED },
+      order: { claimedAt: 'DESC' },
     });
   }
 }

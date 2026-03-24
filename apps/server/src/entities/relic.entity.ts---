@@ -1,11 +1,11 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, Index } from 'typeorm';
+import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn, Index } from 'typeorm';
 
 export enum RelicType {
   PIONEER_FACTORY = 'pioneer_factory',    // 先驱者工厂 - 产能加成
   WAR_GRAVEYARD = 'war_graveyard',        // 战争坟场 - 军事加成
   KNOWLEDGE_VAULT = 'knowledge_vault',    // 知识库 - 科技加成
-  STELLAR_RUINS = 'stellar_ruins',        // 恒星遗迹 - 综合加成
-  ANCIENT_GATE = 'ancient_gate',          // 远古星门 - 探索加成
+  ANCIENT_OBSERVATORY = 'ancient_observatory', // 远古观测站 - 探索加成
+  CRYSTAL_NEXUS = 'crystal_nexus',        // 水晶枢纽 - 能源加成
 }
 
 export enum RelicStatus {
@@ -16,12 +16,12 @@ export enum RelicStatus {
 }
 
 @Entity('relics')
-@Index(['coordinateX', 'coordinateY'])
-@Index(['ownerId'])
-@Index(['relatedEventId'])
 export class Relic {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  @Column({ type: 'varchar', length: 100 })
+  name: string;
 
   @Column({
     type: 'enum',
@@ -30,19 +30,35 @@ export class Relic {
   })
   type: RelicType;
 
-  @Column({ name: 'related_event_id', type: 'varchar', nullable: true })
+  @Column({ type: 'text', nullable: true })
+  description: string;
+
+  @Column({ type: 'decimal', precision: 10, scale: 4 })
+  @Index()
+  x: number;
+
+  @Column({ type: 'decimal', precision: 10, scale: 4 })
+  @Index()
+  y: number;
+
+  @Column({ type: 'decimal', precision: 10, scale: 4, nullable: true })
+  z: number;
+
+  @Column({ type: 'uuid', name: 'related_event_id' })
+  @Index()
   relatedEventId: string;
 
-  @Column({ name: 'coordinate_x', type: 'float' })
-  coordinateX: number;
+  @Column({ type: 'varchar', length: 255, name: 'related_event_name' })
+  relatedEventName: string;
 
-  @Column({ name: 'coordinate_y', type: 'float' })
-  coordinateY: number;
+  @Column({ type: 'int', name: 'related_event_severity' })
+  relatedEventSeverity: number;
 
-  @Column({ name: 'owner_id', type: 'varchar', nullable: true })
+  @Column({ type: 'uuid', name: 'owner_id', nullable: true })
+  @Index()
   ownerId: string | null;
 
-  @Column({ name: 'owner_name', type: 'varchar', nullable: true })
+  @Column({ type: 'varchar', length: 100, name: 'owner_name', nullable: true })
   ownerName: string | null;
 
   @Column({
@@ -52,32 +68,32 @@ export class Relic {
   })
   status: RelicStatus;
 
-  @Column({ name: 'production_bonus', type: 'float', default: 0 })
-  productionBonus: number;
-
-  @Column({ name: 'military_bonus', type: 'float', default: 0 })
-  militaryBonus: number;
-
-  @Column({ name: 'tech_bonus', type: 'float', default: 0 })
-  techBonus: number;
-
-  @Column({ name: 'exploration_bonus', type: 'float', default: 0 })
-  explorationBonus: number;
-
-  @Column({ name: 'defense_power', type: 'int', default: 100 })
-  defensePower: number;
-
-  @Column({ name: 'event_name', type: 'varchar', nullable: true })
-  eventName: string;
-
-  @Column({ name: 'event_severity', type: 'int', nullable: true })
-  eventSeverity: number;
-
-  @Column({ name: 'event_description', type: 'text', nullable: true })
-  eventDescription: string;
+  @Column({ type: 'int', default: 0, name: 'power_level' })
+  powerLevel: number;
 
   @Column({ type: 'jsonb', nullable: true })
-  metadata: Record<string, any>;
+  bonuses: {
+    production?: number;    // 产能加成百分比
+    military?: number;      // 军事加成百分比
+    research?: number;      // 科研加成百分比
+    exploration?: number;   // 探索加成百分比
+    energy?: number;        // 能源加成百分比
+  };
+
+  @Column({ type: 'int', default: 100, name: 'defense_strength' })
+  defenseStrength: number;
+
+  @Column({ type: 'timestamp', name: 'claimed_at', nullable: true })
+  claimedAt: Date | null;
+
+  @Column({ type: 'jsonb', nullable: true, name: 'contest_history' })
+  contestHistory: Array<{
+    attackerId: string;
+    attackerName: string;
+    timestamp: Date;
+    result: 'success' | 'failed';
+    losses: number;
+  }>;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

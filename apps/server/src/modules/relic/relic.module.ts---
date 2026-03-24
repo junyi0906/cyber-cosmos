@@ -1,0 +1,16 @@
+import { Module, Global } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { Relic } from '../../entities/relic.entity';
+import { RelicGenerator } from './relic.generator';
+import { EventEmitterModule } from '@nestjs/event-emitter';
+
+@Global()
+@Module({
+  imports: [
+    TypeOrmModule.forFeature([Relic]),
+    EventEmitterModule,
+  ],
+  providers: [RelicGenerator],
+  exports: [RelicGenerator, TypeOrmModule],
+})
+export class RelicModule {}
