@@ -306,9 +306,10 @@
       "depends_on": [
         "feat-013"
       ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "需要与现有 CivilizationModule 集成"
+      "passes": true,
+      "last_attempt": "2026-03-24T23:36:21.873783",
+      "notes": "需要与现有 CivilizationModule 集成",
+      "retry_count": 0
     },
     {
       "id": "feat-015",
