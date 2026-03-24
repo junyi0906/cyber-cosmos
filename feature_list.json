@@ -453,9 +453,10 @@
         "feat-015",
         "feat-017"
       ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "依赖 WebSocket 和星图组件"
+      "passes": true,
+      "last_attempt": "2026-03-24T19:15:44.035625",
+      "notes": "依赖 WebSocket 和星图组件",
+      "retry_count": 0
     },
     {
       "id": "feat-020",
