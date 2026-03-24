@@ -328,9 +328,10 @@
       "depends_on": [
         "feat-001"
       ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "依赖遗迹表结构"
+      "passes": true,
+      "last_attempt": "2026-03-25T00:27:04.981349",
+      "notes": "依赖遗迹表结构",
+      "retry_count": 0
     },
     {
       "id": "feat-015",
