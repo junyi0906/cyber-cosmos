@@ -1,0 +1,53 @@
+import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
+import { RelicType, RelicEffect } from '../interfaces/relic.interface';
+import { MajorEvent } from '../../events/interfaces/event.interface';
+
+@Entity('relics')
+export class RelicEntity {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ type: 'varchar', length: 100 })
+  name: string;
+
+  @Column({
+    type: 'enum',
+    enum: RelicType,
+    default: RelicType.RUINS
+  })
+  type: RelicType;
+
+  @Column({ type: 'float' })
+  coordinateX: number;
+
+  @Column({ type: 'float' })
+  coordinateY: number;
+
+  @Column({ type: 'float' })
+  coordinateZ: number;
+
+  @Column({ type: 'jsonb' })
+  effects: RelicEffect[];
+
+  @Column({ type: 'uuid' })
+  sourceEventId: string;
+
+  @Column({ type: 'jsonb', nullable: true })
+  sourceEventData: MajorEvent;
+
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @Column({ type: 'simple-array', default: [] })
+  discoveredBy: string[];
+
+  @Column({
+    type: 'enum',
+    enum: ['ACTIVE', 'DEPLETED', 'DORMANT'],
+    default: 'ACTIVE'
+  })
+  status: 'ACTIVE' | 'DEPLETED' | 'DORMANT';
+
+  @Column({ type: 'int', default: 0 })
+  explorationCount: number;
+}

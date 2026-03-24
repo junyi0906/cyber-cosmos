@@ -1,0 +1,55 @@
+import { MajorEvent } from '../../events/interfaces/event.interface';
+
+export enum RelicType {
+  RUINS = 'RUINS',           // 废墟
+  ANOMALY = 'ANOMALY',       // 异常
+  MONUMENT = 'MONUMENT',     // 纪念碑
+  BATTLEFIELD = 'BATTLEFIELD' // 战场
+}
+
+export enum RelicEffectType {
+  RESEARCH_BONUS = 'RESEARCH_BONUS',     // 科研加成
+  RESOURCE_BONUS = 'RESOURCE_BONUS',     // 资源加成
+  MILITARY_BONUS = 'MILITARY_BONUS',     // 军事加成
+  CULTURE_BONUS = 'CULTURE_BONUS',       // 文化加成
+  LOST_TECHNOLOGY = 'LOST_TECHNOLOGY',   // 失落科技
+  DANGER_ZONE = 'DANGER_ZONE',           // 危险区域
+  MYSTERY = 'MYSTERY'                    // 神秘效果
+}
+
+export interface RelicEffect {
+  type: RelicEffectType;
+  value: number;
+  duration: number; // -1 表示永久
+}
+
+export interface Relic {
+  id: string;
+  name: string;
+  type: RelicType;
+  coordinates: {
+    x: number;
+    y: number;
+    z: number;
+  };
+  effects: RelicEffect[];
+  sourceEvent: MajorEvent;
+  createdAt: Date;
+  discoveredBy: string[];
+  status: 'ACTIVE' | 'DEPLETED' | 'DORMANT';
+}
+
+export interface RelicNameParts {
+  prefix: string;
+  core: string;
+  suffix: string;
+}
+
+export interface RelicGenerationConfig {
+  weightThreshold: number;
+  nameTemplates: {
+    prefixes: Record<RelicType, string[]>;
+    cores: Record<RelicType, string[]>;
+    suffixes: Record<RelicType, string[]>;
+  };
+}

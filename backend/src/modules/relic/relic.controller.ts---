@@ -1,0 +1,26 @@
+import { Controller, Get, Param, Post, Body } from '@nestjs/common';
+import { RelicGenerator } from './services/relic.generator';
+import { RelicEntity } from './entities/relic.entity';
+
+@Controller('relics')
+export class RelicController {
+  constructor(private readonly relicGenerator: RelicGenerator) {}
+
+  @Get()
+  async getAllRelics(): Promise<RelicEntity[]> {
+    return this.relicGenerator.getAllRelics();
+  }
+
+  @Get(':id')
+  async getRelicById(@Param('id') id: string): Promise<RelicEntity | null> {
+    return this.relicGenerator.getRelicById(id);
+  }
+
+  @Post(':id/explore')
+  async exploreRelic(
+    @Param('id') id: string,
+    @Body() body: { civilizationId: string },
+  ): Promise<{ success: boolean; rewards?: any[]; message: string }> {
+    return this.relicGenerator.exploreRelic(id, body.civilizationId);
+  }
+}

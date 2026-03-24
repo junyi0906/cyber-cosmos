@@ -1,0 +1,252 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { OnEvent } from '@nestjs/event-emitter';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { v4 as uuidv4 } from 'uuid';
+import { 
+  Relic, 
+  RelicType, 
+  RelicEffect, 
+  RelicEffectType,
+  RelicNameParts,
+  RelicGenerationConfig 
+} from '../interfaces/relic.interface';
+import { RelicEntity } from '../entities/relic.entity';
+import { MajorEvent, EventType } from '../../events/interfaces/event.interface';
+
+@Injectable()
+export class RelicGenerator {
+  private readonly logger = new Logger(RelicGenerator.name);
+  private readonly config: RelicGenerationConfig = {
+    weightThreshold: 80,
+    nameTemplates: {
+      prefixes: {
+        [RelicType.RUINS]: ['破碎的', '荒芜的', '沉寂的', '被遗忘的', '残破的', '废弃的'],
+        [RelicType.ANOMALY]: ['扭曲的', '闪烁的', '不稳定的', '神秘的', '异常的', '虚空的'],
+        [RelicType.MONUMENT]: ['永恒的', '庄严的', '宏伟的', '神圣的', '不朽的', '传奇的'],
+        [RelicType.BATTLEFIELD]: ['血腥的', '焦黑的', '惨烈的', '悲壮的', '硝烟弥漫的', '毁灭的']
+      },
+      cores: {
+        [RelicType.RUINS]: ['星际之门', '戴森球碎片', '量子计算机', '生态穹顶', '殖民基地', '能源核心'],
+        [RelicType.ANOMALY]: ['时空裂隙', '暗物质漩涡', '量子奇点', '维度裂缝', '能量风暴', '虚空之眼'],
+        [RelicType.MONUMENT]: ['先驱者纪念碑', '文明方尖碑', '和平圣殿', '知识图书馆', '英雄雕像', '联盟大厅'],
+        [RelicType.BATTLEFIELD]: ['泰坦残骸', '舰队墓地', '战争堡垒', '轨道炮台', '指挥中心', '护盾发生器']
+      },
+      suffixes: {
+        [RelicType.RUINS]: ['残骸', '遗址', '废墟', '遗迹', '遗骸', '痕迹'],
+        [RelicType.ANOMALY]: ['现象', '区域', '场域', '波动', '异常点', '裂痕'],
+        [RelicType.MONUMENT]: ['纪念碑', '圣地', '遗产', '见证', '丰碑', '象征'],
+        [RelicType.BATTLEFIELD]: ['战场', '遗址', '墓地', '废墟', '伤痕', '记忆']
+      }
+    }
+  };
+
+  constructor(
+    @InjectRepository(RelicEntity)
+    private readonly relicRepository: Repository<RelicEntity>,
+  ) {}
+
+  /**
+   * 判断事件权重是否超过阈值
+   */
+  shouldGenerateRelic(event: MajorEvent): boolean {
+    const weight = event.weight ?? this.calculateEventWeight(event);
+    return weight >= this.config.weightThreshold;
+  }
+
+  /**
+   * 计算事件权重
+   */
+  private calculateEventWeight(event: MajorEvent): number {
+    const eventTypeWeights: Record<EventType, number> = {
+      [EventType.CIVILIZATION_DESTROYED]: 100,
+      [EventType.TITAN_WAR]: 95,
+      [EventType.TECH_SINGULARITY]: 90,
+      [EventType.SUPERNOVA]: 85,
+      [EventType.EMPIRE_COLLAPSE]: 80,
+      [EventType.FIRST_CONTACT]: 60,
+      [EventType.ALLIANCE_FORMATION]: 50,
+      [EventType.RESOURCE_CRISIS]: 40,
+      [EventType.CULTURAL_REVOLUTION]: 35,
+      [EventType.TRADE_ROUTE_ESTABLISHED]: 30,
+    };
+
+    return eventTypeWeights[event.type] ?? 50;
+  }
+
+  /**
+   * 根据事件类型确定遗迹类型
+   */
+  private determineRelicType(event: MajorEvent): RelicType {
+    const typeMapping: Partial<Record<EventType, RelicType>> = {
+      [EventType.CIVILIZATION_DESTROYED]: RelicType.RUINS,
+      [EventType.EMPIRE_COLLAPSE]: RelicType.RUINS,
+      [EventType.SUPERNOVA]: RelicType.ANOMALY,
+      [EventType.TECH_SINGULARITY]: RelicType.ANOMALY,
+      [EventType.TITAN_WAR]: RelicType.BATTLEFIELD,
+      [EventType.ALLIANCE_FORMATION]: RelicType.MONUMENT,
+      [EventType.FIRST_CONTACT]: RelicType.MONUMENT,
+    };
+
+    return typeMapping[event.type] ?? RelicType.RUINS;
+  }
+
+  /**
+   * 生成遗迹名称
+   */
+  generateRelicName(relicType: RelicType): string {
+    const templates = this.config.nameTemplates;
+    const prefix = this.randomChoice(templates.prefixes[relicType]);
+    const core = this.randomChoice(templates.cores[relicType]);
+    const suffix = this.randomChoice(templates.suffixes[relicType]);
+
+    return `${prefix}·${core}·${suffix}`;
+  }
+
+  /**
+   * 生成遗迹效果
+   */
+  private generateEffects(relicType: RelicType, event: MajorEvent): RelicEffect[] {
+    const effectMappings: Record<RelicType, RelicEffect[]> = {
+      [RelicType.RUINS]: [
+        { type: RelicEffectType.LOST_TECHNOLOGY, value: Math.floor(Math.random() * 500) + 100, duration: 1 },
+        { type: RelicEffectType.RESOURCE_BONUS, value: Math.floor(Math.random() * 20) + 5, duration: -1 },
+      ],
+      [RelicType.ANOMALY]: [
+        { type: RelicEffectType.RESEARCH_BONUS, value: Math.floor(Math.random() * 30) + 10, duration: -1 },
+        { type: RelicEffectType.DANGER_ZONE, value: Math.floor(Math.random() * 15) + 5, duration: -1 },
+      ],
+      [RelicType.MONUMENT]: [
+        { type: RelicEffectType.CULTURE_BONUS, value: Math.floor(Math.random() * 25) + 10, duration: -1 },
+        { type: RelicEffectType.RESEARCH_BONUS, value: Math.floor(Math.random() * 15) + 5, duration: -1 },
+      ],
+      [RelicType.BATTLEFIELD]: [
+        { type: RelicEffectType.MILITARY_BONUS, value: Math.floor(Math.random() * 20) + 5, duration: -1 },
+        { type: RelicEffectType.MYSTERY, value: Math.floor(Math.random() * 100) + 50, duration: 1 },
+      ],
+    };
+
+    return effectMappings[relicType];
+  }
+
+  /**
+   * 生成遗迹坐标（基于事件坐标添加随机偏移）
+   */
+  private generateCoordinates(event: MajorEvent): { x: number; y: number; z: number } {
+    const baseCoords = event.coordinates ?? { x: 0, y: 0, z: 0 };
+    const offset = () => (Math.random() - 0.5) * 10;
+
+    return {
+      x: baseCoords.x + offset(),
+      y: baseCoords.y + offset(),
+      z: baseCoords.z + offset(),
+    };
+  }
+
+  /**
+   * 根据事件生成遗迹
+   */
+  async generateRelic(event: MajorEvent): Promise<RelicEntity | null> {
+    if (!this.shouldGenerateRelic(event)) {
+      this.logger.debug(`Event ${event.id} weight below threshold, skipping relic generation`);
+      return null;
+    }
+
+    const relicType = this.determineRelicType(event);
+    const name = this.generateRelicName(relicType);
+    const coordinates = this.generateCoordinates(event);
+    const effects = this.generateEffects(relicType, event);
+
+    const relic = this.relicRepository.create({
+      id: uuidv4(),
+      name,
+      type: relicType,
+      coordinateX: coordinates.x,
+      coordinateY: coordinates.y,
+      coordinateZ: coordinates.z,
+      effects,
+      sourceEventId: event.id,
+      sourceEventData: event,
+      createdAt: new Date(),
+      discoveredBy: [],
+      status: 'ACTIVE',
+      explorationCount: 0,
+    });
+
+    const savedRelic = await this.relicRepository.save(relic);
+    this.logger.log(`Generated relic: ${name} at (${coordinates.x.toFixed(2)}, ${coordinates.y.toFixed(2)}, ${coordinates.z.toFixed(2)})`);
+
+    return savedRelic;
+  }
+
+  /**
+   * 监听重大事件
+   */
+  @OnEvent('majorEvent')
+  async handleMajorEvent(event: MajorEvent): Promise<void> {
+    this.logger.log(`Received major event: ${event.type} (${event.id})`);
+    await this.generateRelic(event);
+  }
+
+  /**
+   * 工具方法：随机选择数组元素
+   */
+  private randomChoice<T>(array: T[]): T {
+    return array[Math.floor(Math.random() * array.length)];
+  }
+
+  /**
+   * 获取所有遗迹
+   */
+  async getAllRelics(): Promise<RelicEntity[]> {
+    return this.relicRepository.find({
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  /**
+   * 根据ID获取遗迹
+   */
+  async getRelicById(id: string): Promise<RelicEntity | null> {
+    return this.relicRepository.findOne({ where: { id } });
+  }
+
+  /**
+   * 探索遗迹
+   */
+  async exploreRelic(relicId: string, civilizationId: string): Promise<{ success: boolean; rewards?: RelicEffect[]; message: string }> {
+    const relic = await this.getRelicById(relicId);
+    
+    if (!relic) {
+      return { success: false, message: '遗迹不存在' };
+    }
+
+    if (relic.status === 'DEPLETED') {
+      return { success: false, message: '遗迹已被耗尽' };
+    }
+
+    // 记录发现者
+    if (!relic.discoveredBy.includes(civilizationId)) {
+      relic.discoveredBy.push(civilizationId);
+    }
+
+    relic.explorationCount += 1;
+
+    // 检查是否耗尽一次性效果
+    const oneTimeEffects = relic.effects.filter(e => e.duration === 1);
+    if (oneTimeEffects.length > 0 && relic.explorationCount >= oneTimeEffects.length) {
+      relic.effects = relic.effects.filter(e => e.duration !== 1);
+      if (relic.effects.length === 0) {
+        relic.status = 'DEPLETED';
+      }
+    }
+
+    await this.relicRepository.save(relic);
+
+    return {
+      success: true,
+      rewards: oneTimeEffects,
+      message: `成功探索遗迹「${relic.name}」`,
+    };
+  }
+}

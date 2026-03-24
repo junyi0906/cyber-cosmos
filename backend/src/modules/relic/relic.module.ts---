@@ -1,0 +1,17 @@
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { EventEmitterModule } from '@nestjs/event-emitter';
+import { RelicGenerator } from './services/relic.generator';
+import { RelicEntity } from './entities/relic.entity';
+import { EventsModule } from '../events/events.module';
+
+@Module({
+  imports: [
+    TypeOrmModule.forFeature([RelicEntity]),
+    EventsModule,
+    EventEmitterModule,
+  ],
+  providers: [RelicGenerator],
+  exports: [RelicGenerator],
+})
+export class RelicModule {}
