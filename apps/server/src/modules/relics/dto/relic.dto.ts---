@@ -1,0 +1,102 @@
+import { IsString, IsOptional, IsNumber, IsEnum, IsObject, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+import { RelicType, RelicStatus, Coordinate } from '../entities/relic.entity';
+
+export class CoordinateDto implements Coordinate {
+  @IsNumber()
+  x: number;
+
+  @IsNumber()
+  y: number;
+
+  @IsNumber()
+  @IsOptional()
+  z?: number;
+}
+
+export class DiscoverRelicDto {
+  @IsString()
+  civId: string;
+
+  @ValidateNested()
+  @Type(() => CoordinateDto)
+  coordinates: CoordinateDto;
+}
+
+export class ResearchRelicDto {
+  @IsString()
+  relicId: string;
+
+  @IsString()
+  civId: string;
+}
+
+export class ContestRelicDto {
+  @IsString()
+  relicId: string;
+
+  @IsString()
+  attackerCivId: string;
+}
+
+export class CreateRelicDto {
+  @IsString()
+  name: string;
+
+  @IsString()
+  description: string;
+
+  @ValidateNested()
+  @Type(() => CoordinateDto)
+  coordinates: CoordinateDto;
+
+  @IsEnum(RelicType)
+  @IsOptional()
+  type?: RelicType;
+
+  @IsObject()
+  @IsOptional()
+  resources?: {
+    ore?: number;
+    energy?: number;
+    techPoints?: number;
+  };
+
+  @IsObject()
+  @IsOptional()
+  historicalEvent?: {
+    eventType: string;
+    eventId: string;
+    timestamp: Date;
+  };
+}
+
+export class RelicResponseDto {
+  id: string;
+  name: string;
+  description: string;
+  coordinates: Coordinate;
+  type: RelicType;
+  status: RelicStatus;
+  resources?: {
+    ore?: number;
+    energy?: number;
+    techPoints?: number;
+  };
+  techFragments?: {
+    techId: string;
+    progress: number;
+  }[];
+  discoveredBy?: string;
+  discoveredAt?: Date;
+  ownerCivId?: string;
+  researchProgress?: number;
+  researchDuration?: number;
+  historicalEvent?: {
+    eventType: string;
+    eventId: string;
+    timestamp: Date;
+  };
+  createdAt: Date;
+  updatedAt: Date;
+}

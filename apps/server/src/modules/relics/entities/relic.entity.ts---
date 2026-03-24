@@ -1,20 +1,25 @@
-import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, Point } from 'typeorm';
+import { Entity, Column, PrimaryGeneratedColumn, ManyToOne, JoinColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
-export enum RelicType {
-  RUINS = 'ruins',
-  ARTIFACT = 'artifact',
-  DATA_CACHE = 'data_cache',
-  WRECKAGE = 'wreckage',
-  MONOLITH = 'monolith',
-  BEACON = 'beacon',
+export interface Coordinate {
+  x: number;
+  y: number;
+  z?: number;
 }
 
 export enum RelicStatus {
   UNDISCOVERED = 'undiscovered',
   DISCOVERED = 'discovered',
-  EXPLORED = 'explored',
+  RESEARCHING = 'researching',
+  RESEARCHED = 'researched',
   CONTESTED = 'contested',
-  EXHAUSTED = 'exhausted',
+}
+
+export enum RelicType {
+  RUINS = 'ruins',
+  WRECKAGE = 'wreckage',
+  ANOMALY = 'anomaly',
+  ARTIFACT = 'artifact',
+  MONUMENT = 'monument',
 }
 
 @Entity('relics')
@@ -22,8 +27,14 @@ export class Relic {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'geometry', spatialFeatureType: 'Point', srid: 4326 })
-  coordinates: Point;
+  @Column()
+  name: string;
+
+  @Column({ type: 'text' })
+  description: string;
+
+  @Column({ type: 'jsonb' })
+  coordinates: Coordinate;
 
   @Column({
     type: 'enum',
@@ -31,15 +42,6 @@ export class Relic {
     default: RelicType.RUINS,
   })
   type: RelicType;
-
-  @Column({ type: 'varchar', length: 500 })
-  name: string;
-
-  @Column({ type: 'text' })
-  description: string;
-
-  @Column({ type: 'uuid' })
-  originEventId: string;
 
   @Column({
     type: 'enum',
@@ -61,12 +63,37 @@ export class Relic {
     progress: number;
   }[];
 
-  @Column({ type: 'uuid', nullable: true })
+  @Column({ nullable: true })
   discoveredBy: string;
 
   @Column({ type: 'timestamp', nullable: true })
   discoveredAt: Date;
 
+  @Column({ nullable: true })
+  ownerCivId: string;
+
+  @Column({ type: 'timestamp', nullable: true })
+  researchStartTime: Date;
+
+  @Column({ type: 'int', default: 0 })
+  researchProgress: number;
+
+  @Column({ type: 'int', default: 100 })
+  researchDuration: number;
+
+  @Column({ type: 'jsonb', nullable: true })
+  historicalEvent: {
+    eventType: string;
+    eventId: string;
+    timestamp: Date;
+  };
+
+  @Column({ type: 'jsonb', nullable: true })
+  contestingCivs: string[];
+
   @CreateDateColumn()
   createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
 }
