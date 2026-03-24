@@ -1,0 +1,123 @@
+import { Entity, Column, PrimaryColumn, CreateDateColumn, UpdateDateColumn, VersionColumn, Index } from 'typeorm';
+import { ResourceType, TradeEventType, RouteStatus, WeatherType } from '../interfaces/trade.interface';
+
+@Entity('trade_records')
+export class TradeRecord {
+  @PrimaryColumn('uuid')
+  id: string;
+
+  @Column()
+  @Index()
+  sourceCivilizationId: string;
+
+  @Column()
+  @Index()
+  targetCivilizationId: string;
+
+  @Column('jsonb')
+  resources: { type: ResourceType; amount: number }[];
+
+  @Column()
+  routeId: string;
+
+  @Column({
+    type: 'enum',
+    enum: ['pending', 'processing', 'completed', 'failed'],
+    default: 'pending'
+  })
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+
+  @Column('jsonb', { nullable: true })
+  events: { type: TradeEventType; description: string; impact?: any }[];
+
+  @Column('jsonb', { nullable: true })
+  result: { success: boolean; transferredResources: any } | null;
+
+  @Column({ nullable: true })
+  errorMessage: string;
+
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
+}
+
+@Entity('civilization_resources')
+export class CivilizationResource {
+  @PrimaryColumn()
+  civilizationId: string;
+
+  @Column({ type: 'decimal', precision: 20, scale: 4, default: 0 })
+  ore: number;
+
+  @Column({ type: 'decimal', precision: 20, scale: 4, default: 0 })
+  energy: number;
+
+  @Column({ type: 'decimal', precision: 20, scale: 4, default: 0 })
+  techPoints: number;
+
+  @Column({ type: 'decimal', precision: 20, scale: 4, default: 0 })
+  credits: number;
+
+  @VersionColumn()
+  version: number;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
+}
+
+@Entity('trade_routes')
+export class TradeRoute {
+  @PrimaryColumn('uuid')
+  id: string;
+
+  @Column()
+  @Index()
+  sourceId: string;
+
+  @Column()
+  @Index()
+  targetId: string;
+
+  @Column({ type: 'decimal', precision: 10, scale: 2 })
+  distance: number;
+
+  @Column({ type: 'decimal', precision: 5, scale: 2, default: 1.0 })
+  efficiency: number;
+
+  @Column({
+    type: 'enum',
+    enum: RouteStatus,
+    default: RouteStatus.ACTIVE
+  })
+  status: RouteStatus;
+
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
+}
+
+@Entity('universe_weather')
+export class UniverseWeather {
+  @PrimaryColumn({ default: 'current' })
+  id: string;
+
+  @Column({
+    type: 'enum',
+    enum: WeatherType,
+    default: WeatherType.CALM
+  })
+  current: WeatherType;
+
+  @Column({ default: 100 })
+  duration: number;
+
+  @Column({ default: 0 })
+  cycleCount: number;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
+}

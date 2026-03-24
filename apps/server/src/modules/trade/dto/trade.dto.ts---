@@ -1,0 +1,61 @@
+import { IsString, IsNumber, IsArray, IsEnum, IsPositive, ValidateNested, Min } from 'class-validator';
+import { Type } from 'class-transformer';
+import { ResourceType } from '../interfaces/trade.interface';
+
+export class TradeResourceDto {
+  @IsEnum(ResourceType)
+  type: ResourceType;
+
+  @IsNumber()
+  @IsPositive()
+  amount: number;
+}
+
+export class CreateTradeDto {
+  @IsString()
+  sourceCivilizationId: string;
+
+  @IsString()
+  targetCivilizationId: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => TradeResourceDto)
+  resources: TradeResourceDto[];
+
+  @IsString()
+  routeId: string;
+}
+
+export class TradeQueryDto {
+  @IsString()
+  tradeId?: string;
+
+  @IsString()
+  civilizationId?: string;
+
+  @IsNumber()
+  @Min(1)
+  limit?: number;
+
+  @IsNumber()
+  @Min(0)
+  offset?: number;
+}
+
+export class TradeResultDto {
+  success: boolean;
+  tradeId: string;
+  sourceId: string;
+  targetId: string;
+  resourcesTransferred: TradeResourceDto[];
+  events: {
+    type: string;
+    description: string;
+    impact?: {
+      resourceLoss?: Record<string, number>;
+      resourceGain?: Record<string, number>;
+    };
+  }[];
+  timestamp: Date;
+}
