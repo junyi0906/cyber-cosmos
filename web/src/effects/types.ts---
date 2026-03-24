@@ -1,0 +1,34 @@
+export interface EffectConfig {
+  id: string;
+  type: EffectType;
+  position: { x: number; y: number };
+  duration: number;
+  intensity: number;
+  color?: string;
+  onComplete?: () => void;
+}
+
+export type EffectType = 'supernova' | 'blackhole' | 'explosion' | 'wave';
+
+export interface EffectRenderer {
+  init(canvas: HTMLCanvasElement): void;
+  render(ctx: CanvasRenderingContext2D, progress: number): void;
+  destroy(): void;
+}
+
+export interface CosmicEvent {
+  id: string;
+  type: string;
+  subtype?: string;
+  position: { x: number; y: number };
+  timestamp: number;
+  data?: Record<string, unknown>;
+}
+
+export interface EffectQueueItem {
+  id: string;
+  effect: EffectRenderer;
+  config: EffectConfig;
+  startTime: number;
+  isActive: boolean;
+}
