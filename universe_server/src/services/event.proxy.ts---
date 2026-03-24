@@ -3,273 +3,171 @@ import { EventEmitter } from 'events';
 export interface PythonEvent {
   id: string;
   type: string;
-  category: 'macro' | 'micro' | 'diplomacy' | 'narrative';
   tick: number;
   timestamp: number;
-  source?: string;
-  target?: string;
   data: Record<string, unknown>;
-  metadata?: Record<string, unknown>;
+  affectedEntities: string[];
 }
 
 export interface NodeEvent {
   id: string;
   type: string;
   timestamp: number;
+  source: string;
   data: Record<string, unknown>;
-  metadata?: {
-    category: string;
-    source?: string;
-    target?: string;
-    tick: number;
-  };
+  metadata?: EventMetadata;
 }
 
-export interface EventMapping {
-  pythonType: string;
-  nodeType: string;
-  transformer?: (data: Record<string, unknown>) => Record<string, unknown>;
+export interface EventMetadata {
+  tick: number;
+  affectedEntities: string[];
+  priority: 'low' | 'medium' | 'high' | 'critical';
+  category: EventCategory;
 }
 
-export class EventProxyService extends EventEmitter {
-  private eventMappings: Map<string, EventMapping> = new Map();
-  private eventHistory: NodeEvent[] = [];
-  private maxHistorySize: number = 1000;
+export type EventCategory = 
+  | 'cosmic' 
+  | 'civilization' 
+  | 'diplomacy' 
+  | 'war' 
+  | 'technology' 
+  | 'economy' 
+  | 'narrative';
+
+const EVENT_TYPE_MAPPING: Record<string, { nodeType: string; category: EventCategory; priority: 'low' | 'medium' | 'high' | 'critical' }> = {
+  'supernova': { nodeType: 'cosmic.supernova', category: 'cosmic', priority: 'critical' },
+  'blackhole_formed': { nodeType: 'cosmic.blackhole', category: 'cosmic', priority: 'critical' },
+  'nebula_collision': { nodeType: 'cosmic.nebula', category: 'cosmic', priority: 'high' },
+  'radiation_wave': { nodeType: 'cosmic.radiation', category: 'cosmic', priority: 'medium' },
+  'resource_depleted': { nodeType: 'civilization.resource', category: 'civilization', priority: 'medium' },
+  'environment_change': { nodeType: 'civilization.environment', category: 'civilization', priority: 'medium' },
+  'tech_breakthrough': { nodeType: 'technology.breakthrough', category: 'technology', priority: 'high' },
+  'civilization_destroyed': { nodeType: 'civilization.destroyed', category: 'civilization', priority: 'critical' },
+  'civilization_risen': { nodeType: 'civilization.risen', category: 'civilization', priority: 'high' },
+  'war_declared': { nodeType: 'diplomacy.war', category: 'war', priority: 'high' },
+  'peace_treaty': { nodeType: 'diplomacy.peace', category: 'diplomacy', priority: 'medium' },
+  'alliance_formed': { nodeType: 'diplomacy.alliance', category: 'diplomacy', priority: 'high' },
+  'trade_agreement': { nodeType: 'diplomacy.trade', category: 'economy', priority: 'low' },
+  'broadcast': { nodeType: 'civilization.broadcast', category: 'narrative', priority: 'low' },
+  'exploration': { nodeType: 'civilization.exploration', category: 'civilization', priority: 'low' },
+  'discovery': { nodeType: 'civilization.discovery', category: 'civilization', priority: 'medium' },
+};
+
+export class EventProxy extends EventEmitter {
+  private eventQueue: PythonEvent[] = [];
+  private isProcessing: boolean = false;
+  private conversionStats: {
+    total: number;
+    success: number;
+    failed: number;
+  } = { total: 0, success: 0, failed: 0 };
 
   constructor() {
     super();
-    this.initializeEventMappings();
-  }
-
-  private initializeEventMappings(): void {
-    // Macro events
-    this.registerMapping({
-      pythonType: 'supernova',
-      nodeType: 'universe:supernova',
-      transformer: (data) => ({
-        position: data.position,
-        intensity: data.intensity || 1.0,
-        affectedSystems: data.affected_systems || [],
-      }),
-    });
-
-    this.registerMapping({
-      pythonType: 'blackhole_formation',
-      nodeType: 'universe:blackhole',
-      transformer: (data) => ({
-        position: data.position,
-        mass: data.mass,
-        eventHorizon: data.event_horizon,
-      }),
-    });
-
-    this.registerMapping({
-      pythonType: 'nebula_collision',
-      nodeType: 'universe:nebula',
-      transformer: (data) => ({
-        nebulae: data.nebulae,
-        resultType: data.result_type,
-      }),
-    });
-
-    this.registerMapping({
-      pythonType: 'radiation_wave',
-      nodeType: 'universe:radiation',
-      transformer: (data) => ({
-        origin: data.origin,
-        spread: data.spread,
-        intensity: data.intensity,
-      }),
-    });
-
-    // Micro events
-    this.registerMapping({
-      pythonType: 'resource_depletion',
-      nodeType: 'civilization:resource_depletion',
-      transformer: (data) => ({
-        civilizationId: data.civilization_id,
-        resourceType: data.resource_type,
-        remaining: data.remaining,
-      }),
-    });
-
-    this.registerMapping({
-      pythonType: 'environment_change',
-      nodeType: 'civilization:environment_change',
-      transformer: (data) => ({
-        civilizationId: data.civilization_id,
-        changeType: data.change_type,
-        severity: data.severity,
-      }),
-    });
-
-    this.registerMapping({
-      pythonType: 'tech_singularity',
-      nodeType: 'civilization:tech_singularity',
-      transformer: (data) => ({
-        civilizationId: data.civilization_id,
-        techLevel: data.tech_level,
-        breakthrough: data.breakthrough,
-      }),
-    });
-
-    // Diplomacy events
-    this.registerMapping({
-      pythonType: 'war_declaration',
-      nodeType: 'diplomacy:war',
-      transformer: (data) => ({
-        aggressor: data.aggressor,
-        defender: data.defender,
-        reason: data.reason,
-      }),
-    });
-
-    this.registerMapping({
-      pythonType: 'peace_treaty',
-      nodeType: 'diplomacy:peace',
-      transformer: (data) => ({
-        parties: data.parties,
-        terms: data.terms,
-      }),
-    });
-
-    this.registerMapping({
-      pythonType: 'alliance_formation',
-      nodeType: 'diplomacy:alliance',
-      transformer: (data) => ({
-        members: data.members,
-        allianceName: data.alliance_name,
-        ideology: data.ideology,
-      }),
-    });
-
-    this.registerMapping({
-      pythonType: 'trade_agreement',
-      nodeType: 'diplomacy:trade',
-      transformer: (data) => ({
-        parties: data.parties,
-        resources: data.resources,
-        duration: data.duration,
-      }),
-    });
-
-    this.registerMapping({
-      pythonType: 'broadcast',
-      nodeType: 'diplomacy:broadcast',
-      transformer: (data) => ({
-        sender: data.sender,
-        message: data.message,
-        range: data.range,
-      }),
-    });
-
-    // Narrative events
-    this.registerMapping({
-      pythonType: 'civilization_rise',
-      nodeType: 'narrative:civilization_rise',
-      transformer: (data) => ({
-        civilizationId: data.civilization_id,
-        name: data.name,
-        fromStage: data.from_stage,
-        toStage: data.to_stage,
-      }),
-    });
-
-    this.registerMapping({
-      pythonType: 'civilization_fall',
-      nodeType: 'narrative:civilization_fall',
-      transformer: (data) => ({
-        civilizationId: data.civilization_id,
-        name: data.name,
-        cause: data.cause,
-      }),
-    });
-
-    this.registerMapping({
-      pythonType: 'historical_moment',
-      nodeType: 'narrative:historical_moment',
-      transformer: (data) => ({
-        title: data.title,
-        description: data.description,
-        significance: data.significance,
-      }),
-    });
-  }
-
-  registerMapping(mapping: EventMapping): void {
-    this.eventMappings.set(mapping.pythonType, mapping);
   }
 
   convertEvent(pythonEvent: PythonEvent): NodeEvent | null {
+    this.conversionStats.total++;
+    
     try {
-      const mapping = this.eventMappings.get(pythonEvent.type);
+      const mapping = EVENT_TYPE_MAPPING[pythonEvent.type];
       
-      let nodeType: string;
-      let transformedData: Record<string, unknown>;
-
-      if (mapping) {
-        nodeType = mapping.nodeType;
-        transformedData = mapping.transformer 
-          ? mapping.transformer(pythonEvent.data)
-          : pythonEvent.data;
-      } else {
-        // Default conversion for unknown event types
-        nodeType = `python:${pythonEvent.type}`;
-        transformedData = pythonEvent.data;
+      if (!mapping) {
+        console.warn(`[EventProxy] Unknown event type: ${pythonEvent.type}, using default mapping`);
+        return this.convertUnknownEvent(pythonEvent);
       }
 
       const nodeEvent: NodeEvent = {
-        id: pythonEvent.id || this.generateEventId(),
-        type: nodeType,
-        timestamp: pythonEvent.timestamp || Date.now(),
-        data: transformedData,
+        id: pythonEvent.id,
+        type: mapping.nodeType,
+        timestamp: pythonEvent.timestamp,
+        source: 'python_core',
+        data: this.transformEventData(pythonEvent.type, pythonEvent.data),
         metadata: {
-          category: pythonEvent.category,
-          source: pythonEvent.source,
-          target: pythonEvent.target,
           tick: pythonEvent.tick,
+          affectedEntities: pythonEvent.affectedEntities,
+          priority: mapping.priority,
+          category: mapping.category,
         },
       };
 
-      this.addToHistory(nodeEvent);
-      this.emit('event:converted', nodeEvent);
+      this.conversionStats.success++;
+      this.emit('eventConverted', nodeEvent);
       
       return nodeEvent;
     } catch (error) {
-      const err = error instanceof Error ? error : new Error(String(error));
-      this.emit('event:error', err);
+      this.conversionStats.failed++;
+      this.emit('conversionError', error);
       return null;
     }
   }
 
-  private generateEventId(): string {
-    return `evt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  }
+  private convertUnknownEvent(pythonEvent: PythonEvent): NodeEvent {
+    const nodeEvent: NodeEvent = {
+      id: pythonEvent.id,
+      type: `unknown.${pythonEvent.type}`,
+      timestamp: pythonEvent.timestamp,
+      source: 'python_core',
+      data: pythonEvent.data,
+      metadata: {
+        tick: pythonEvent.tick,
+        affectedEntities: pythonEvent.affectedEntities,
+        priority: 'low',
+        category: 'narrative',
+      },
+    };
 
-  private addToHistory(event: NodeEvent): void {
-    this.eventHistory.push(event);
+    this.conversionStats.success++;
+    this.emit('eventConverted', nodeEvent);
     
-    if (this.eventHistory.length > this.maxHistorySize) {
-      this.eventHistory.shift();
-    }
+    return nodeEvent;
   }
 
-  getHistory(filter?: {
-    type?: string;
-    category?: string;
-    since?: number;
-    limit?: number;
-  }): NodeEvent[] {
-    let events = [...this.eventHistory];
+  private transformEventData(eventType: string, data: Record<string, unknown>): Record<string, unknown> {
+    const transformed: Record<string, unknown> = { ...data };
 
-    if (filter) {
-      if (filter.type) {
-        events = events.filter(e => e.type.includes(filter.type!));
-      }
-      
-      if (filter.category) {
-        events = events.filter(e => e.metadata?.category === filter.category);
-      }
-      
-      if (filter.since) {
-        events = events.filter
+    switch (eventType) {
+      case 'supernova':
+        transformed.severity = this.calculateSeverity(data.magnitude as number);
+        transformed.description = this.generateSupernovaDescription(data);
+        break;
+
+      case 'blackhole_formed':
+        transformed.dangerLevel = this.calculateDangerLevel(data.mass as number);
+        transformed.description = this.generateBlackholeDescription(data);
+        break;
+
+      case 'war_declared':
+        transformed.parties = {
+          aggressor: data.aggressor_id,
+          defender: data.defender_id,
+        };
+        transformed.reason = data.cause || 'unknown';
+        break;
+
+      case 'alliance_formed':
+        transformed.members = data.civilization_ids;
+        transformed.allianceType = data.alliance_type || 'defensive';
+        break;
+
+      case 'tech_breakthrough':
+        transformed.techName = data.technology_name;
+        transformed.impact = this.calculateTechImpact(data.tech_level as number);
+        break;
+
+      case 'civilization_destroyed':
+        transformed.cause = data.destruction_cause;
+        transformed.survivors = data.survivor_count || 0;
+        break;
+
+      case 'broadcast':
+        transformed.message = data.content;
+        transformed.sender = data.civilization_id;
+        transformed.range = data.broadcast_range || 'universal';
+        break;
+    }
+
+    return transformed;
+  }
+
+  private calculateSeverity(magnitude: number): 'minor' | 'moderate' | 'major' | 'cata
