@@ -1,0 +1,90 @@
+package agent
+
+import (
+	"context"
+	"sync"
+)
+
+// Agent represents a civilization agent in the universe
+type Agent struct {
+	ID           string
+	Name         string
+	Type         AgentType
+	Status       AgentStatus
+	Capabilities []string
+	mu           sync.RWMutex
+}
+
+// AgentType defines the type of agent
+type AgentType string
+
+const (
+	AgentTypeCivilization AgentType = "civilization"
+	AgentTypeTrader       AgentType = "trader"
+	AgentTypeExplorer     AgentType = "explorer"
+)
+
+// AgentStatus defines the current status of an agent
+type AgentStatus string
+
+const (
+	StatusActive   AgentStatus = "active"
+	StatusIdle     AgentStatus = "idle"
+	StatusDormant  AgentStatus = "dormant"
+	StatusDefeated AgentStatus = "defeated"
+)
+
+// NewAgent creates a new agent instance
+func NewAgent(id, name string, agentType AgentType) *Agent {
+	return &Agent{
+		ID:           id,
+		Name:         name,
+		Type:         agentType,
+		Status:       StatusActive,
+		Capabilities: make([]string, 0),
+	}
+}
+
+// Act performs an action based on current state
+func (a *Agent) Act(ctx context.Context, state map[string]interface{}) (map[string]interface{}, error) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	// TODO: Implement agent decision making
+	// - Evaluate current state
+	// - Generate possible actions
+	// - Select optimal action
+	// - Return action result
+
+	result := make(map[string]interface{})
+	result["agent_id"] = a.ID
+	result["action"] = "idle"
+
+	return result, nil
+}
+
+// UpdateStatus changes the agent's status
+func (a *Agent) UpdateStatus(status AgentStatus) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.Status = status
+}
+
+// AddCapability adds a new capability to the agent
+func (a *Agent) AddCapability(capability string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.Capabilities = append(a.Capabilities, capability)
+}
+
+// HasCapability checks if agent has a specific capability
+func (a *Agent) HasCapability(capability string) bool {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	for _, c := range a.Capabilities {
+		if c == capability {
+			return true
+		}
+	}
+	return false
+}

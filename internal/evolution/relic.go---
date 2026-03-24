@@ -1,0 +1,99 @@
+package evolution
+
+import (
+	"context"
+	"sync"
+)
+
+// RelicSystem manages civilization relics
+type RelicSystem struct {
+	Relics   []*Relic
+	mu       sync.RWMutex
+}
+
+// Relic represents a historical site in the universe
+type Relic struct {
+	ID           string
+	Name         string
+	Type         RelicType
+	Coordinates  [3]float64
+	Owner        string
+	Bonus        RelicBonus
+	CreatedAt    int64
+	SourceEvent  string
+}
+
+// RelicType defines types of relics
+type RelicType string
+
+const (
+	RelicFactory      RelicType = "precursor_factory"
+	RelicGraveyard    RelicType = "war_graveyard"
+	RelicKnowledge    RelicType = "knowledge_vault"
+	RelicAnomaly      RelicType = "cosmic_anomaly"
+)
+
+// RelicBonus represents the bonus provided by a relic
+type RelicBonus struct {
+	Type        string
+	Value       float64
+	Description string
+}
+
+// RelicBattle represents a contest for relic ownership
+type RelicBattle struct {
+	RelicID    string
+	Attacker   string
+	Defender   string
+	Cycle      int64
+	Result     BattleResult
+}
+
+// BattleResult defines the outcome of a relic battle
+type BattleResult struct {
+	Winner     string
+	Losses     map[string]int64
+	Timestamp  int64
+}
+
+// NewRelicSystem creates a new relic system
+func NewRelicSystem() *RelicSystem {
+	return &RelicSystem{
+		Relics: make([]*Relic, 0),
+	}
+}
+
+// CreateRelic generates a new relic from a major event
+func (r *RelicSystem) CreateRelic(ctx context.Context, event string, coords [3]float64, relicType RelicType) *Relic {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	relic := &Relic{
+		ID:          generateRelicID(),
+		Name:        generateRelicName(relicType),
+		Type:        relicType,
+		Coordinates: coords,
+		Owner:       "",
+		Bonus:       getBonusForType(relicType),
+		SourceEvent: event,
+	}
+
+	r.Relics = append(r.Relics, relic)
+	return relic
+}
+
+// ContestRelic initiates a battle for relic ownership
+func (r *RelicSystem) ContestRelic(ctx context.Context, battle *RelicBattle) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// Find the relic
+	var relic *Relic
+	for _, rel := range r.Relics {
+		if rel.ID == battle.RelicID {
+			relic = rel
+			break
+		}
+	}
+
+	if relic == nil

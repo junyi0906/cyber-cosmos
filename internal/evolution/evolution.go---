@@ -1,0 +1,134 @@
+package evolution
+
+import (
+	"context"
+	"log"
+	"sync"
+	"time"
+)
+
+// Engine manages the evolution of the universe
+type Engine struct {
+	Cycle         int64
+	Season        *Season
+	Weather       *CosmicWeather
+	TradeSystem   *TradeSystem
+	RelicSystem   *RelicSystem
+	mu            sync.RWMutex
+	eventHandlers []EventHandler
+}
+
+// Season represents a game season
+type Season struct {
+	ID          string
+	Name        string
+	StartTime   time.Time
+	EndTime     time.Time
+	CycleCount  int64
+	Config      SeasonConfig
+}
+
+// SeasonConfig holds season-specific configuration
+type SeasonConfig struct {
+	ResourceMultiplier float64
+	EventFrequency     float64
+	InitialCivCount    int
+}
+
+// CosmicWeather represents the current cosmic weather state
+type CosmicWeather struct {
+	Type        WeatherType
+	Duration    int64
+	Effects     []WeatherEffect
+	StartedAt   int64
+}
+
+// WeatherType defines types of cosmic weather
+type WeatherType string
+
+const (
+	WeatherCalm          WeatherType = "calm"
+	WeatherResourceStorm WeatherType = "resource_storm"
+	WeatherDarkMatter    WeatherType = "dark_matter_wave"
+	WeatherDarkSurge     WeatherType = "dark_surge"
+)
+
+// WeatherEffect represents an effect of cosmic weather
+type WeatherEffect struct {
+	Type        string
+	Value       float64
+	Description string
+}
+
+// EventHandler is a function that handles evolution events
+type EventHandler func(event interface{})
+
+// NewEngine creates a new evolution engine
+func NewEngine() *Engine {
+	return &Engine{
+		Cycle:         0,
+		Weather:       &CosmicWeather{Type: WeatherCalm},
+		eventHandlers: make([]EventHandler, 0),
+	}
+}
+
+// Tick advances the universe by one evolution cycle
+func (e *Engine) Tick(ctx context.Context) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	e.Cycle++
+
+	// Update cosmic weather
+	e.updateWeather()
+
+	// Process trade routes
+	if e.TradeSystem != nil {
+		e.TradeSystem.ProcessTick(ctx, e.Cycle)
+	}
+
+	// Process relic interactions
+	if e.RelicSystem != nil {
+		e.RelicSystem.ProcessTick(ctx, e.Cycle)
+	}
+
+	// Check season end
+	if e.Season != nil && e.Cycle >= e.Season.CycleCount {
+		e.endSeason()
+	}
+
+	log.Printf("Evolution cycle %d completed\n", e.Cycle)
+	return nil
+}
+
+// updateWeather updates cosmic weather based on cycle
+func (e *Engine) updateWeather() {
+	// Weather changes every 100 cycles on average
+	if e.Cycle%100 == 0 {
+		e.Weather.Type = WeatherCalm
+		e.Weather.Duration = 50
+		e.Weather.StartedAt = e.Cycle
+	}
+}
+
+// endSeason handles season end logic
+func (e *Engine) endSeason() {
+	log.Println("Season ended, calculating results...")
+	// TODO: Calculate season rankings
+	// TODO: Generate chronicle snapshot
+	// TODO: Reset for new season
+}
+
+// RegisterEventHandler adds a new event handler
+func (e *Engine) RegisterEventHandler(handler EventHandler) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.eventHandlers = append(e.eventHandlers, handler)
+}
+
+// emitEvent sends an event to all handlers
+func (e *Engine) emitEvent(event interface{}) {
+	for _, handler := range e.eventHandlers {
+		handler(event)
+	}
+}

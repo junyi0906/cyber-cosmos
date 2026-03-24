@@ -1,0 +1,145 @@
+package evolution
+
+import (
+	"context"
+	"sync"
+)
+
+// TradeSystem manages interstellar trade
+type TradeSystem struct {
+	Orders     []*TradeOrder
+	Routes     []*TradeRoute
+	PriceIndex map[string]float64
+	mu         sync.RWMutex
+}
+
+// TradeOrder represents a buy or sell order
+type TradeOrder struct {
+	ID           string
+	Civilization string
+	Type         OrderType
+	Resource     string
+	Quantity     int64
+	Price        float64
+	CreatedAt    int64
+	Status       OrderStatus
+}
+
+// OrderType defines buy or sell
+type OrderType string
+
+const (
+	OrderBuy  OrderType = "buy"
+	OrderSell OrderType = "sell"
+)
+
+// OrderStatus defines the status of an order
+type OrderStatus string
+
+const (
+	OrderPending   OrderStatus = "pending"
+	OrderFilled    OrderStatus = "filled"
+	OrderCancelled OrderStatus = "cancelled"
+)
+
+// TradeRoute represents an established trade route
+type TradeRoute struct {
+	ID             string
+	FromCiv        string
+	ToCiv          string
+	Resource       string
+	Efficiency     float64
+	Active         bool
+	Events         []RouteEvent
+}
+
+// RouteEvent represents an event on a trade route
+type RouteEvent struct {
+	Type      string
+	Cycle     int64
+	Details   map[string]interface{}
+}
+
+// NewTradeSystem creates a new trade system
+func NewTradeSystem() *TradeSystem {
+	return &TradeSystem{
+		Orders:     make([]*TradeOrder, 0),
+		Routes:     make([]*TradeRoute, 0),
+		PriceIndex: make(map[string]float64),
+	}
+}
+
+// PlaceOrder creates a new trade order
+func (t *TradeSystem) PlaceOrder(ctx context.Context, order *TradeOrder) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	order.Status = OrderPending
+	t.Orders = append(t.Orders, order)
+
+	// Update price index
+	t.updatePriceIndex(order.Resource)
+
+	return nil
+}
+
+// CreateRoute establishes a new trade route
+func (t *TradeSystem) CreateRoute(ctx context.Context, route *TradeRoute) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	route.Active = true
+	route.Efficiency = 1.0
+	t.Routes = append(t.Routes, route)
+
+	return nil
+}
+
+// ProcessTick processes trade for the current cycle
+func (t *TradeSystem) ProcessTick(ctx context.Context, cycle int64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	// Process pending orders
+	t.matchOrders()
+
+	// Process active routes
+	for _, route := range t.Routes {
+		if route.Active {
+			t.processRouteEvents(route, cycle)
+		}
+	}
+}
+
+// updatePriceIndex updates the global price index
+func (t *TradeSystem) updatePriceIndex(resource string) {
+	// Calculate based on supply/demand
+	buyVolume := int64(0)
+	sellVolume := int64(0)
+
+	for _, order := range t.Orders {
+		if order.Resource == resource && order.Status == OrderPending {
+			if order.Type == OrderBuy {
+				buyVolume += order.Quantity
+			} else {
+				sellVolume += order.Quantity
+			}
+		}
+	}
+
+	// Simple price adjustment
+	if sellVolume > 0 {
+		ratio := float64(buyVolume) / float64(sellVolume)
+		t.PriceIndex[resource] = t.PriceIndex[resource] * ratio
+	}
+}
+
+// matchOrders matches buy and sell orders
+func (t *TradeSystem) matchOrders() {
+	// TODO: Implement order matching algorithm
+}
+
+// processRouteEvents handles random events on trade routes
+func (t *TradeSystem) processRouteEvents(route *TradeRoute, cycle int64) {
+	// TODO: Implement random events (pirates, treasures, etc.)
+}
