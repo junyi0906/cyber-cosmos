@@ -1,0 +1,56 @@
+import mongoose, { Connection, ConnectOptions } from 'mongoose';
+import { MongoConfig, getMongoConfig, mongoConnectionOptions } from '../config/mongo.config';
+import EventLog, { IEventLog } from '../models/mongo/eventLog.model';
+import { NarrativeChapter, NarrativeTimeline, INarrativeChapter, INarrativeTimeline } from '../models/mongo/narrative.model';
+import { DecisionLog, DecisionSummary, IDecisionLog, IDecisionSummary } from '../models/mongo/decisionLog.model';
+
+export class MongoService {
+  private static instance: MongoService;
+  private connection: Connection | null = null;
+  private config: MongoConfig;
+  private isConnected: boolean = false;
+
+  private constructor() {
+    this.config = getMongoConfig();
+  }
+
+  public static getInstance(): MongoService {
+    if (!MongoService.instance) {
+      MongoService.instance = new MongoService();
+    }
+    return MongoService.instance;
+  }
+
+  public async connect(): Promise<void> {
+    if (this.isConnected && this.connection) {
+      return;
+    }
+
+    try {
+      const fullUri = `${this.config.uri}/${this.config.dbName}`;
+      await mongoose.connect(fullUri, {
+        ...mongoConnectionOptions,
+        ...this.config.options,
+      } as ConnectOptions);
+
+      this.connection = mongoose.connection;
+      this.isConnected = true;
+
+      this.connection.on('error', (error) => {
+        console.error('MongoDB connection error:', error);
+        this.isConnected = false;
+      });
+
+      this.connection.on('disconnected', () => {
+        console.warn('MongoDB disconnected');
+        this.isConnected = false;
+      });
+
+      this.connection.on('reconnected', () => {
+        console.log('MongoDB reconnected');
+        this.isConnected = true;
+      });
+
+      console.log(`MongoDB connected successfully to database: ${this.config.dbName}`);
+    } catch (error) {
+      console

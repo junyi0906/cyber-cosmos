@@ -1,0 +1,258 @@
+import mongoose, { Schema, Document, Model } from 'mongoose';
+
+export interface IDecisionLog extends Document {
+  decisionId: string;
+  agentId: string;
+  agentName: string;
+  civilizationId: string;
+  timestamp: Date;
+  universeTick: number;
+  decisionType: string;
+  context: {
+    situation: string;
+    availableOptions: string[];
+    relevantData: Record<string, unknown>;
+  };
+  reasoning: {
+    thoughtProcess: string;
+    factors: Array<{
+      name: string;
+      weight: number;
+      description: string;
+    }>;
+    riskAssessment: string;
+  };
+  decision: {
+    action: string;
+    targetId?: string;
+    parameters: Record<string, unknown>;
+  };
+  outcome?: {
+    success: boolean;
+    effects: Record<string, unknown>;
+    feedback: string;
+  };
+  llmInfo?: {
+    model: string;
+    promptTokens: number;
+    completionTokens: number;
+    latency: number;
+  };
+  tags: string[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface IDecisionSummary extends Document {
+  summaryId: string;
+  agentId: string;
+  periodStart: Date;
+  periodEnd: Date;
+  totalDecisions: number;
+  successfulDecisions: number;
+  failedDecisions: number;
+  decisionTypes: Record<string, number>;
+  averageLatency: number;
+  keyPatterns: string[];
+  recommendations: string[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const DecisionFactorSchema = new Schema(
+  {
+    name: { type: String, required: true },
+    weight: { type: Number, required: true },
+    description: { type: String, required: true },
+  },
+  { _id: false }
+);
+
+const DecisionContextSchema = new Schema(
+  {
+    situation: { type: String, required: true },
+    availableOptions: [{ type: String }],
+    relevantData: { type: Schema.Types.Mixed, default: {} },
+  },
+  { _id: false }
+);
+
+const DecisionReasoningSchema = new Schema(
+  {
+    thoughtProcess: { type: String, required: true },
+    factors: [DecisionFactorSchema],
+    riskAssessment: { type: String, required: true },
+  },
+  { _id: false }
+);
+
+const DecisionActionSchema = new Schema(
+  {
+    action: { type: String, required: true },
+    targetId: { type: String },
+    parameters: { type: Schema.Types.Mixed, default: {} },
+  },
+  { _id: false }
+);
+
+const DecisionOutcomeSchema = new Schema(
+  {
+    success: { type: Boolean, required: true },
+    effects: { type: Schema.Types.Mixed, default: {} },
+    feedback: { type: String },
+  },
+  { _id: false }
+);
+
+const LLMInfoSchema = new Schema(
+  {
+    model: { type: String },
+    promptTokens: { type: Number },
+    completionTokens: { type: Number },
+    latency: { type: Number },
+  },
+  { _id: false }
+);
+
+const DecisionLogSchema: Schema = new Schema(
+  {
+    decisionId: {
+      type: String,
+      required: true,
+      unique: true,
+      index: true,
+    },
+    agentId: {
+      type: String,
+      required: true,
+      index: true,
+    },
+    agentName: {
+      type: String,
+      required: true,
+    },
+    civilizationId: {
+      type: String,
+      required: true,
+      index: true,
+    },
+    timestamp: {
+      type: Date,
+      required: true,
+      default: Date.now,
+      index: true,
+    },
+    universeTick: {
+      type: Number,
+      required: true,
+      index: true,
+    },
+    decisionType: {
+      type: String,
+      required: true,
+      index: true,
+    },
+    context: {
+      type: DecisionContextSchema,
+      required: true,
+    },
+    reasoning: {
+      type: DecisionReasoningSchema,
+      required: true,
+    },
+    decision: {
+      type: DecisionActionSchema,
+      required: true,
+    },
+    outcome: {
+      type: DecisionOutcomeSchema,
+    },
+    llmInfo: {
+      type: LLMInfoSchema,
+    },
+    tags: [
+      {
+        type: String,
+        index: true,
+      },
+    ],
+  },
+  {
+    timestamps: true,
+    collection: 'decision_logs',
+  }
+);
+
+DecisionLogSchema.index({ agentId: 1, timestamp: -1 });
+DecisionLogSchema.index({ civilizationId: 1, decisionType: 1 });
+DecisionLogSchema.index({ universeTick: 1, agentId: 1 });
+
+const DecisionSummarySchema: Schema = new Schema(
+  {
+    summaryId: {
+      type: String,
+      required: true,
+      unique: true,
+      index: true,
+    },
+    agentId: {
+      type: String,
+      required: true,
+      index: true,
+    },
+    periodStart: {
+      type: Date,
+      required: true,
+    },
+    periodEnd: {
+      type: Date,
+      required: true,
+    },
+    totalDecisions: {
+      type: Number,
+      default: 0,
+    },
+    successfulDecisions: {
+      type: Number,
+      default: 0,
+    },
+    failedDecisions: {
+      type: Number,
+      default: 0,
+    },
+    decisionTypes: {
+      type: Map,
+      of: Number,
+      default: {},
+    },
+    averageLatency: {
+      type: Number,
+      default: 0,
+    },
+    keyPatterns: [
+      {
+        type: String,
+      },
+    ],
+    recommendations: [
+      {
+        type: String,
+      },
+    ],
+  },
+  {
+    timestamps: true,
+    collection: 'decision_summaries',
+  }
+);
+
+DecisionSummarySchema.index({ agentId: 1, periodStart: -1 });
+
+export const DecisionLog: Model<IDecisionLog> = mongoose.model<IDecisionLog>('DecisionLog', DecisionLogSchema);
+
+export const DecisionSummary: Model<IDecisionSummary> = mongoose.model<IDecisionSummary>(
+  'DecisionSummary',
+  DecisionSummarySchema
+);
+
+export default { DecisionLog, DecisionSummary };

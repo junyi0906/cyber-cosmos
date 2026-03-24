@@ -21,20 +21,16 @@ export const defaultMongoConfig: MongoConfig = {
 
 export const getMongoConfig = (): MongoConfig => {
   return {
-    ...defaultMongoConfig,
     uri: process.env.MONGODB_URI || defaultMongoConfig.uri,
     dbName: process.env.MONGODB_DB_NAME || defaultMongoConfig.dbName,
+    options: defaultMongoConfig.options,
   };
 };
 
-export const mongoConnectionState = {
-  isConnected: false,
-  connectionTime: null as Date | null,
-  reconnectAttempts: 0,
-  maxReconnectAttempts: 5,
-};
-
-export const logMongoEvent = (event: string, data?: any) => {
-  const timestamp = new Date().toISOString();
-  console.log(`[MongoDB ${timestamp}] ${event}`, data || '');
+export const mongoConnectionOptions: mongoose.ConnectOptions = {
+  maxPoolSize: 10,
+  minPoolSize: 2,
+  connectTimeoutMS: 10000,
+  socketTimeoutMS: 45000,
+  serverSelectionTimeoutMS: 5000,
 };

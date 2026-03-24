@@ -1,91 +1,89 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
 
-// 编年史叙事接口 - 存储宇宙历史叙事
-export interface INarrative extends Document {
-  narrativeId: string;
+export interface INarrativeChapter extends Document {
+  chapterId: string;
   title: string;
-  
-  // 叙事类型
-  type: 'chronicle' | 'civilization' | 'war' | 'discovery' | 'disaster' | 'alliance' | 'era';
-  
-  // 时间范围
-  timeRange: {
-    startTick: number;
-    endTick: number;
-    startDate: Date;
-    endDate?: Date;
-  };
-  
-  // 关联实体
-  entities: Array<{
-    type: 'civilization' | 'star' | 'planet' | 'alliance' | 'region';
-    id: string;
+  era: string;
+  startTick: number;
+  endTick?: number;
+  summary: string;
+  keyEvents: string[];
+  civilizations: {
+    civilizationId: string;
     name: string;
-    role: 'protagonist' | 'antagonist' | 'witness' | 'victim' | 'beneficiary';
+    status: 'rising' | 'stable' | 'declining' | 'destroyed';
+    highlights: string[];
+  }[];
+  majorConflicts: Array<{
+    conflictId: string;
+    participants: string[];
+    outcome: string;
   }>;
-  
-  // 叙事章节
-  chapters: Array<{
-    chapterId: string;
-    order: number;
-    title: string;
-    content: string;
-    tick: number;
-    timestamp: Date;
-    relatedEventIds: string[];
-    keyFigures: string[];
-  }>;
-  
-  // 叙事摘要
-  summary: {
-    brief: string;
-    detailed: string;
-    themes: string[];
-    significance: 'minor' | 'moderate' | 'major' | 'epochal';
-  };
-  
-  // 影响评估
-  consequences: Array<{
-    type: 'demographic' | 'technological' | 'political' | 'cultural' | 'economic';
-    description: string;
-    magnitude: number;
-    affectedEntities: string[];
-  }>;
-  
-  // LLM 生成元数据
-  generation: {
+  technologicalAdvances: string[];
+  culturalDevelopments: string[];
+  generatedNarrative: string;
+  llmMetadata?: {
     model: string;
-    prompt: string;
+    promptTokens: number;
+    completionTokens: number;
     generatedAt: Date;
-    version: number;
-    quality: 'draft' | 'refined' | 'final';
   };
-  
-  // 叙事状态
-  status: 'ongoing' | 'concluded' | 'archived';
-  
-  // 父叙事（用于叙事嵌套）
-  parentNarrativeId?: string;
-  
-  // 子叙事
-  childNarrativeIds: string[];
-  
-  // 元数据
-  metadata: {
-    tags: string[];
-    era: string;
-    region: string;
-    viewCount: number;
-    lastAccessedAt?: Date;
-  };
-  
   createdAt: Date;
   updatedAt: Date;
 }
 
-const NarrativeSchema: Schema<INarrative> = new Schema(
+export interface INarrativeTimeline extends Document {
+  timelineId: string;
+  civilizationId: string;
+  events: Array<{
+    tick: number;
+    eventId: string;
+    eventType: string;
+    description: string;
+    impact: 'positive' | 'negative' | 'neutral';
+  }>;
+  currentEra: string;
+  totalEvents: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const CivilizationHighlightSchema = new Schema(
   {
-    narrativeId: {
+    civilizationId: { type: String, required: true },
+    name: { type: String, required: true },
+    status: {
+      type: String,
+      enum: ['rising', 'stable', 'declining', 'destroyed'],
+      required: true,
+    },
+    highlights: [{ type: String }],
+  },
+  { _id: false }
+);
+
+const MajorConflictSchema = new Schema(
+  {
+    conflictId: { type: String, required: true },
+    participants: [{ type: String }],
+    outcome: { type: String, required: true },
+  },
+  { _id: false }
+);
+
+const LLMMetadataSchema = new Schema(
+  {
+    model: { type: String },
+    promptTokens: { type: Number },
+    completionTokens: { type: Number },
+    generatedAt: { type: Date },
+  },
+  { _id: false }
+);
+
+const NarrativeChapterSchema: Schema = new Schema(
+  {
+    chapterId: {
       type: String,
       required: true,
       unique: true,
@@ -94,165 +92,108 @@ const NarrativeSchema: Schema<INarrative> = new Schema(
     title: {
       type: String,
       required: true,
-      index: 'text',
     },
-    type: {
+    era: {
       type: String,
-      enum: ['chronicle', 'civilization', 'war', 'discovery', 'disaster', 'alliance', 'era'],
       required: true,
       index: true,
     },
-    timeRange: {
-      startTick: { type: Number, required: true },
-      endTick: { type: Number, required: true },
-      startDate: { type: Date, required: true },
-      endDate: Date,
+    startTick: {
+      type: Number,
+      required: true,
+      index: true,
     },
-    entities: [
-      {
-        type: {
-          type: String,
-          enum: ['civilization', 'star', 'planet', 'alliance', 'region'],
-        },
-        id: String,
-        name: String,
-        role: {
-          type: String,
-          enum: ['protagonist', 'antagonist', 'witness', 'victim', 'beneficiary'],
-        },
-      },
-    ],
-    chapters: [
-      {
-        chapterId: { type: String, required: true },
-        order: { type: Number, required: true },
-        title: String,
-        content: { type: String, required: true },
-        tick: { type: Number, required: true },
-        timestamp: { type: Date, default: Date.now },
-        relatedEventIds: [String],
-        keyFigures: [String],
-      },
-    ],
+    endTick: {
+      type: Number,
+      index: true,
+    },
     summary: {
-      brief: { type: String, required: true },
-      detailed: String,
-      themes: [String],
-      significance: {
-        type: String,
-        enum: ['minor', 'moderate', 'major', 'epochal'],
-        default: 'moderate',
-      },
+      type: String,
+      required: true,
     },
-    consequences: [
+    keyEvents: [
       {
-        type: {
-          type: String,
-          enum: ['demographic', 'technological', 'political', 'cultural', 'economic'],
-        },
-        description: String,
-        magnitude: { type: Number, min: 0, max: 100 },
-        affectedEntities: [String],
+        type: String,
       },
     ],
-    generation: {
-      model: String,
-      prompt: String,
-      generatedAt: { type: Date, default: Date.now },
-      version: { type: Number, default: 1 },
-      quality: {
+    civilizations: [CivilizationHighlightSchema],
+    majorConflicts: [MajorConflictSchema],
+    technologicalAdvances: [
+      {
         type: String,
-        enum: ['draft', 'refined', 'final'],
-        default: 'draft',
       },
-    },
-    status: {
+    ],
+    culturalDevelopments: [
+      {
+        type: String,
+      },
+    ],
+    generatedNarrative: {
       type: String,
-      enum: ['ongoing', 'concluded', 'archived'],
-      default: 'ongoing',
+      required: true,
+    },
+    llmMetadata: LLMMetadataSchema,
+  },
+  {
+    timestamps: true,
+    collection: 'narrative_chapters',
+  }
+);
+
+NarrativeChapterSchema.index({ era: 1, startTick: 1 });
+
+const TimelineEventSchema = new Schema(
+  {
+    tick: { type: Number, required: true },
+    eventId: { type: String, required: true },
+    eventType: { type: String, required: true },
+    description: { type: String, required: true },
+    impact: {
+      type: String,
+      enum: ['positive', 'negative', 'neutral'],
+      required: true,
+    },
+  },
+  { _id: false }
+);
+
+const NarrativeTimelineSchema: Schema = new Schema(
+  {
+    timelineId: {
+      type: String,
+      required: true,
+      unique: true,
       index: true,
     },
-    parentNarrativeId: {
+    civilizationId: {
       type: String,
+      required: true,
       index: true,
     },
-    childNarrativeIds: [String],
-    metadata: {
-      tags: [String],
-      era: String,
-      region: String,
-      viewCount: { type: Number, default: 0 },
-      lastAccessedAt: Date,
+    events: [TimelineEventSchema],
+    currentEra: {
+      type: String,
+      required: true,
+    },
+    totalEvents: {
+      type: Number,
+      default: 0,
     },
   },
   {
     timestamps: true,
-    minimize: false,
+    collection: 'narrative_timelines',
   }
 );
 
-// 复合索引
-NarrativeSchema.index({ type: 1, 'timeRange.startTick': -1 });
-NarrativeSchema.index({ 'entities.id': 1, 'timeRange.startTick': -1 });
-NarrativeSchema.index({ status: 1, 'summary.significance': -1 });
-NarrativeSchema.index({ 'metadata.tags': 1 });
+export const NarrativeChapter: Model<INarrativeChapter> = mongoose.model<INarrativeChapter>(
+  'NarrativeChapter',
+  NarrativeChapterSchema
+);
 
-// 文本索引
-NarrativeSchema.index({
-  title: 'text',
-  'summary.brief': 'text',
-  'chapters.content': 'text',
-});
+export const NarrativeTimeline: Model<INarrativeTimeline> = mongoose.model<INarrativeTimeline>(
+  'NarrativeTimeline',
+  NarrativeTimelineSchema
+);
 
-// 静态方法：按时间范围查询叙事
-NarrativeSchema.statics.findByTickRange = function(startTick: number, endTick: number) {
-  return this.find({
-    'timeRange.startTick': { $lte: endTick },
-    'timeRange.endTick': { $gte: startTick },
-  }).sort({ 'timeRange.startTick': 1 });
-};
-
-// 静态方法：按实体查询相关叙事
-NarrativeSchema.statics.findByEntity = function(entityId: string, options: { limit?: number } = {}) {
-  return this.find({
-    'entities.id': entityId,
-  })
-    .sort({ 'timeRange.startTick': -1 })
-    .limit(options.limit || 20);
-};
-
-// 静态方法：获取重大叙事
-NarrativeSchema.statics.findSignificant = function(significance: string[] = ['major', 'epochal']) {
-  return this.find({
-    'summary.significance': { $in: significance },
-    status: { $ne: 'archived' },
-  }).sort({ 'timeRange.startTick': -1 });
-};
-
-// 静态方法：生成编年史摘要
-NarrativeSchema.statics.generateChronicleSummary = async function(tickStart: number, tickEnd: number) {
-  return this.aggregate([
-    {
-      $match: {
-        'timeRange.startTick': { $gte: tickStart },
-        'timeRange.endTick': { $lte: tickEnd },
-      }
-    },
-    {
-      $group: {
-        _id: '$type',
-        count: { $sum: 1 },
-        narratives: { $push: { id: '$narrativeId', title: '$title', significance: '$summary.significance' } },
-      }
-    },
-    {
-      $sort: { count: -1 }
-    }
-  ]);
-};
-
-// 实例方法：添加章节
-NarrativeSchema.methods.addChapter = function(chapter: Partial<INarrative['chapters'][0]>) {
-  const newChapter = {
-    chapterId: `chapter_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-    order: this
+export default { NarrativeChapter, NarrativeTimeline };
