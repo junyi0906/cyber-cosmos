@@ -1,0 +1,97 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import {
+  CosmicWeather,
+  WeatherType,
+  WeatherStatus,
+  WeatherEffects,
+  WEATHER_EFFECTS,
+} from '../../entities/cosmic-weather.entity';
+import { WeatherScheduler } from './weather.scheduler';
+
+@Injectable()
+export class WeatherService {
+  private readonly logger = new Logger(WeatherService.name);
+
+  constructor(
+    @InjectRepository(CosmicWeather)
+    private weatherRepository: Repository<CosmicWeather>,
+    private weatherScheduler: WeatherScheduler,
+  ) {}
+
+  async getCurrentWeather(): Promise<CosmicWeather | null> {
+    return this.weatherScheduler.getCurrentWeather();
+  }
+
+  async getWeatherHistory(limit: number = 10): Promise<CosmicWeather[]> {
+    return this.weatherScheduler.getWeatherHistory(limit);
+  }
+
+  async triggerNewWeather(): Promise<CosmicWeather> {
+    return this.weatherScheduler.triggerWeatherGeneration();
+  }
+
+  async getWeatherEffects(): Promise<WeatherEffects | null> {
+    const currentWeather = await this.getCurrentWeather();
+    if (!currentWeather) {
+      return null;
+    }
+    return currentWeather.effects;
+  }
+
+  calculateModifiedValue(
+    baseValue: number,
+    effectKey: keyof WeatherEffects,
+  ): number {
+    return this.weatherScheduler.getCurrentWeather().then((weather) => {
+      if (!weather || !weather.effects) {
+        return baseValue;
+      }
+
+      const modifier = weather.effects[effectKey];
+      if (modifier === undefined || modifier === null) {
+        return baseValue;
+      }
+
+      // For rates like miningEfficiency, researchSpeed, multiply
+      // For rates like tradeAccidentRate, add
+      if (
+        effectKey === 'miningEfficiency' ||
+        effectKey === 'researchSpeed' ||
+        effectKey === 'visionRange'
+      ) {
+        return baseValue * modifier;
+      } else if (
+        effectKey === 'tradeAccidentRate' ||
+        effectKey === 'trustDecayRate'
+      ) {
+        return baseValue * modifier;
+      } else if (effectKey === 'energyConsumption') {
+        return baseValue * modifier;
+      }
+
+      return baseValue;
+    });
+  }
+
+  async isStormActive(): Promise<boolean> {
+    const weather = await this.getCurrentWeather();
+    return weather?.type === WeatherType.STORM;
+  }
+
+  async isDarknessActive(): Promise<boolean> {
+    const weather = await this.getCurrentWeather();
+    return weather?.type === WeatherType.DARKNESS;
+  }
+
+  async isMatterWaveActive(): Promise<boolean> {
+    const weather = await this.getCurrentWeather();
+    return weather?.type === WeatherType.MATTER;
+  }
+
+  async isCalmPeriod(): Promise<boolean> {
+    const weather = await this.getCurrentWeather();
+    return weather?.type === WeatherType.CALM || !weather;
+  }
+}

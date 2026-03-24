@@ -1,0 +1,129 @@
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  Index,
+} from 'typeorm';
+
+export enum WeatherType {
+  CALM = 'CALM',           // 平静期
+  STORM = 'STORM',         // 资源风暴
+  DARKNESS = 'DARKNESS',   // 黑暗波动
+  MATTER = 'MATTER',       // 暗物质浪潮
+}
+
+export enum WeatherStatus {
+  ACTIVE = 'ACTIVE',
+  ENDED = 'ENDED',
+}
+
+@Entity('cosmic_weather')
+@Index(['status', 'startTime'])
+export class CosmicWeather {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({
+    type: 'enum',
+    enum: WeatherType,
+    default: WeatherType.CALM,
+  })
+  type: WeatherType;
+
+  @Column({
+    type: 'enum',
+    enum: WeatherStatus,
+    default: WeatherStatus.ACTIVE,
+  })
+  status: WeatherStatus;
+
+  @Column({ type: 'float' })
+  intensity: number; // 0.0 - 1.0
+
+  @Column({ type: 'timestamp' })
+  startTime: Date;
+
+  @Column({ type: 'timestamp' })
+  endTime: Date;
+
+  @Column({ type: 'json', nullable: true })
+  effects: WeatherEffects;
+
+  @Column({ type: 'text', nullable: true })
+  description: string;
+
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
+}
+
+export interface WeatherEffects {
+  miningEfficiency?: number;      // 采矿效率加成
+  tradeAccidentRate?: number;     // 贸易事故率
+  researchSpeed?: number;         // 科研速度加成
+  energyConsumption?: number;     // 能量消耗倍率
+  visionRange?: number;           // 视野范围
+  trustDecayRate?: number;        // 外交信任衰减率
+}
+
+export const WEATHER_EFFECTS: Record<WeatherType, (intensity: number) => WeatherEffects> = {
+  [WeatherType.CALM]: (intensity) => ({
+    miningEfficiency: 1.0,
+    tradeAccidentRate: 0.05,
+    researchSpeed: 1.0,
+    energyConsumption: 1.0,
+    visionRange: 1.0,
+    trustDecayRate: 1.0,
+  }),
+  [WeatherType.STORM]: (intensity) => ({
+    miningEfficiency: 1.0 + 0.5 * intensity,
+    tradeAccidentRate: 0.05 + 0.3 * intensity,
+    researchSpeed: 1.0,
+    energyConsumption: 1.0,
+    visionRange: 1.0 - 0.1 * intensity,
+    trustDecayRate: 1.0,
+  }),
+  [WeatherType.DARKNESS]: (intensity) => ({
+    miningEfficiency: 1.0,
+    tradeAccidentRate: 0.05 + 0.1 * intensity,
+    researchSpeed: 1.0,
+    energyConsumption: 1.0,
+    visionRange: 0.5 + 0.3 * (1 - intensity),
+    trustDecayRate: 1.0 + 0.5 * intensity,
+  }),
+  [WeatherType.MATTER]: (intensity) => ({
+    miningEfficiency: 1.0,
+    tradeAccidentRate: 0.05,
+    researchSpeed: 1.0 + 0.5 * intensity,
+    energyConsumption: 1.0 + intensity,
+    visionRange: 1.0,
+    trustDecayRate: 1.0,
+  }),
+};
+
+export const WEATHER_DESCRIPTIONS: Record<WeatherType, string[]> = {
+  [WeatherType.CALM]: [
+    '宇宙处于平静期，各文明活动正常进行。',
+    '星际空间风平浪静，贸易航线安全畅通。',
+    '宇宙背景辐射稳定，是发展的好时机。',
+  ],
+  [WeatherType.STORM]: [
+    '资源风暴席卷星系，采矿效率大幅提升，但贸易风险增加。',
+    '高能粒子流激活了矿脉，同时也威胁着商船安全。',
+    '星际风暴带来丰富资源，却也暗藏危机。',
+  ],
+  [WeatherType.DARKNESS]: [
+    '黑暗波动笼罩宇宙，视野受限，外交信任加速衰减。',
+    '未知能量干扰了通讯与感知系统。',
+    '黑暗中，文明间的信任正在经受考验。',
+  ],
+  [WeatherType.MATTER]: [
+    '暗物质浪潮涌动，科研突破几率大增，但能量消耗剧增。',
+    '神秘的暗物质粒子激发了科学家的灵感。',
+    '暗能量激荡，推动科技飞跃，却也带来能源压力。',
+  ],
+};

@@ -1,0 +1,56 @@
+import {
+  Controller,
+  Get,
+  Post,
+  Query,
+  HttpCode,
+  HttpStatus,
+} from '@nestjs/common';
+import { WeatherService } from './weather.service';
+import { CosmicWeather } from '../../entities/cosmic-weather.entity';
+
+@Controller('weather')
+export class WeatherController {
+  constructor(private readonly weatherService: WeatherService) {}
+
+  @Get('current')
+  async getCurrentWeather(): Promise<CosmicWeather | null> {
+    return this.weatherService.getCurrentWeather();
+  }
+
+  @Get('history')
+  async getWeatherHistory(
+    @Query('limit') limit?: string,
+  ): Promise<CosmicWeather[]> {
+    const parsedLimit = limit ? parseInt(limit, 10) : 10;
+    return this.weatherService.getWeatherHistory(parsedLimit);
+  }
+
+  @Get('effects')
+  async getWeatherEffects() {
+    return this.weatherService.getWeatherEffects();
+  }
+
+  @Post('generate')
+  @HttpCode(HttpStatus.CREATED)
+  async generateNewWeather(): Promise<CosmicWeather> {
+    return this.weatherService.triggerNewWeather();
+  }
+
+  @Get('status')
+  async getWeatherStatus() {
+    const [isStorm, isDarkness, isMatter, isCalm] = await Promise.all([
+      this.weatherService.isStormActive(),
+      this.weatherService.isDarknessActive(),
+      this.weatherService.isMatterWaveActive(),
+      this.weatherService.isCalmPeriod(),
+    ]);
+
+    return {
+      isStormActive: isStorm,
+      isDarknessActive: isDarkness,
+      isMatterWaveActive: isMatter,
+      isCalmPeriod: isCalm,
+    };
+  }
+}
