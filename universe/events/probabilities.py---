@@ -1,270 +1,200 @@
 """
-事件概率配置模块
-定义各类事件的触发概率和条件
+Event probability configuration for the Cyber-Cosmos universe simulation.
 """
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 from enum import Enum
 
 
-class EventType(Enum):
-    """事件类型枚举"""
-    # 天体事件
-    SUPERNOVA = "supernova"
-    BLACK_HOLE_FORMATION = "black_hole_formation"
-    NEBULA_COLLISION = "nebula_collision"
-    COSMIC_RADIATION_WAVE = "cosmic_radiation_wave"
-    STELLAR_ALIGNMENT = "stellar_alignment"
+@dataclass
+class ProbabilityModifier:
+    """Defines a modifier that affects event probability."""
+    name: str
+    factor: float
+    condition: str  # Description of when this modifier applies
     
-    # 文明事件
-    TECHNOLOGY_SINGULARITY = "technology_singularity"
-    RESOURCE_DISCOVERY = "resource_discovery"
-    CULTURAL_RENAISSANCE = "cultural_renaissance"
-    POPULATION_BOOM = "population_boom"
-    CIVILIZATION_ASCENSION = "civilization_ascension"
-    
-    # 灾难事件
-    ASTEROID_IMPACT = "asteroid_impact"
-    PLAGUE_OUTBREAK = "plague_outbreak"
-    RESOURCE_DEPLETION = "resource_depletion"
-    CLIMATE_CATASTROPHE = "climate_catastrophe"
-    CIVIL_WAR = "civil_war"
-    INTERSTELLAR_WAR = "interstellar_war"
-
-
-class EventCategory(Enum):
-    """事件类别"""
-    CELESTIAL = "celestial"
-    CIVILIZATION = "civilization"
-    DISASTER = "disaster"
-
-
-class EventSeverity(Enum):
-    """事件严重程度"""
-    MINOR = "minor"
-    MODERATE = "moderate"
-    MAJOR = "major"
-    CATASTROPHIC = "catastrophic"
+    def apply(self, base_probability: float) -> float:
+        """Apply the modifier to a base probability."""
+        return base_probability * self.factor
 
 
 @dataclass
-class EventConfig:
-    """单个事件配置"""
-    event_type: EventType
-    category: EventCategory
-    base_probability: float  # 基础概率 (0.0 - 1.0)
-    severity: EventSeverity
-    description_template: str
-    modifiers: Dict[str, float] = field(default_factory=dict)
-    cooldown_ticks: int = 0  # 冷却时间（tick数）
-    min_civilization_level: int = 0
-    max_civilization_level: int = 100
-    requires_peace: bool = False
-    requires_war: bool = False
+class EventProbabilityConfig:
+    """
+    Configuration for event generation probabilities.
     
-    def __post_init__(self):
-        """验证配置参数"""
-        if not 0 <= self.base_probability <= 1:
-            raise ValueError(f"基础概率必须在 0-1 之间: {self.base_probability}")
-        if self.min_civilization_level > self.max_civilization_level:
-            raise ValueError("最小文明等级不能大于最大文明等级")
+    This class defines base probabilities and modifiers for all event types
+    in the universe simulation.
+    """
+    # Base probabilities (per tick, before modifiers)
+    # These are intentionally low to create meaningful events over time
+    
+    # Celestial event base probabilities
+    celestial_base: float = 0.001
+    supernova_probability: float = 0.0001
+    black_hole_formation_probability: float = 0.00005
+    nebula_collapse_probability: float = 0.0003
+    resource_depletion_probability: float = 0.002
+    star_birth_probability: float = 0.0005
+    planet_formation_probability: float = 0.0008
+    asteroid_impact_probability: float = 0.003
+    solar_flare_probability: float = 0.005
+    
+    # Civilization event base probabilities
+    civilization_base: float = 0.002
+    tech_breakthrough_probability: float = 0.001
+    cultural_renaissance_probability: float = 0.0008
+    civil_war_probability: float = 0.0005
+    extinction_probability: float = 0.0001
+    first_contact_probability: float = 0.0003
+    colonization_probability: float = 0.001
+    population_boom_probability: float = 0.002
+    economic_crisis_probability: float = 0.001
+    scientific_discovery_probability: float = 0.0015
+    religious_awakening_probability: float = 0.0006
+    
+    # Disaster event base probabilities
+    disaster_base: float = 0.0005
+    gamma_ray_burst_probability: float = 0.00005
+    interstellar_plague_probability: float = 0.0002
+    void_invasion_probability: float = 0.00003
+    cosmic_storm_probability: float = 0.0004
+    dimensional_rift_probability: float = 0.0001
+    dark_matter_surge_probability: float = 0.00008
+    quantum_collapse_probability: float = 0.00002
+    entropy_wave_probability: float = 0.00001
+    
+    # Global modifiers based on universe state
+    age_modifier_factor: float = 1.0  # Events become more frequent as universe ages
+    population_modifier_factor: float = 1.0  # More civilizations = more events
+    chaos_modifier_factor: float = 1.0  # Higher chaos = more disasters
+    
+    # Thresholds for state-based modifiers
+    old_universe_threshold: int = 10000  # Ticks
+    high_population_threshold: int = 10  # Number of civilizations
+    chaos_threshold: float = 0.7  # Chaos level (0-1)
+    
+    # Event severity probability weights
+    severity_weights: Dict[int, float] = field(default_factory=lambda: {
+        1: 0.40,  # TRIVIAL
+        2: 0.30,  # MINOR
+        3: 0.18,  # MODERATE
+        4: 0.08,  # MAJOR
+        5: 0.035, # CATASTROPHIC
+        6: 0.005, # COSMIC
+    })
+    
+    def get_celestial_probabilities(self) -> Dict[str, float]:
+        """Return all celestial event probabilities."""
+        return {
+            "supernova": self.supernova_probability,
+            "black_hole_formation": self.black_hole_formation_probability,
+            "nebula_collapse": self.nebula_collapse_probability,
+            "resource_depletion": self.resource_depletion_probability,
+            "star_birth": self.star_birth_probability,
+            "planet_formation": self.planet_formation_probability,
+            "asteroid_impact": self.asteroid_impact_probability,
+            "solar_flare": self.solar_flare_probability,
+        }
+    
+    def get_civilization_probabilities(self) -> Dict[str, float]:
+        """Return all civilization event probabilities."""
+        return {
+            "tech_breakthrough": self.tech_breakthrough_probability,
+            "cultural_renaissance": self.cultural_renaissance_probability,
+            "civil_war": self.civil_war_probability,
+            "extinction": self.extinction_probability,
+            "first_contact": self.first_contact_probability,
+            "colonization": self.colonization_probability,
+            "population_boom": self.population_boom_probability,
+            "economic_crisis": self.economic_crisis_probability,
+            "scientific_discovery": self.scientific_discovery_probability,
+            "religious_awakening": self.religious_awakening_probability,
+        }
+    
+    def get_disaster_probabilities(self) -> Dict[str, float]:
+        """Return all disaster event probabilities."""
+        return {
+            "gamma_ray_burst": self.gamma_ray_burst_probability,
+            "interstellar_plague": self.interstellar_plague_probability,
+            "void_invasion": self.void_invasion_probability,
+            "cosmic_storm": self.cosmic_storm_probability,
+            "dimensional_rift": self.dimensional_rift_probability,
+            "dark_matter_surge": self.dark_matter_surge_probability,
+            "quantum_collapse": self.quantum_collapse_probability,
+            "entropy_wave": self.entropy_wave_probability,
+        }
+    
+    def calculate_age_modifier(self, universe_age: int) -> float:
+        """Calculate probability modifier based on universe age."""
+        if universe_age > self.old_universe_threshold:
+            # Older universe has more events
+            return 1.0 + (universe_age - self.old_universe_threshold) / self.old_universe_threshold * 0.5
+        return 1.0
+    
+    def calculate_population_modifier(self, civilization_count: int) -> float:
+        """Calculate probability modifier based on number of civilizations."""
+        if civilization_count > self.high_population_threshold:
+            return 1.0 + (civilization_count - self.high_population_threshold) * 0.05
+        return 1.0
+    
+    def calculate_chaos_modifier(self, chaos_level: float) -> float:
+        """Calculate probability modifier based on chaos level."""
+        if chaos_level > self.chaos_threshold:
+            return 1.0 + (chaos_level - self.chaos_threshold) * 2.0
+        return 1.0
+    
+    def get_severity_by_weight(self) -> int:
+        """Randomly select severity based on weights."""
+        import random
+        roll = random.random()
+        cumulative = 0.0
+        for severity, weight in sorted(self.severity_weights.items()):
+            cumulative += weight
+            if roll <= cumulative:
+                return severity
+        return 1  # Default to trivial
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "EventProbabilityConfig":
+        """Create config from dictionary."""
+        return cls(**{k: v for k, v in data.items() if hasattr(cls, k)})
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert config to dictionary."""
+        return {
+            "celestial_base": self.celestial_base,
+            "supernova_probability": self.supernova_probability,
+            "black_hole_formation_probability": self.black_hole_formation_probability,
+            "nebula_collapse_probability": self.nebula_collapse_probability,
+            "resource_depletion_probability": self.resource_depletion_probability,
+            "star_birth_probability": self.star_birth_probability,
+            "planet_formation_probability": self.planet_formation_probability,
+            "asteroid_impact_probability": self.asteroid_impact_probability,
+            "solar_flare_probability": self.solar_flare_probability,
+            "civilization_base": self.civilization_base,
+            "tech_breakthrough_probability": self.tech_breakthrough_probability,
+            "cultural_renaissance_probability": self.cultural_renaissance_probability,
+            "civil_war_probability": self.civil_war_probability,
+            "extinction_probability": self.extinction_probability,
+            "first_contact_probability": self.first_contact_probability,
+            "colonization_probability": self.colonization_probability,
+            "population_boom_probability": self.population_boom_probability,
+            "economic_crisis_probability": self.economic_crisis_probability,
+            "scientific_discovery_probability": self.scientific_discovery_probability,
+            "religious_awakening_probability": self.religious_awakening_probability,
+            "disaster_base": self.disaster_base,
+            "gamma_ray_burst_probability": self.gamma_ray_burst_probability,
+            "interstellar_plague_probability": self.interstellar_plague_probability,
+            "void_invasion_probability": self.void_invasion_probability,
+            "cosmic_storm_probability": self.cosmic_storm_probability,
+            "dimensional_rift_probability": self.dimensional_rift_probability,
+            "dark_matter_surge_probability": self.dark_matter_surge_probability,
+            "quantum_collapse_probability": self.quantum_collapse_probability,
+            "entropy_wave_probability": self.entropy_wave_probability,
+            "severity_weights": self.severity_weights,
+        }
 
 
-class EventProbabilities:
-    """事件概率配置管理类"""
-    
-    def __init__(self):
-        self._configs: Dict[EventType, EventConfig] = {}
-        self._initialize_default_configs()
-    
-    def _initialize_default_configs(self):
-        """初始化默认事件配置"""
-        
-        # 天体事件配置
-        celestial_events = [
-            EventConfig(
-                event_type=EventType.SUPERNOVA,
-                category=EventCategory.CELESTIAL,
-                base_probability=0.001,
-                severity=EventSeverity.CATASTROPHIC,
-                description_template="恒星 {star_name} 发生超新星爆发，释放出巨大的能量和物质",
-                modifiers={"star_age": 0.5, "star_mass": 0.3},
-                cooldown_ticks=1000
-            ),
-            EventConfig(
-                event_type=EventType.BLACK_HOLE_FORMATION,
-                category=EventCategory.CELESTIAL,
-                base_probability=0.0005,
-                severity=EventSeverity.CATASTROPHIC,
-                description_template="在坐标 {coordinates} 处形成了一个新的黑洞",
-                modifiers={"matter_density": 0.4},
-                cooldown_ticks=2000
-            ),
-            EventConfig(
-                event_type=EventType.NEBULA_COLLISION,
-                category=EventCategory.CELESTIAL,
-                base_probability=0.002,
-                severity=EventSeverity.MAJOR,
-                description_template="星云 {nebula_1} 与 {nebula_2} 发生碰撞，孕育出新的恒星",
-                modifiers={"nebula_count": 0.2},
-                cooldown_ticks=500
-            ),
-            EventConfig(
-                event_type=EventType.COSMIC_RADIATION_WAVE,
-                category=EventCategory.CELESTIAL,
-                base_probability=0.005,
-                severity=EventSeverity.MODERATE,
-                description_template="宇宙背景辐射波动，影响范围 {radius} 光年",
-                modifiers={"universe_age": 0.1},
-                cooldown_ticks=200
-            ),
-            EventConfig(
-                event_type=EventType.STELLAR_ALIGNMENT,
-                category=EventCategory.CELESTIAL,
-                base_probability=0.01,
-                severity=EventSeverity.MINOR,
-                description_template="罕见的恒星连珠现象，对文明产生神秘影响",
-                modifiers={"star_count": 0.05},
-                cooldown_ticks=100
-            ),
-        ]
-        
-        # 文明事件配置
-        civilization_events = [
-            EventConfig(
-                event_type=EventType.TECHNOLOGY_SINGULARITY,
-                category=EventCategory.CIVILIZATION,
-                base_probability=0.003,
-                severity=EventSeverity.MAJOR,
-                description_template="{civilization_name} 达成科技奇点，进入新的发展阶段",
-                modifiers={"tech_level": 0.8, "research_investment": 0.5},
-                cooldown_ticks=500,
-                min_civilization_level=50
-            ),
-            EventConfig(
-                event_type=EventType.RESOURCE_DISCOVERY,
-                category=EventCategory.CIVILIZATION,
-                base_probability=0.02,
-                severity=EventSeverity.MODERATE,
-                description_template="{civilization_name} 发现了丰富的 {resource_type} 资源",
-                modifiers={"exploration_rate": 0.3},
-                cooldown_ticks=50
-            ),
-            EventConfig(
-                event_type=EventType.CULTURAL_RENAISSANCE,
-                category=EventCategory.CIVILIZATION,
-                base_probability=0.015,
-                severity=EventSeverity.MINOR,
-                description_template="{civilization_name} 经历文化复兴，艺术与哲学蓬勃发展",
-                modifiers={"happiness": 0.4, "peace_duration": 0.3},
-                cooldown_ticks=100,
-                requires_peace=True
-            ),
-            EventConfig(
-                event_type=EventType.POPULATION_BOOM,
-                category=EventCategory.CIVILIZATION,
-                base_probability=0.01,
-                severity=EventSeverity.MINOR,
-                description_template="{civilization_name} 人口快速增长",
-                modifiers={"food_surplus": 0.5, "healthcare": 0.3},
-                cooldown_ticks=80
-            ),
-            EventConfig(
-                event_type=EventType.CIVILIZATION_ASCENSION,
-                category=EventCategory.CIVILIZATION,
-                base_probability=0.0001,
-                severity=EventSeverity.CATASTROPHIC,
-                description_template="{civilization_name} 完成文明飞升，成为星际文明",
-                modifiers={"tech_level": 0.9, "unity": 0.8},
-                cooldown_ticks=10000,
-                min_civilization_level=90
-            ),
-        ]
-        
-        # 灾难事件配置
-        disaster_events = [
-            EventConfig(
-                event_type=EventType.ASTEROID_IMPACT,
-                category=EventCategory.DISASTER,
-                base_probability=0.008,
-                severity=EventSeverity.MAJOR,
-                description_template="小行星撞击 {planet_name}，造成严重破坏",
-                modifiers={"asteroid_frequency": 0.4},
-                cooldown_ticks=200
-            ),
-            EventConfig(
-                event_type=EventType.PLAGUE_OUTBREAK,
-                category=EventCategory.DISASTER,
-                base_probability=0.006,
-                severity=EventSeverity.MODERATE,
-                description_template="{civilization_name} 爆发大规模瘟疫",
-                modifiers={"population_density": 0.5, "healthcare": -0.3},
-                cooldown_ticks=150
-            ),
-            EventConfig(
-                event_type=EventType.RESOURCE_DEPLETION,
-                category=EventCategory.DISASTER,
-                base_probability=0.01,
-                severity=EventSeverity.MODERATE,
-                description_template="{civilization_name} 的 {resource_type} 资源枯竭",
-                modifiers={"consumption_rate": 0.6, "resource_abundance": -0.4},
-                cooldown_ticks=100
-            ),
-            EventConfig(
-                event_type=EventType.CLIMATE_CATASTROPHE,
-                category=EventCategory.DISASTER,
-                base_probability=0.005,
-                severity=EventSeverity.MAJOR,
-                description_template="{planet_name} 发生气候灾难",
-                modifiers={"industrial_activity": 0.5, "eco_balance": -0.4},
-                cooldown_ticks=300
-            ),
-            EventConfig(
-                event_type=EventType.CIVIL_WAR,
-                category=EventCategory.DISASTER,
-                base_probability=0.004,
-                severity=EventSeverity.MAJOR,
-                description_template="{civilization_name} 爆发内战",
-                modifiers={"unrest": 0.6, "inequality": 0.4},
-                cooldown_ticks=400,
-                requires_peace=True
-            ),
-            EventConfig(
-                event_type=EventType.INTERSTELLAR_WAR,
-                category=EventCategory.DISASTER,
-                base_probability=0.003,
-                severity=EventSeverity.CATASTROPHIC,
-                description_template="{civilization_1} 与 {civilization_2} 爆发星际战争",
-                modifiers={"tension": 0.7, "border_disputes": 0.5},
-                cooldown_ticks=500
-            ),
-        ]
-        
-        # 注册所有事件配置
-        for config in celestial_events + civilization_events + disaster_events:
-            self._configs[config.event_type] = config
-    
-    def get_config(self, event_type: EventType) -> Optional[EventConfig]:
-        """获取指定事件类型的配置"""
-        return self._configs.get(event_type)
-    
-    def get_configs_by_category(self, category: EventCategory) -> List[EventConfig]:
-        """获取指定类别的所有事件配置"""
-        return [config for config in self._configs.values() if config.category == category]
-    
-    def get_all_configs(self) -> List[EventConfig]:
-        """获取所有事件配置"""
-        return list(self._configs.values())
-    
-    def register_config(self, config: EventConfig):
-        """注册新的事件配置"""
-        self._configs[config.event_type] = config
-    
-    def get_base_probability(self, event_type: EventType) -> float:
-        """获取事件基础概率"""
-        config = self.get_config(event_type)
-        return config.base_probability if config else 0.0
-
-
-# 全局概率配置实例
-event_probabilities = EventProbabilities()
+# Import for type hint
+from typing import Any

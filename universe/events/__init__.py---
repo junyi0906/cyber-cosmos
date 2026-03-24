@@ -1,4 +1,23 @@
 from .generator import EventGenerator
-from .probabilities import EventProbabilities, EventConfig
+from .types import (
+    Event,
+    EventType,
+    EventSeverity,
+    CelestialEventType,
+    CivilizationEventType,
+    DisasterEventType,
+    EventContext,
+)
+from .probabilities import EventProbabilityConfig
 
-__all__ = ['EventGenerator', 'EventProbabilities', 'EventConfig']
+__all__ = [
+    "EventGenerator",
+    "Event",
+    "EventType",
+    "EventSeverity",
+    "CelestialEventType",
+    "CivilizationEventType",
+    "DisasterEventType",
+    "EventContext",
+    "EventProbabilityConfig",
+]
