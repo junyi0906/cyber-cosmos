@@ -1,564 +1,521 @@
 {
   "version": "1.0",
-  "project": "project_1774365277",
-  "total_features": 25,
+  "project": "project_1774367901",
+  "total_features": 23,
   "features": [
     {
       "id": "feat-001",
       "category": "infra",
-      "description": "数据库架构升级：添加贸易、遗迹、天气相关表结构",
+      "description": "数据库迁移 - 新增资源、贸易路线、赛季、遗迹相关表结构",
       "steps": [
-        "创建 database/migrations/v2.0_add_trade_relics.sql 文件",
-        "编写 trade_routes 表结构（id, source_civ_id, target_civ_id, resource_type, volume, status, created_at）",
-        "编写 market_history 超级表结构（time, resource_type, price, volume）用于 TimescaleDB",
-        "编写 relics 表结构（id, name, description, location_x, location_y, type, bonus_data JSONB, discovered_by）",
-        "编写 cosmic_weather 表结构（id, type, intensity, start_time, end_time, affected_regions JSONB）",
-        "添加必要的索引和外键约束",
-        "运行迁移脚本验证表创建成功"
+        "创建 backend/src/database/migrations/002_economy_setup.ts",
+        "在迁移文件中添加 civilizations 表的 resources JSONB 字段（矿石、能源、技术点）",
+        "创建 trade_routes 表（id, from_civ_id, to_civ_id, resources, stability, status, created_at）",
+        "创建 seasons 表（id, name, phase, rules_modifiers, started_at, ended_at）",
+        "创建 relics 表（id, name, type, coordinates, effect, discoverer_id, durability）",
+        "创建 market_orders 表（id, civ_id, resource_type, amount, price, order_type）",
+        "在 backend/src/database/migrations/index.ts 中注册迁移",
+        "运行 npm run migration:run 执行迁移"
       ],
-      "test_command": "psql -U postgres -d cyber_cosmos -c \"\\dt\" | grep -E 'trade_routes|market_history|relics|cosmic_weather'",
+      "test_command": "cd backend && npm run migration:status",
       "depends_on": [],
-      "passes": true,
-      "last_attempt": "2026-03-24T23:20:51.838947",
-      "notes": "未解析到代码文件",
-      "retry_count": 0
+      "passes": false,
+      "last_attempt": null,
+      "notes": "依赖现有数据库连接配置"
     },
     {
       "id": "feat-002",
       "category": "config",
-      "description": "Redis 配置 - 市场价格缓存与实时行情存储",
+      "description": "Redis 配置 - 市场行情缓存与赛季状态存储",
       "steps": [
-        "创建 src/config/redis.config.ts 配置文件",
-        "定义 Redis 连接选项（host, port, password 从环境变量读取）",
-        "创建 src/common/cache/redis.provider.ts，使用 ioredis 创建 Redis 客户端单例",
-        "在 src/app.module.ts 中注册 Redis Provider",
-        "创建 src/common/cache/market.cache.ts，定义市场价格缓存 Key 常量 MARKET_PRICES_KEY = 'market:prices'",
-        "添加环境变量 REDIS_HOST, REDIS_PORT, REDIS_PASSWORD 到 .env.example"
+        "创建 backend/src/config/redis.config.ts",
+        "配置 Redis 连接参数（host, port, password 从环境变量读取）",
+        "创建 backend/src/common/cache/redis.service.ts",
+        "实现 RedisService 的 get/set/del/publish/subscribe 方法",
+        "在 backend/src/app.module.ts 中注册 RedisModule",
+        "更新 docker-compose.yml 添加 Redis 服务配置",
+        "创建 backend/.env.example 添加 REDIS_URL 示例"
       ],
-      "test_command": "npm run test -- --testPathPattern=redis.provider",
+      "test_command": "cd backend && npm run test -- --testPathPattern=redis.service",
       "depends_on": [],
-      "passes": true,
-      "last_attempt": "2026-03-24T23:21:33.638991",
-      "notes": "",
-      "retry_count": 0
+      "passes": false,
+      "last_attempt": null,
+      "notes": ""
     },
     {
       "id": "feat-003",
       "category": "functional",
-      "description": "贸易模块基础结构 - 创建 TradeModule 及核心服务骨架",
+      "description": "资源枚举与常量定义 - 统一资源类型与基础价格",
       "steps": [
-        "创建 src/modules/trade/ 目录",
-        "创建 src/modules/trade/trade.module.ts，定义 NestJS 模块",
-        "创建 src/modules/trade/dto/create-trade-route.dto.ts，定义创建贸易路线的 DTO（fromCivId, toCivId, resourceType, amount）",
-        "创建 src/modules/trade/dto/market-price.dto.ts，定义市场价格 DTO（resourceType, price, changeRate）",
-        "创建 src/modules/trade/interfaces/trade.interface.ts，定义 ITradeRoute 接口",
-        "在 src/app.module.ts 中导入 TradeModule"
+        "创建 backend/src/common/constants/resources.enum.ts",
+        "定义 ResourceType 枚举（ORE = 'ore', ENERGY = 'energy', TECH_POINT = 'tech_point'）",
+        "创建 ResourceConfig 接口（basePrice, baseProduction, baseConsumption）",
+        "创建 RESOURCE_CONFIGS 常量映射，设置各资源基础价格（矿石:100, 能源:150, 技术点:500）",
+        "创建 backend/src/common/constants/trade.constants.ts",
+        "定义 TradeStatus 枚举（ACTIVE, SUSPENDED, CLOSED）",
+        "定义 RouteStabilityThresholds 常量（最低稳定性 0.3）",
+        "导出所有常量到 backend/src/common/constants/index.ts"
       ],
-      "test_command": "npm run build",
-      "depends_on": [
-        "feat-001"
-      ],
-      "passes": true,
-      "last_attempt": "2026-03-24T23:22:46.778494",
-      "notes": "",
-      "retry_count": 0
+      "test_command": "cd backend && npm run build",
+      "depends_on": [],
+      "passes": false,
+      "last_attempt": null,
+      "notes": ""
     },
     {
       "id": "feat-004",
       "category": "functional",
-      "description": "市场价格服务 - 实现指数滑动平均价格算法",
+      "description": "文明资源系统 - 为文明添加资源属性与产出逻辑",
       "steps": [
-        "创建 src/modules/trade/market.service.ts",
-        "实现 MarketService 类，注入 Redis 客户端",
-        "实现 getBasePrice(resourceType: string) 方法，返回基础价格",
-        "实现 calculateNewPrice(oldPrice: number, buyVolume: number, sellVolume: number, k: number) 方法，公式: P_new = P_old * exp((V_buy - V_sell) / K)",
-        "实现 updateMarketPrice(resourceType: string, buyVolume: number, sellVolume: number) 方法，更新 Redis 中的价格",
-        "实现 getAllPrices() 方法，从 Redis Hash 'market:prices' 获取所有资源价格",
-        "实现 initializeMarketPrices() 方法，初始化三种资源的基础价格",
-        "添加 @Injectable() 装饰器并在 TradeModule 中注册 Provider"
+        "创建 backend/src/modules/civilization/interfaces/civilization-resources.interface.ts",
+        "定义 CivilizationResources 接口（ore, energy, techPoint, productionRates, consumptionRates）",
+        "修改 backend/src/modules/civilization/entities/civilization.entity.ts",
+        "添加 resources 字段（类型为 CivilizationResources）",
+        "创建 backend/src/modules/civilization/services/resource-calculator.service.ts",
+        "实现 calculateProduction 方法（根据文明属性计算产出）",
+        "实现 calculateConsumption 方法（根据文明规模计算消耗）",
+        "实现 updateResources 方法（产出-消耗=净增长）",
+        "在 CivilizationModule 中注册 ResourceCalculatorService",
+        "创建 backend/src/modules/civilization/dto/update-resources.dto.ts"
       ],
-      "test_command": "npm run test -- --testPathPattern=market.service",
+      "test_command": "cd backend && npm run test -- --testPathPattern=resource-calculator",
       "depends_on": [
-        "feat-002",
+        "feat-001",
         "feat-003"
       ],
-      "passes": true,
-      "last_attempt": "2026-03-24T23:23:29.829703",
-      "notes": "K 值默认设为 1000，可通过环境变量调整",
-      "retry_count": 0
+      "passes": false,
+      "last_attempt": null,
+      "notes": "依赖数据库迁移和资源枚举"
     },
     {
       "id": "feat-005",
       "category": "functional",
-      "description": "贸易路线服务 - 创建、查询、取消贸易路线",
+      "description": "动态市场服务 - 实现供需定价算法与行情缓存",
       "steps": [
-        "创建 src/modules/trade/trade.service.ts",
-        "实现 TradeService 类，注入 Repository(TradeRoute) 和 MarketService",
-        "实现 createTradeRoute(dto: CreateTradeRouteDto) 方法：验证文明存在、扣除能源、创建路线记录",
-        "实现 getTradeRoutesByCivilization(civId: string) 方法，查询文明的所有贸易路线",
-        "实现 cancelTradeRoute(routeId: string) 方法，更新 status 为 CANCELLED",
-        "实现 processTradeCycle() 方法，定时执行贸易结算（资源转移、价格更新）",
-        "在 TradeModule 中注册 TradeService 为 Provider"
+        "创建 backend/src/modules/trade/interfaces/market.interface.ts",
+        "定义 MarketPrice 接口（resourceType, currentPrice, supply, demand, lastUpdate）",
+        "创建 backend/src/modules/trade/services/market.service.ts",
+        "实现 calculatePrice 方法（Price = BasePrice * (Demand / Supply) * 0.5 + BasePrice * 0.5）",
+        "实现 updateMarketState 方法（聚合全宇宙供需）",
+        "实现 getPrice 方法（优先从 Redis 读取，miss 则计算）",
+        "实现 cachePrices 方法（将价格存入 Redis，TTL 60秒）",
+        "创建 backend/src/modules/trade/dto/market-price.dto.ts",
+        "在 TradeModule 中注册 MarketService 并导入 RedisModule"
       ],
-      "test_command": "npm run test -- --testPathPattern=trade.service",
+      "test_command": "cd backend && npm run test -- --testPathPattern=market.service",
       "depends_on": [
-        "feat-003",
-        "feat-004"
+        "feat-002",
+        "feat-003"
       ],
-      "passes": true,
-      "last_attempt": "2026-03-24T23:24:49.008175",
-      "notes": "依赖现有的 CivilizationModule 获取文明信息",
-      "retry_count": 0
+      "passes": false,
+      "last_attempt": null,
+      "notes": "依赖 Redis 配置和资源常量"
     },
     {
       "id": "feat-006",
       "category": "functional",
-      "description": "贸易控制器 API - REST 接口实现",
+      "description": "市场 REST API - 提供行情查询与交易接口",
       "steps": [
-        "创建 src/modules/trade/trade.controller.ts",
-        "实现 TradeController 类，注入 TradeService 和 MarketService",
-        "实现 @Post('routes') createRoute(@Body() dto) 接口，创建贸易路线",
-        "实现 @Get('routes') getRoutes(@Query('civId') civId) 接口，查询贸易路线",
-        "实现 @Delete('routes/:id') cancelRoute(@Param('id') id) 接口，取消贸易路线",
-        "实现 @Get('market') getMarketPrices() 接口，获取当前市场价格",
-        "添加 @Controller('api/trade') 装饰器",
-        "在 TradeModule 中注册 Controller"
+        "创建 backend/src/modules/trade/controllers/market.controller.ts",
+        "实现 GET /api/v2/market/prices 端点（返回所有资源当前价格）",
+        "实现 GET /api/v2/market/prices/:resourceType 端点（返回指定资源价格）",
+        "实现 GET /api/v2/market/history 端点（返回历史价格走势，可选参数 timeRange）",
+        "创建 backend/src/modules/trade/dto/market-query.dto.ts",
+        "添加 Swagger 装饰器描述 API",
+        "在 TradeModule 中注册 MarketController",
+        "创建 backend/test/market.controller.e2e-spec.ts 集成测试"
       ],
-      "test_command": "curl -X GET http://localhost:3000/api/trade/market",
+      "test_command": "cd backend && npm run test:e2e -- --testPathPattern=market.controller",
       "depends_on": [
         "feat-005"
       ],
-      "passes": true,
-      "last_attempt": "2026-03-24T23:27:47.223605",
-      "notes": "",
-      "retry_count": 0
+      "passes": false,
+      "last_attempt": null,
+      "notes": ""
     },
     {
       "id": "feat-007",
       "category": "functional",
-      "description": "贸易 WebSocket 网关 - 实时价格推送",
+      "description": "贸易路线实体与服务 - 建立文明间贸易通道",
       "steps": [
-        "创建 src/modules/trade/trade.gateway.ts",
-        "实现 TradeGateway 类，使用 @WebSocketGateway() 装饰器",
-        "实现 @SubscribeMessage('subscribe_market') 处理订阅请求",
-        "创建 src/modules/trade/trade.cron.ts，实现 @Cron('*/30 * * * * *') 定时任务，每30秒推送价格",
-        "在定时任务中调用 MarketService.getAllPrices() 并通过 gateway.broadcast 发送 'market_tick' 事件",
-        "在 TradeModule 中导入 ScheduleModule 并注册 Gateway"
+        "创建 backend/src/modules/trade/entities/trade-route.entity.ts",
+        "定义 TradeRoute 实体（id, fromCivId, toCivId, resources, stability, status, createdAt）",
+        "创建 backend/src/modules/trade/services/trade-route.service.ts",
+        "实现 createRoute 方法（验证双方文明存在、非敌对关系）",
+        "实现 calculateStability 方法（基于距离、外交关系、随机事件计算）",
+        "实现 updateRouteStatus 方法（稳定性低于阈值则暂停）",
+        "实现 getActiveRoutes 方法（获取文明所有活跃路线）",
+        "实现 processTrade 方法（按路线传输资源，扣除稳定性）",
+        "创建 backend/src/modules/trade/dto/create-route.dto.ts",
+        "在 TradeModule 中注册 TradeRouteService"
       ],
-      "test_command": "wscat -c ws://localhost:3000 -x '{\"event\":\"subscribe_market\"}'",
+      "test_command": "cd backend && npm run test -- --testPathPattern=trade-route.service",
       "depends_on": [
-        "feat-004",
-        "feat-006"
+        "feat-001",
+        "feat-004"
       ],
-      "passes": true,
-      "last_attempt": "2026-03-24T23:28:56.040113",
-      "notes": "需要安装 @nestjs/schedule 和 @nestjs/websockets",
-      "retry_count": 0
+      "passes": false,
+      "last_attempt": null,
+      "notes": "依赖数据库表和文明资源系统"
     },
     {
       "id": "feat-008",
       "category": "functional",
-      "description": "遗迹模块基础结构 - 创建 RelicsModule 及实体定义",
+      "description": "贸易协定外交扩展 - 在外交模块新增通商条约",
       "steps": [
-        "创建 src/modules/relics/ 目录",
-        "创建 src/modules/relics/relics.module.ts，定义 NestJS 模块",
-        "创建 src/modules/relics/entities/relic.entity.ts，定义 Relic 实体（id, coordinates, type, bonusData, originEventId, ownerId, discoveredAt, status）",
-        "创建 src/modules/relics/dto/research-relic.dto.ts，定义研究遗迹的 DTO",
-        "创建 src/modules/relics/interfaces/relic.interface.ts，定义 RelicType 枚举（TECH_BONUS, BLUEPRINT, RESOURCE_CACHE）",
-        "在 src/app.module.ts 中导入 RelicsModule"
+        "修改 backend/src/modules/diplomacy/interfaces/treaty.interface.ts",
+        "添加 TRADE_AGREEMENT 类型到 TreatyType 枚举",
+        "创建 backend/src/modules/diplomacy/dto/trade-treaty.dto.ts",
+        "定义 TradeTreatyDto（taxRate, exclusiveResources, duration）",
+        "修改 backend/src/modules/diplomacy/services/treaty.service.ts",
+        "实现 createTradeTreaty 方法（双方同意后创建，默认税率 10%）",
+        "实现 getTradeBonus 方法（盟友税率 -5%，敌对 +20%）",
+        "在 TreatyService 中注入 TradeRouteService",
+        "创建 backend/src/modules/diplomacy/events/treaty-events.listener.ts",
+        "监听条约创建事件，自动解锁贸易路线创建权限"
       ],
-      "test_command": "npm run build",
+      "test_command": "cd backend && npm run test -- --testPathPattern=treaty.service",
       "depends_on": [
-        "feat-001"
+        "feat-007"
       ],
-      "passes": true,
-      "last_attempt": "2026-03-24T23:29:27.151121",
-      "notes": "",
-      "retry_count": 0
+      "passes": false,
+      "last_attempt": null,
+      "notes": "依赖贸易路线服务"
     },
     {
       "id": "feat-009",
       "category": "functional",
-      "description": "遗迹生成监听器 - 监听重大历史事件自动生成遗迹",
+      "description": "贸易路线 REST API - 提供路线管理接口",
       "steps": [
-        "创建 src/modules/relics/spawn.listener.ts",
-        "实现 RelicSpawnListener 类，注入 EventSubscriber 和 Repository(Relic)",
-        "使用 @OnEvent('MAJOR_EVENT_OCCURRED') 装饰器监听事件",
-        "实现 handleMajorEvent(event: MajorEventPayload) 方法：检查 event.impactLevel > 8",
-        "在方法中创建 Relic 实体：coordinates = event.coordinates, type = 随机类型, originEventId = event.id",
-        "生成遗迹描述：关联事件日志生成描述文本",
-        "发布 'relic_spawned' 事件供后续广播使用",
-        "在 RelicsModule 中注册 Listener"
+        "创建 backend/src/modules/trade/controllers/trade.controller.ts",
+        "实现 POST /api/v2/trade/routes 端点（创建贸易路线）",
+        "实现 GET /api/v2/trade/routes 端点（获取所有路线，支持 ?civId= 过滤）",
+        "实现 GET /api/v2/trade/routes/:id 端点（获取单条路线详情）",
+        "实现 PATCH /api/v2/trade/routes/:id 端点（更新路线资源配置）",
+        "实现 DELETE /api/v2/trade/routes/:id 端点（关闭贸易路线）",
+        "添加请求验证和权限检查",
+        "创建 backend/test/trade.controller.e2e-spec.ts"
       ],
-      "test_command": "npm run test -- --testPathPattern=spawn.listener",
+      "test_command": "cd backend && npm run test:e2e -- --testPathPattern=trade.controller",
       "depends_on": [
+        "feat-007",
         "feat-008"
       ],
-      "passes": true,
-      "last_attempt": "2026-03-24T23:30:41.682526",
-      "notes": "依赖现有的 NarrativeEngine 发布的事件",
-      "retry_count": 0
+      "passes": false,
+      "last_attempt": null,
+      "notes": ""
     },
     {
       "id": "feat-010",
       "category": "functional",
-      "description": "遗迹交互服务 - 发现、研究、争夺遗迹",
+      "description": "赛季管理器 - 赛季状态机与阶段流转",
       "steps": [
-        "创建 src/modules/relics/relics.service.ts",
-        "实现 RelicsService 类，注入 Repository(Relic) 和 CivilizationService",
-        "实现 discoverRelic(civId: string, coordinates: Coordinate) 方法：扫描附近遗迹并标记为已发现",
-        "实现 researchRelic(relicId: string, civId: string) 方法：消耗资源、开始研究计时、返回奖励",
-        "实现 contestRelic(relicId: string, attackerCivId: string) 方法：处理争夺逻辑，更新所有权",
-        "实现 getDiscoveredRelics(civId: string) 方法，返回已发现的遗迹列表",
-        "在 RelicsModule 中注册 Service"
+        "创建 backend/src/modules/season/interfaces/season.interface.ts",
+        "定义 SeasonPhase 枚举（EXPLORATION, EXPANSION, CONFLICT, FINALE）",
+        "定义 SeasonRules 接口（resourceMultiplier, eventFrequency, diplomacyModifier）",
+        "创建 backend/src/modules/season/services/season.manager.ts",
+        "实现 startNewSeason 方法（生成赛季名称、规则、开始时间）",
+        "实现 advancePhase 方法（推进到下一阶段）",
+        "实现 getCurrentRules 方法（返回当前阶段的规则修正）",
+        "实现 getSeasonProgress 方法（返回进度百分比）",
+        "创建 backend/src/modules/season/season.module.ts",
+        "在 SeasonModule 中导入 RedisModule 存储赛季状态"
       ],
-      "test_command": "npm run test -- --testPathPattern=relics.service",
+      "test_command": "cd backend && npm run test -- --testPathPattern=season.manager",
       "depends_on": [
-        "feat-008",
-        "feat-009"
+        "feat-002"
       ],
-      "passes": true,
-      "last_attempt": "2026-03-24T23:32:12.846982",
-      "notes": "争夺逻辑依赖现有的战斗系统",
-      "retry_count": 0
+      "passes": false,
+      "last_attempt": null,
+      "notes": "依赖 Redis 存储状态"
     },
     {
       "id": "feat-011",
       "category": "functional",
-      "description": "遗迹控制器 API - REST 接口实现",
+      "description": "赛季规则引擎 - 动态宇宙常数与修正计算",
       "steps": [
-        "创建 src/modules/relics/relics.controller.ts",
-        "实现 RelicsController 类，注入 RelicsService",
-        "实现 @Get() getRelics(@Query('civId') civId) 接口，获取已发现遗迹",
-        "实现 @Post(':id/research') researchRelic(@Param('id') id, @Body() dto) 接口，开始研究",
-        "实现 @Post(':id/contest') contestRelic(@Param('id') id, @Body() dto) 接口，争夺遗迹",
-        "实现 @Get(':id') getRelicDetail(@Param('id') id) 接口，获取遗迹详情",
-        "添加 @Controller('api/relics') 装饰器",
-        "在 RelicsModule 中注册 Controller"
+        "创建 backend/src/modules/season/services/season.rules.ts",
+        "实现 generateSeasonRules 方法（随机生成规则修正，范围 ±30%）",
+        "实现 applyRuleModifiers 方法（将规则应用到资源产出、事件频率等）",
+        "创建规则模板数组（资源丰度、外交限制、事件强度等 10 种规则类型）",
+        "实现 validateRules 方法（确保规则组合不会导致极端情况）",
+        "创建 backend/src/modules/season/dto/season-rules.dto.ts",
+        "在 SeasonRulesService 中注入 SeasonManager"
       ],
-      "test_command": "curl -X GET http://localhost:3000/api/relics",
+      "test_command": "cd backend && npm run test -- --testPathPattern=season.rules",
       "depends_on": [
         "feat-010"
       ],
-      "passes": true,
-      "last_attempt": "2026-03-24T23:33:13.764363",
-      "notes": "",
-      "retry_count": 0
+      "passes": false,
+      "last_attempt": null,
+      "notes": ""
     },
     {
       "id": "feat-012",
       "category": "functional",
-      "description": "天气模块基础结构 - 创建 WeatherModule 及状态枚举",
+      "description": "赛季结算系统 - 评分计算与榜单生成",
       "steps": [
-        "创建 src/modules/weather/ 目录",
-        "创建 src/modules/weather/weather.module.ts，定义 NestJS 模块",
-        "创建 src/modules/weather/interfaces/weather.interface.ts，定义 WeatherState 枚举（CALM, RESOURCE_STORM, DARK_FLUX, WARP_BLOCK）",
-        "创建 src/modules/weather/interfaces/weather-effects.interface.ts，定义天气效果接口（resourceBonus, shieldMalus, stealthDisabled, warpBlocked）",
-        "创建 src/modules/weather/dto/weather-forecast.dto.ts，定义天气预报 DTO",
-        "在 src/app.module.ts 中导入 WeatherModule"
+        "创建 backend/src/modules/season/services/season-settlement.service.ts",
+        "实现 calculateCivilizationScore 方法（领土 30% + 经济 30% + 科技 20% + 军事 20%）",
+        "实现 generateLeaderboard 方法（排序所有文明，生成榜单）",
+        "实现 settleSeason 方法（结算当前赛季，存档历史数据）",
+        "创建 backend/src/modules/season/entities/season-record.entity.ts",
+        "定义 SeasonRecord 实体（seasonId, civilizationId, score, rank, achievements）",
+        "实现 getHistoricalSeasons 方法（查询历史赛季记录）",
+        "在 SeasonModule 中注册 SeasonSettlementService"
       ],
-      "test_command": "npm run build",
+      "test_command": "cd backend && npm run test -- --testPathPattern=season-settlement",
       "depends_on": [
-        "feat-001"
+        "feat-010",
+        "feat-004"
       ],
-      "passes": true,
-      "last_attempt": "2026-03-24T23:34:11.309656",
-      "notes": "",
-      "retry_count": 0
+      "passes": false,
+      "last_attempt": null,
+      "notes": "依赖赛季管理器和文明资源"
     },
     {
       "id": "feat-013",
       "category": "functional",
-      "description": "天气状态服务 - 状态机实现与扇区管理",
+      "description": "赛季 REST API - 提供赛季信息与结算接口",
       "steps": [
-        "创建 src/modules/weather/weather.service.ts",
-        "实现 WeatherService 类，注入 Repository(WeatherState)",
-        "实现 getSectorWeather(sectorId: string) 方法，获取扇区当前天气",
-        "实现 transitionWeather(sectorId: string) 方法：随机选择下一状态，更新 nextChangeAt",
-        "实现 getAllSectorWeather() 方法，返回所有扇区天气状态",
-        "实现 getWeatherEffects(weather: WeatherState) 方法，返回天气效果配置",
-        "定义天气效果常量：RESOURCE_STORM = { resourceBonus: 1.5, shieldMalus: 0.8 }",
-        "在 WeatherModule 中注册 Service"
+        "创建 backend/src/modules/season/controllers/season.controller.ts",
+        "实现 GET /api/v2/season/info 端点（返回当前赛季进度、阶段、规则）",
+        "实现 GET /api/v2/season/leaderboard 端点（返回当前榜单）",
+        "实现 GET /api/v2/season/history 端点（返回历史赛季列表）",
+        "实现 POST /api/v2/season/advance 端点（管理员接口，推进赛季阶段）",
+        "创建 backend/src/modules/season/dto/season-info.dto.ts",
+        "添加 Swagger 文档",
+        "创建 backend/test/season.controller.e2e-spec.ts"
       ],
-      "test_command": "npm run test -- --testPathPattern=weather.service",
+      "test_command": "cd backend && npm run test:e2e -- --testPathPattern=season.controller",
       "depends_on": [
+        "feat-010",
         "feat-012"
       ],
-      "passes": true,
-      "last_attempt": "2026-03-24T23:35:14.546559",
-      "notes": "天气转换概率：CALM 40%, RESOURCE_STORM 25%, DARK_FLUX 20%, WARP_BLOCK 15%",
-      "retry_count": 0
+      "passes": false,
+      "last_attempt": null,
+      "notes": ""
     },
     {
       "id": "feat-014",
       "category": "functional",
-      "description": "天气效果处理器 - 应用天气 Buff/Debuff 到文明属性",
+      "description": "遗迹生成器 - 监听重大事件生成遗迹实体",
       "steps": [
-        "创建 src/modules/weather/effects.handler.ts",
-        "实现 WeatherEffectsHandler 类，注入 WeatherService 和 CivilizationService",
-        "实现 applyWeatherEffects(civId: string, sectorId: string) 方法",
-        "在方法中获取文明当前属性和天气效果，计算修正后的属性值",
-        "实现 removeWeatherEffects(civId: string) 方法，移除天气效果",
-        "实现 @OnEvent('SECTOR_WEATHER_CHANGED') 监听器，自动更新受影响文明",
-        "在 WeatherModule 中注册 Handler"
+        "创建 backend/src/modules/relic/interfaces/relic.interface.ts",
+        "定义 RelicType 枚举（RUINS, ANOMALY, MONUMENT, BATTLEFIELD）",
+        "定义 RelicEffect 接口（type, value, duration）",
+        "创建 backend/src/modules/relic/services/relic.generator.ts",
+        "实现 shouldGenerateRelic 方法（判断事件权重是否超过阈值 80）",
+        "实现 generateRelic 方法（根据事件类型生成遗迹，设置坐标、效果）",
+        "创建遗迹名称生成器（组合前缀+核心+后缀，如「破碎的·星际之门·残骸」）",
+        "创建 backend/src/modules/relic/entities/relic.entity.ts",
+        "在 RelicModule 中导入 EventModule 并监听 onMajorEvent"
       ],
-      "test_command": "npm run test -- --testPathPattern=effects.handler",
+      "test_command": "cd backend && npm run test -- --testPathPattern=relic.generator",
       "depends_on": [
-        "feat-013"
+        "feat-001"
       ],
-      "passes": true,
-      "last_attempt": "2026-03-24T23:36:21.873783",
-      "notes": "需要与现有 CivilizationModule 集成",
-      "retry_count": 0
+      "passes": false,
+      "last_attempt": null,
+      "notes": "依赖遗迹表结构"
     },
     {
       "id": "feat-015",
       "category": "functional",
-      "description": "天气定时任务 - 10分钟周期天气轮转",
+      "description": "遗迹交互系统 - 探索、挖掘、争夺遗迹",
       "steps": [
-        "创建 src/modules/weather/weather.cron.ts",
-        "实现 WeatherCron 类，注入 WeatherService 和 EventsHandler",
-        "实现 @Cron('0 */10 * * * *') handleWeatherChange() 方法，每10分钟执行",
-        "在方法中遍历所有扇区，调用 transitionWeather() 更新状态",
-        "发布 'SECTOR_WEATHER_CHANGED' 事件，包含 sectorId 和 newWeather",
-        "计算下次变化时间并更新 nextChangeAt 字段",
-        "在 WeatherModule 中导入 ScheduleModule"
+        "创建 backend/src/modules/relic/services/relic.interaction.ts",
+        "实现 exploreRelic 方法（消耗能源，随机发现资源或触发事件）",
+        "实现 excavateRelic 方法（消耗矿石，获得一次性奖励）",
+        "实现 contestRelic 方法（多文明争夺，触发外交冲突事件）",
+        "实现 applyRelicEffect 方法（应用持久光环到所在星系）",
+        "创建 backend/src/modules/relic/dto/relic-interaction.dto.ts",
+        "定义 ExploreDto, ExcavateDto, ContestDto",
+        "在 RelicInteractionService 中注入 CivilizationService 和 EventService"
       ],
-      "test_command": "npm run test -- --testPathPattern=weather.cron",
+      "test_command": "cd backend && npm run test -- --testPathPattern=relic.interaction",
       "depends_on": [
-        "feat-013"
+        "feat-014",
+        "feat-004"
       ],
-      "passes": true,
-      "last_attempt": "2026-03-24T23:37:21.474610",
-      "notes": "周期时间可通过环境变量 WEATHER_CHANGE_CYCLE 调整",
-      "retry_count": 0
+      "passes": false,
+      "last_attempt": null,
+      "notes": "依赖遗迹生成器和文明资源"
     },
     {
       "id": "feat-016",
       "category": "functional",
-      "description": "天气控制器 API 与 WebSocket 预警",
+      "description": "遗迹 REST API - 提供遗迹查询与交互接口",
       "steps": [
-        "创建 src/modules/weather/weather.controller.ts",
-        "实现 WeatherController 类，注入 WeatherService",
-        "实现 @Get('forecast') getForecast() 接口，返回所有扇区天气预报",
-        "实现 @Get('sector/:id') getSectorWeather(@Param('id') id) 接口",
-        "创建 src/modules/weather/weather.gateway.ts，实现 WebSocket 网关",
-        "实现 @OnEvent('SECTOR_WEATHER_CHANGED') 广播 'weather_alert' 事件",
-        "预警消息格式：{ sectorId, newWeather, effectiveIn: 300 }（5分钟预警）",
-        "在 WeatherModule 中注册 Controller 和 Gateway"
+        "创建 backend/src/modules/relic/controllers/relic.controller.ts",
+        "实现 GET /api/v2/relics 端点（返回全宇宙遗迹列表，支持分页）",
+        "实现 GET /api/v2/relics/:id 端点（返回遗迹详情）",
+        "实现 POST /api/v2/relics/:id/explore 端点（探索遗迹）",
+        "实现 POST /api/v2/relics/:id/excavate 端点（挖掘遗迹）",
+        "实现 POST /api/v2/relics/:id/contest 端点（争夺遗迹）",
+        "创建 backend/test/relic.controller.e2e-spec.ts"
       ],
-      "test_command": "curl -X GET http://localhost:3000/api/weather/forecast",
+      "test_command": "cd backend && npm run test:e2e -- --testPathPattern=relic.controller",
       "depends_on": [
-        "feat-014",
         "feat-015"
       ],
-      "passes": true,
-      "last_attempt": "2026-03-24T23:38:24.961671",
-      "notes": "",
-      "retry_count": 0
+      "passes": false,
+      "last_attempt": null,
+      "notes": ""
     },
     {
       "id": "feat-017",
       "category": "functional",
-      "description": "观测台模块基础结构 - 创建 ObservatoryModule",
+      "description": "观测台时间线组件 - 宇宙演化历史回放",
       "steps": [
-        "创建 src/modules/observatory/ 目录",
-        "创建 src/modules/observatory/observatory.module.ts，定义 NestJS 模块",
-        "创建 src/modules/observatory/dto/timeline-query.dto.ts，定义时间线查询参数",
-        "创建 src/modules/observatory/dto/heatmap-data.dto.ts，定义热力图数据格式",
-        "创建 src/modules/observatory/interfaces/analytics.interface.ts，定义分析数据接口",
-        "在 src/app.module.ts 中导入 ObservatoryModule"
+        "创建 frontend/src/components/observatory/Timeline.tsx",
+        "使用 ECharts 创建可拖动时间轴组件",
+        "定义 TimelineEvent 接口（timestamp, type, description, coordinates）",
+        "实现 fetchTimelineEvents 方法（从 GET /api/v2/events/history 获取数据）",
+        "实现时间轴拖动回调，触发地图视角切换",
+        "添加关键事件标记点（文明诞生、遗迹生成、赛季切换）",
+        "创建 frontend/src/hooks/useTimeline.ts 自定义 Hook",
+        "在 frontend/src/stores/universeStore.ts 添加 timeline 状态"
       ],
-      "test_command": "npm run build",
-      "depends_on": [
-        "feat-001"
-      ],
-      "passes": true,
-      "last_attempt": "2026-03-24T23:40:03.587248",
-      "notes": "",
-      "retry_count": 0
+      "test_command": "cd frontend && npm run build",
+      "depends_on": [],
+      "passes": false,
+      "last_attempt": null,
+      "notes": "前端组件，无后端依赖"
     },
     {
       "id": "feat-018",
       "category": "functional",
-      "description": "分析服务 - 历史数据聚合与文明演化统计",
+      "description": "文明发展对比图 - 多维雷达图展示综合国力",
       "steps": [
-        "创建 src/modules/observatory/analytics.service.ts",
-        "实现 AnalyticsService 类，注入 Repository(HistorySnapshot)",
-        "实现 getTimelineData(startTime: Date, endTime: Date) 方法：查询 TimescaleDB 时序数据",
-        "实现 getCivilizationEvolution(civId: string) 方法：返回文明人口、战力随时间变化",
-        "实现 getPowerHeatmap() 方法：聚合各区域文明战力密度",
-        "实现 getResourceFlowData() 方法：统计贸易路线资源流向",
-        "实现 recordSnapshot() 方法：定时记录文明快照到 history_snapshots 表",
-        "在 ObservatoryModule 中注册 Service"
+        "创建 frontend/src/components/observatory/PowerChart.tsx",
+        "使用 ECharts 雷达图组件",
+        "定义 PowerMetrics 接口（territory, economy, technology, military, diplomacy）",
+        "实现 fetchCivilizationPower 方法（从 GET /api/v2/civilizations/:id/power 获取）",
+        "实现多文明对比模式（最多同时对比 5 个文明）",
+        "添加文明颜色图例和交互提示",
+        "创建 frontend/src/hooks/usePowerComparison.ts",
+        "在观测台页面集成 PowerChart 组件"
       ],
-      "test_command": "npm run test -- --testPathPattern=analytics.service",
+      "test_command": "cd frontend && npm run build",
       "depends_on": [
-        "feat-017"
+        "feat-004"
       ],
-      "passes": true,
-      "last_attempt": "2026-03-24T23:41:11.022231",
-      "notes": "TimescaleDB 使用 time_bucket 函数进行时间聚合",
-      "retry_count": 0
+      "passes": false,
+      "last_attempt": null,
+      "notes": "依赖文明资源数据"
     },
     {
       "id": "feat-019",
       "category": "functional",
-      "description": "观测台控制器 API - 数据可视化接口",
+      "description": "势力范围热力图 - 星图影响力可视化",
       "steps": [
-        "创建 src/modules/observatory/observatory.controller.ts",
-        "实现 ObservatoryController 类，注入 AnalyticsService",
-        "实现 @Get('timeline') getTimeline(@Query() query: TimelineQueryDto) 接口",
-        "实现 @Get('heatmap') getHeatmap() 接口，返回势力范围热力图数据",
-        "实现 @Get('flow') getResourceFlow() 接口，返回资源流动数据",
-        "实现 @Get('civilization/:id/evolution') getCivEvolution(@Param('id') id) 接口",
-        "添加 @Controller('api/observatory') 装饰器",
-        "在 ObservatoryModule 中注册 Controller"
+        "创建 frontend/src/components/observatory/Heatmap.tsx",
+        "使用 Canvas 绘制热力图层",
+        "定义 InfluencePoint 接口（x, y, civilizationId, strength）",
+        "实现 fetchInfluenceData 方法（从 GET /api/v2/map/influence 获取）",
+        "实现高斯模糊算法渲染影响力扩散效果",
+        "添加文明颜色映射和透明度控制",
+        "实现热力图与星图的叠加渲染",
+        "创建 frontend/src/utils/heatmap-renderer.ts 工具函数"
       ],
-      "test_command": "curl -X GET http://localhost:3000/api/observatory/timeline",
-      "depends_on": [
-        "feat-018"
-      ],
-      "passes": true,
-      "last_attempt": "2026-03-24T23:42:11.375204",
-      "notes": "",
-      "retry_count": 0
+      "test_command": "cd frontend && npm run build",
+      "depends_on": [],
+      "passes": false,
+      "last_attempt": null,
+      "notes": "前端可视化组件"
     },
     {
       "id": "feat-020",
       "category": "functional",
-      "description": "前端市场交易组件 - React 组件实现",
+      "description": "WebSocket 实时数据推送 - 市场、赛季、遗迹事件",
       "steps": [
-        "创建 frontend/src/components/Market/ 目录",
-        "创建 MarketPrices.tsx 组件，使用 ECharts 绘制价格走势图",
-        "创建 TradeRouteForm.tsx 组件，实现创建贸易路线表单",
-        "创建 TradeRoutesList.tsx 组件，展示当前贸易路线列表",
-        "创建 useMarketData.ts Hook，使用 WebSocket 订阅实时价格",
-        "在 frontend/src/store/marketStore.ts 中使用 Zustand 管理市场状态",
-        "在 frontend/src/components/Market/index.ts 中导出所有组件"
+        "创建 backend/src/modules/websocket/gateways/observatory.gateway.ts",
+        "实现 handleConnection 和 handleDisconnect 方法",
+        "定义 WS 事件类型（MARKET_TICK, SEASON_TICK, RELIC_DISCOVERED）",
+        "实现 broadcastMarketUpdate 方法（每 5 秒推送价格变动）",
+        "实现 broadcastSeasonEvent 方法（阶段切换时推送）",
+        "实现 broadcastRelicDiscovery 方法（新遗迹生成时推送）",
+        "在 MarketService 中注入 Gateway 并调用广播",
+        "创建 frontend/src/services/websocket.ts 连接管理",
+        "在 universeStore 中处理 WebSocket 消息更新状态"
       ],
-      "test_command": "cd frontend && npm run build",
+      "test_command": "cd backend && npm run test:e2e -- --testPathPattern=observatory.gateway",
       "depends_on": [
-        "feat-006",
-        "feat-007"
+        "feat-005",
+        "feat-010",
+        "feat-014"
       ],
-      "passes": true,
-      "last_attempt": "2026-03-24T23:43:18.650306",
-      "notes": "",
-      "retry_count": 0
+      "passes": false,
+      "last_attempt": null,
+      "notes": "依赖市场、赛季、遗迹服务"
     },
     {
       "id": "feat-021",
-      "category": "functional",
-      "description": "前端时间线可视化组件 - ECharts 文明演化图",
-      "steps": [
-        "创建 frontend/src/components/Timeline/ 目录",
-        "创建 EvolutionTimeline.tsx 组件，使用 ECharts 折线图展示文明兴衰",
-        "创建 TimelineControls.tsx 组件，实现时间范围选择器",
-        "创建 useTimelineData.ts Hook，调用 /api/observatory/timeline 接口",
-        "实现图表交互：鼠标悬停显示文明详情、点击跳转文明页面",
-        "在 frontend/src/components/Timeline/index.ts 中导出组件"
-      ],
-      "test_command": "cd frontend && npm run build",
-      "depends_on": [
-        "feat-019"
-      ],
-      "passes": true,
-      "last_attempt": "2026-03-24T23:44:22.868042",
-      "notes": "",
-      "retry_count": 0
-    },
-    {
-      "id": "feat-022",
-      "category": "functional",
-      "description": "前端势力热力图组件 - Three.js 星图叠加",
-      "steps": [
-        "创建 frontend/src/components/GalaxyMap/ 目录",
-        "创建 PowerHeatmap.tsx 组件，使用 Three.js Shader 绘制热力图",
-        "创建 HeatmapLegend.tsx 组件，显示势力颜色图例",
-        "实现热力值计算：根据文明坐标点密度和战力权重计算",
-        "创建 useHeatmapData.ts Hook，调用 /api/observatory/heatmap 接口",
-        "实现动态更新：每分钟刷新热力图数据",
-        "在 GalaxyMap 组件中集成热力图层"
-      ],
-      "test_command": "cd frontend && npm run build",
-      "depends_on": [
-        "feat-019"
-      ],
-      "passes": true,
-      "last_attempt": "2026-03-24T23:45:23.179273",
-      "notes": "需要安装 three 和 @react-three/fiber",
-      "retry_count": 0
-    },
-    {
-      "id": "feat-023",
       "category": "test",
-      "description": "贸易算法单元测试 - 验证价格计算模型",
+      "description": "贸易系统集成测试 - 验证完整贸易流程",
       "steps": [
-        "创建 tests/unit/trade/market.service.spec.ts",
-        "编写 describe('MarketService') 测试套件",
-        "测试用例1：买入量大于卖出量时价格上涨",
-        "测试用例2：卖出量大于买入量时价格下跌",
-        "测试用例3：买卖平衡时价格稳定",
-        "测试用例4：边界条件 - 价格不低于最小值 0.01",
-        "测试用例5：K 值对价格波动幅度的影响",
-        "运行 npm run test 验证所有测试通过"
+        "创建 backend/test/trade.integration.spec.ts",
+        "编写测试用例：创建两个文明并建立外交关系",
+        "编写测试用例：创建贸易协定并验证税率",
+        "编写测试用例：建立贸易路线并验证稳定性计算",
+        "编写测试用例：模拟资源交易并验证价格波动",
+        "编写测试用例：模拟外交关系恶化导致路线中断",
+        "编写测试用例：验证 Redis 缓存一致性",
+        "运行 npm run test -- --testPathPattern=trade.integration"
       ],
-      "test_command": "npm run test -- --testPathPattern=market.service.spec",
-      "depends_on": [
-        "feat-004"
-      ],
-      "passes": true,
-      "last_attempt": "2026-03-24T23:46:29.047898",
-      "notes": "",
-      "retry_count": 0
-    },
-    {
-      "id": "feat-024",
-      "category": "test",
-      "description": "遗迹生成集成测试 - 验证事件驱动生成流程",
-      "steps": [
-        "创建 tests/integration/relics/spawn.listener.spec.ts",
-        "编写 describe('RelicSpawnListener') 测试套件",
-        "Mock MAJOR_EVENT_OCCURRED 事件，impactLevel = 9",
-        "验证数据库中正确插入 Relic 记录",
-        "验证 Relic 坐标与事件坐标一致",
-        "验证 Relic.originEventId 正确关联事件 ID",
-        "测试 impactLevel < 8 时不生成遗迹",
-        "运行 npm run test:integration 验证"
-      ],
-      "test_command": "npm run test:integration -- --testPathPattern=spawn.listener",
+      "test_command": "cd backend && npm run test -- --testPathPattern=trade.integration",
       "depends_on": [
         "feat-009"
       ],
-      "passes": true,
-      "last_attempt": "2026-03-24T23:47:47.022327",
-      "notes": "需要测试数据库环境",
-      "retry_count": 0
+      "passes": false,
+      "last_attempt": null,
+      "notes": ""
     },
     {
-      "id": "feat-025",
+      "id": "feat-022",
       "category": "test",
-      "description": "天气效果单元测试 - 验证 Buff/Debuff 正确应用",
+      "description": "遗迹闭环测试 - 事件生成到文明探索全流程",
       "steps": [
-        "创建 tests/unit/weather/effects.handler.spec.ts",
-        "编写 describe('WeatherEffectsHandler') 测试套件",
-        "测试用例1：RESOURCE_STORM 增加资源产出 50%",
-        "测试用例2：RESOURCE_STORM 降低护盾回复 20%",
-        "测试用例3：DARK_FLUX 使所有单位显形",
-        "测试用例4：WARP_BLOCK 禁止超光速跳跃",
-        "测试用例5：CALM 无任何效果",
-        "Mock CivilizationService 验证属性修改调用",
-        "运行 npm run test 验证所有测试通过"
+        "创建 backend/test/relic.integration.spec.ts",
+        "编写测试用例：模拟触发 S 级事件「超新星爆发」",
+        "编写测试用例：验证数据库生成遗迹记录",
+        "编写测试用例：文明探索遗迹并验证资源奖励",
+        "编写测试用例：文明挖掘遗迹并验证耐久度减少",
+        "编写测试用例：多文明争夺遗迹触发外交事件",
+        "编写测试用例：遗迹效果应用到星系",
+        "运行 npm run test -- --testPathPattern=relic.integration"
       ],
-      "test_command": "npm run test -- --testPathPattern=effects.handler.spec",
+      "test_command": "cd backend && npm run test -- --testPathPattern=relic.integration",
       "depends_on": [
+        "feat-016"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": ""
+    },
+    {
+      "id": "feat-023",
+      "category": "config",
+      "description": "初始化数据脚本 - 第一赛季与初始文明",
+      "steps": [
+        "创建 backend/src/database/seeds/002_initial_economy.seed.ts",
+        "实现 createFirstSeason 方法（生成「创世纪元」赛季）",
+        "实现 createInitialCivilizations 方法（生成 5 个初始文明，分配初始资源）",
+        "实现 createInitialMarketOrders 方法（为市场创建初始流动性）",
+        "实现 seedRelics 方法（生成 3 个初始遗迹作为地图地标）",
+        "在 package.json 添加 npm run seed:economy 脚本",
+        "创建 backend/src/database/seeds/seed.runner.ts 统一执行入口"
+      ],
+      "test_command": "cd backend && npm run seed:economy && npm run test:e2e",
+      "depends_on": [
+        "feat-001",
+        "feat-010",
         "feat-014"
       ],
-      "passes": true,
-      "last_attempt": "2026-03-24T23:48:46.234921",
-      "notes": "",
-      "retry_count": 0
+      "passes": false,
+      "last_attempt": null,
+      "notes": "依赖所有核心功能完成"
     }
   ]
 }
