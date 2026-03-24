@@ -181,9 +181,10 @@
       "depends_on": [
         "feat-001"
       ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "依赖现有的事件系统模块"
+      "passes": true,
+      "last_attempt": "2026-03-24T22:17:34.420198",
+      "notes": "依赖现有的事件系统模块",
+      "retry_count": 0
     },
     {
       "id": "feat-010",
