@@ -1,9 +1,31 @@
 import { Module } from '@nestjs/common';
-import { TradeModule } from './modules/trade/trade.module';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { RelicsModule } from './modules/relics/relics.module';
 import { TimelineModule } from './modules/timeline/timeline.module';
 
 @Module({
-  imports: [TradeModule, TimelineModule],
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+    }),
+    TypeOrmModule.forRootAsync({
+      imports: [ConfigModule],
+      useFactory: (configService: ConfigService) => ({
+        type: 'postgres',
+        host: configService.get('DB_HOST', 'localhost'),
+        port: configService.get('DB_PORT', 5432),
+        username: configService.get('DB_USERNAME', 'postgres'),
+        password: configService.get('DB_PASSWORD', 'postgres'),
+        database: configService.get('DB_NAME', 'cyber_cosmos'),
+        entities: [__dirname + '/**/*.entity{.ts,.js}'],
+        synchronize: configService.get('NODE_ENV') !== 'production',
+      }),
+      inject: [ConfigService],
+    }),
+    RelicsModule,
+    TimelineModule,
+  ],
   controllers: [],
   providers: [],
 })

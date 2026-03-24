@@ -1,0 +1,29 @@
+export enum RelicType {
+  TECH_BONUS = 'TECH_BONUS',
+  BLUEPRINT = 'BLUEPRINT',
+  RESOURCE_CACHE = 'RESOURCE_CACHE',
+}
+
+export enum RelicStatus {
+  UNDISCOVERED = 'UNDISCOVERED',
+  DISCOVERED = 'DISCOVERED',
+  RESEARCHED = 'RESEARCHED',
+  EXHAUSTED = 'EXHAUSTED',
+}
+
+export interface RelicBonusData {
+  techPoints?: number;
+  resourceBonus?: {
+    ore?: number;
+    energy?: number;
+  };
+  blueprintId?: string;
+  specialAbility?: string;
+}
+
+export interface RelicCoordinates {
+  x: number;
+  y: number;
+  z: number;
+  sectorId?: string;
+}

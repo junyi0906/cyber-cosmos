@@ -1,0 +1,11 @@
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { Relic } from './entities/relic.entity';
+
+@Module({
+  imports: [TypeOrmModule.forFeature([Relic])],
+  controllers: [],
+  providers: [],
+  exports: [TypeOrmModule],
+})
+export class RelicsModule {}
