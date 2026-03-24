@@ -1,0 +1,95 @@
+"""
+Database Connection Module
+Manages PostgreSQL and Redis connections for Cyber-Cosmos
+"""
+
+import os
+import json
+import asyncio
+from typing import Optional, Dict, Any, List
+from contextlib import contextmanager
+from datetime import datetime
+
+import asyncpg
+import redis.asyncio as redis
+
+# Database configuration from environment
+DATABASE_URL = os.getenv(
+    'DATABASE_URL',
+    'postgresql://cosmos_user:cosmos_pass@localhost:5432/cyber_cosmos'
+)
+REDIS_URL = os.getenv(
+    'REDIS_URL',
+    'redis://localhost:6379/0'
+)
+
+# Connection pools
+_db_pool: Optional[asyncpg.Pool] = None
+_redis_client: Optional[redis.Redis] = None
+
+
+async def init_db(pool_size: int = 10) -> asyncpg.Pool:
+    """
+    Initialize PostgreSQL connection pool.
+    
+    Args:
+        pool_size: Maximum number of connections in the pool
+        
+    Returns:
+        asyncpg.Pool: Database connection pool
+    """
+    global _db_pool
+    
+    if _db_pool is None:
+        _db_pool = await asyncpg.create_pool(
+            DATABASE_URL,
+            min_size=2,
+            max_size=pool_size,
+            command_timeout=60
+        )
+    
+    return _db_pool
+
+
+async def init_redis() -> redis.Redis:
+    """
+    Initialize Redis connection.
+    
+    Ensures required keys 'universe:state' and 'event_queue' are available.
+    
+    Returns:
+        redis.Redis: Redis client instance
+    """
+    global _redis_client
+    
+    if _redis_client is None:
+        _redis_client = redis.from_url(
+            REDIS_URL,
+            encoding='utf-8',
+            decode_responses=True
+        )
+        
+        # Initialize required keys if they don't exist
+        await _ensure_redis_keys(_redis_client)
+    
+    return _redis_client
+
+
+async def _ensure_redis_keys(client: redis.Redis) -> None:
+    """
+    Ensure required Redis keys exist with initial values.
+    
+    Args:
+        client: Redis client instance
+    """
+    # Initialize universe:state if not exists
+    universe_state_exists = await client.exists('universe:state')
+    if not universe_state_exists:
+        initial_state = {
+            'tick': 0,
+            'status': 'initialized',
+            'civilization_count': 0,
+            'last_update': datetime.utcnow().isoformat(),
+            'version': '1.0.0'
+        }
+        await client.set
