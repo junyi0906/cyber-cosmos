@@ -1,0 +1,37 @@
+import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+
+@Entity('resource_prices')
+export class ResourcePrice {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ unique: true })
+  resourceId: string;
+
+  @Column()
+  resourceName: string;
+
+  @Column({ type: 'decimal', precision: 10, scale: 2 })
+  basePrice: number;
+
+  @Column({ type: 'decimal', precision: 10, scale: 2 })
+  currentPrice: number;
+
+  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
+  previousPrice: number;
+
+  @Column({ type: 'decimal', precision: 10, scale: 4 })
+  volatility: number;
+
+  @Column({ type: 'bigint', default: 0 })
+  totalVolume: number;
+
+  @Column({ default: true })
+  isActive: boolean;
+
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
+}

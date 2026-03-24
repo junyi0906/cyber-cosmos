@@ -1,60 +1,44 @@
 import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
 
-export enum TradeRouteStatus {
-  ACTIVE = 'ACTIVE',
-  CANCELLED = 'CANCELLED',
-  SUSPENDED = 'SUSPENDED',
-}
-
-export enum ResourceType {
-  ORE = 'ORE',
-  ENERGY = 'ENERGY',
-  TECH_POINTS = 'TECH_POINTS',
-}
-
 @Entity('trade_routes')
 export class TradeRoute {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'source_civilization_id' })
+  @Column()
+  name: string;
+
+  @Column()
   sourceCivilizationId: string;
 
-  @Column({ name: 'target_civilization_id' })
+  @Column()
   targetCivilizationId: string;
 
-  @Column({
-    type: 'enum',
-    enum: ResourceType,
-    name: 'resource_type',
-  })
-  resourceType: ResourceType;
+  @Column({ type: 'json' })
+  resources: {
+    resourceId: string;
+    quantity: number;
+    price: number;
+  }[];
 
-  @Column({ type: 'int' })
-  quantity: number;
-
-  @Column({ type: 'decimal', precision: 10, scale: 2 })
-  price: number;
-
-  @Column({
-    type: 'enum',
-    enum: TradeRouteStatus,
-    default: TradeRouteStatus.ACTIVE,
-  })
-  status: TradeRouteStatus;
-
-  @Column({ type: 'decimal', precision: 5, scale: 2, default: 1.0, name: 'efficiency' })
+  @Column({ type: 'decimal', precision: 5, scale: 2, default: 1.0 })
   efficiency: number;
 
-  @Column({ type: 'int', default: 0, name: 'cycles_completed' })
-  cyclesCompleted: number;
+  @Column({ type: 'int' })
+  distance: number;
 
-  @Column({ type: 'int', name: 'max_cycles', nullable: true })
-  maxCycles: number;
+  @Column({ default: 'active' })
+  status: 'active' | 'suspended' | 'disrupted';
 
-  @CreateDateColumn({ name: 'created_at' })
+  @Column({ nullable: true })
+  weatherEffect?: string;
+
+  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
+  totalValue: number;
+
+  @CreateDateColumn()
   createdAt: Date;
 
-  @UpdateDateColumn({ name: 'updated_at' })
+  @UpdateDateColumn()
   updatedAt: Date;
 }

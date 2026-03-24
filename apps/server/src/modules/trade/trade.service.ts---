@@ -1,9 +1,16 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { TradeRoute, RouteStatus } from './trade.route.entity';
-import { CreateRouteDto } from './dto';
-import { MarketEngine } from './market.engine';
+import { TradeRoute } from './entities/trade-route.entity';
+import { MarketService } from './market.service';
+
+interface TradeRouteCreate {
+  name: string;
+  sourceCivilizationId: string;
+  targetCivilizationId: string;
+  resources: { resourceId: string; quantity: number; price: number }[];
+  distance: number;
+}
 
 @Injectable()
 export class TradeService {
@@ -11,125 +18,62 @@ export class TradeService {
 
   constructor(
     @InjectRepository(TradeRoute)
-    private readonly routeRepository: Repository<TradeRoute>,
-    private readonly marketEngine: MarketEngine,
+    private tradeRouteRepository: Repository<TradeRoute>,
+    private marketService: MarketService,
   ) {}
 
-  async createRoute(dto: CreateRouteDto): Promise<TradeRoute> {
-    const route = this.routeRepository.create({
-      sourceCivId: dto.sourceCivId,
-      targetCivId: dto.targetCivId,
-      offerType: dto.offer.type,
-      offerQuantity: dto.offer.quantity,
-      requestType: dto.request.type,
-      requestQuantity: dto.request.quantity,
-      interval: dto.interval || 3600,
-      status: RouteStatus.ACTIVE,
+  async createTradeRoute(data: TradeRouteCreate): Promise<TradeRoute> {
+    const route = this.tradeRouteRepository.create({
+      ...data,
       efficiency: 1.0,
+      status: 'active',
+      totalValue: this.calculateRouteValue(data.resources),
     });
-
-    const saved = await this.routeRepository.save(route);
-    this.logger.log(`Created trade route ${saved.id} between ${dto.sourceCivId} and ${dto.targetCivId}`);
-
-    this.marketEngine.updateSupplyDemand(dto.offer.type, dto.offer.quantity, 0);
-    this.marketEngine.updateSupplyDemand(dto.request.type, 0, dto.request.quantity);
-
-    return saved;
+    return this.tradeRouteRepository.save(route);
   }
 
-  async getRoutes(civId?: string): Promise<TradeRoute[]> {
-    const queryBuilder = this.routeRepository.createQueryBuilder('route');
+  async getTradeRoutes(): Promise<TradeRoute[]> {
+    return this.tradeRouteRepository.find({ where: { status: 'active' } });
+  }
 
-    if (civId) {
-      queryBuilder.where(
-        'route.sourceCivId = :civId OR route.targetCivId = :civId',
-        { civId },
-      );
+  async getTradeRouteById(id: string): Promise<TradeRoute | null> {
+    return this.tradeRouteRepository.findOne({ where: { id } });
+  }
+
+  async updateRouteEfficiency(id: string, efficiency: number, weatherEffect?: string): Promise<TradeRoute | null> {
+    const route = await this.getTradeRouteById(id);
+    if (!route) return null;
+
+    route.efficiency = efficiency;
+    if (weatherEffect) {
+      route.weatherEffect = weatherEffect;
     }
 
-    return queryBuilder.getMany();
+    return this.tradeRouteRepository.save(route);
   }
 
-  async getRouteById(id: string): Promise<TradeRoute | null> {
-    return this.routeRepository.findOne({ where: { id } });
+  async suspendRoute(id: string, reason: string): Promise<TradeRoute | null> {
+    const route = await this.getTradeRouteById(id);
+    if (!route) return null;
+
+    route.status = 'suspended';
+    route.weatherEffect = reason;
+
+    return this.tradeRouteRepository.save(route);
   }
 
-  async cancelRoute(id: string): Promise<TradeRoute> {
-    const route = await this.routeRepository.findOne({ where: { id } });
+  async activateRoute(id: string): Promise<TradeRoute | null> {
+    const route = await this.getTradeRouteById(id);
+    if (!route) return null;
 
-    if (!route) {
-      throw new NotFoundException(`Trade route ${id} not found`);
-    }
+    route.status = 'active';
+    route.weatherEffect = null;
 
-    if (route.status === RouteStatus.CANCELLED) {
-      throw new Error(`Trade route ${id} is already cancelled`);
-    }
-
-    route.status = RouteStatus.CANCELLED;
-    const saved = await this.routeRepository.save(route);
-
-    this.marketEngine.updateSupplyDemand(route.offerType, -route.offerQuantity, 0);
-    this.marketEngine.updateSupplyDemand(route.requestType, 0, -route.requestQuantity);
-
-    this.logger.log(`Cancelled trade route ${id}`);
-    return saved;
+    return this.tradeRouteRepository.save(route);
   }
 
-  async executeTrade(routeId: string): Promise<{ success: boolean; message: string }> {
-    const route = await this.routeRepository.findOne({ where: { id: routeId } });
-
-    if (!route) {
-      throw new NotFoundException(`Trade route ${routeId} not found`);
-    }
-
-    if (route.status !== RouteStatus.ACTIVE) {
-      return { success: false, message: `Route is ${route.status}` };
-    }
-
-    const offerValue = this.marketEngine.calculateTradeValue(route.offerType, route.offerQuantity);
-    const requestValue = this.marketEngine.calculateTradeValue(route.requestType, route.requestQuantity);
-
-    const tradeRatio = offerValue / requestValue;
-    const efficiency = route.efficiency;
-
-    route.lastExecution = new Date();
-    route.totalTrades += 1;
-    await this.routeRepository.save(route);
-
-    this.logger.log(`Executed trade on route ${routeId}, ratio: ${tradeRatio.toFixed(2)}, efficiency: ${efficiency}`);
-
-    return {
-      success: true,
-      message: `Trade executed. Offered ${route.offerQuantity} ${route.offerType} for ${route.requestQuantity} ${route.requestType}`,
-    };
+  private calculateRouteValue(resources: { resourceId: string; quantity: number; price: number }[]): number {
+    return resources.reduce((total, r) => total + r.quantity * r.price, 0);
   }
 
-  async updateRouteEfficiency(id: string, efficiency: number): Promise<TradeRoute> {
-    const route = await this.routeRepository.findOne({ where: { id } });
-
-    if (!route) {
-      throw new NotFoundException(`Trade route ${id} not found`);
-    }
-
-    route.efficiency = Math.max(0, Math.min(2, efficiency));
-    return this.routeRepository.save(route);
-  }
-
-  async getRouteStats(civId: string): Promise<{
-    totalRoutes: number;
-    activeRoutes: number;
-    totalTrades: number;
-    averageEfficiency: number;
-  }> {
-    const routes = await this.getRoutes(civId);
-
-    return {
-      totalRoutes: routes.length,
-      activeRoutes: routes.filter((r) => r.status === RouteStatus.ACTIVE).length,
-      totalTrades: routes.reduce((sum, r) => sum + r.totalTrades, 0),
-      averageEfficiency: routes.length > 0
-        ? routes.reduce((sum, r) => sum + r.efficiency, 0) / routes.length
-        : 0,
-    };
-  }
-}
+  async calculateTradeEfficiency(routeId: string, weatherModifier: number): Promise<number> {

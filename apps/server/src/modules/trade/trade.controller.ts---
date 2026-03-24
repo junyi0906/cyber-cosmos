@@ -1,62 +1,26 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Delete,
-  Body,
-  Param,
-  Query,
-  HttpCode,
-  HttpStatus,
-  ParseUUIDPipe,
-} from '@nestjs/common';
-import { TradeService } from './trade.service';
+import { Controller, Get, Param } from '@nestjs/common';
 import { MarketService } from './market.service';
-import { CreateRouteDto } from './dto';
 
-@Controller('api/trade')
+@Controller('trade')
 export class TradeController {
-  constructor(
-    private readonly tradeService: TradeService,
-    private readonly marketService: MarketService,
-  ) {}
+  constructor(private readonly marketService: MarketService) {}
 
-  @Post('routes')
-  @HttpCode(HttpStatus.CREATED)
-  async createRoute(@Body() dto: CreateRouteDto) {
-    const route = await this.tradeService.createRoute(dto);
-    return {
-      success: true,
-      data: route,
-      message: 'Trade route created successfully',
-    };
+  @Get('prices')
+  async getAllPrices() {
+    return this.marketService.getAllPrices();
   }
 
-  @Get('routes')
-  async getRoutes(@Query('civId') civId?: string) {
-    const routes = await this.tradeService.getRoutes(civId);
-    return {
-      success: true,
-      data: routes,
-      count: routes.length,
-    };
+  @Get('prices/:resourceId')
+  async getResourcePrice(@Param('resourceId') resourceId: string) {
+    const price = await this.marketService.getResourcePrice(resourceId);
+    if (!price) {
+      return { error: 'Resource not found' };
+    }
+    return price;
   }
 
-  @Delete('routes/:id')
-  @HttpCode(HttpStatus.OK)
-  async cancelRoute(@Param('id', ParseUUIDPipe) id: string) {
-    const route = await this.tradeService.cancelRoute(id);
-    return {
-      success: true,
-      data: route,
-      message: 'Trade route cancelled successfully',
-    };
+  @Get('summary')
+  async getMarketSummary() {
+    return this.marketService.getMarketSummary();
   }
-
-  @Get('market')
-  async getMarketPrices() {
-    const summary = this.marketService.getMarketSummary();
-    return {
-      success: true,
-      data: summary.prices,
-      trends: summary.t
+}

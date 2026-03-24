@@ -1,21 +1,18 @@
-import { Module, Global } from '@nestjs/common';
+import { Module } from '@nestjs/common';
+import { ScheduleModule } from '@nestjs/schedule';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { TradeGateway } from './trade.gateway';
+import { TradeCron } from './trade.cron';
 import { MarketService } from './market.service';
+import { ResourcePrice } from './entities/resource-price.entity';
+import { TradeRoute } from './entities/trade-route.entity';
 
-@Global()
 @Module({
-  providers: [
-    {
-      provide: 'REDIS_CLIENT',
-      useFactory: () => {
-        const Redis = require('ioredis');
-        return new Redis({
-          host: process.env.REDIS_HOST || 'localhost',
-          port: parseInt(process.env.REDIS_PORT || '6379', 10),
-        });
-      },
-    },
-    MarketService,
+  imports: [
+    ScheduleModule.forRoot(),
+    TypeOrmModule.forFeature([ResourcePrice, TradeRoute]),
   ],
-  exports: [MarketService, 'REDIS_CLIENT'],
+  providers: [TradeGateway, TradeCron, MarketService],
+  exports: [TradeGateway, MarketService],
 })
 export class TradeModule {}

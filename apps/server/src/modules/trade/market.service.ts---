@@ -1,54 +1,149 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { MarketEngine, MarketPrice } from './market.engine';
-import { ResourceType } from './dto/create-route.dto';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { ResourcePrice } from './entities/resource-price.entity';
+import { TradeRoute } from './entities/trade-route.entity';
+
+interface PriceData {
+  resourceId: string;
+  resourceName: string;
+  basePrice: number;
+  currentPrice: number;
+  change: number;
+  changePercent: number;
+  volume: number;
+  trend: 'up' | 'down' | 'stable';
+}
+
+interface MarketSummary {
+  totalVolume: number;
+  activeRoutes: number;
+  topGainers: PriceData[];
+  topLosers: PriceData[];
+  timestamp: string;
+}
 
 @Injectable()
 export class MarketService {
   private readonly logger = new Logger(MarketService.name);
+  private priceCache: Map<string, PriceData> = new Map();
+  private lastUpdate: Date = new Date();
 
-  constructor(private readonly marketEngine: MarketEngine) {}
+  private readonly resourceDefinitions = [
+    { id: 'ore', name: '矿石', basePrice: 100, volatility: 0.15 },
+    { id: 'energy', name: '能源', basePrice: 150, volatility: 0.2 },
+    { id: 'tech_points', name: '技术点', basePrice: 500, volatility: 0.1 },
+    { id: 'dark_matter', name: '暗物质', basePrice: 1000, volatility: 0.3 },
+    { id: 'crystals', name: '晶体', basePrice: 250, volatility: 0.18 },
+    { id: 'biomass', name: '生物质', basePrice: 80, volatility: 0.12 },
+  ];
 
-  getMarketPrices(): MarketPrice[] {
-    return this.marketEngine.getCurrentPrices();
-  }
+  async getAllPrices(): Promise<Record<string, PriceData>> {
+    const prices: Record<string, PriceData> = {};
+    const now = Date.now();
 
-  getPrice(type: ResourceType): MarketPrice | undefined {
-    return this.marketEngine.getPrice(type);
-  }
-
-  triggerMarketSimulation(): void {
-    this.marketEngine.simulateMarketTick();
-    this.logger.log('Market simulation triggered');
-  }
-
-  applyWeatherEffect(type: ResourceType, modifier: number, reason: string): void {
-    this.marketEngine.addPriceModifier({ type, modifier, reason });
-    this.logger.log(`Applied weather effect to ${type}: ${modifier}x (${reason})`);
-  }
-
-  removeWeatherEffect(type: ResourceType, reason: string): void {
-    this.marketEngine.removePriceModifier(type, reason);
-    this.logger.log(`Removed weather effect from ${type}: ${reason}`);
-  }
-
-  getMarketSummary(): {
-    prices: MarketPrice[];
-    trends: Record<ResourceType, 'up' | 'down' | 'stable'>;
-  } {
-    const prices = this.marketEngine.getCurrentPrices();
-    const trends: Record<ResourceType, 'up' | 'down' | 'stable'> = {} as any;
-
-    prices.forEach((price) => {
-      const ratio = price.currentPrice / price.basePrice;
-      if (ratio > 1.1) {
-        trends[price.type] = 'up';
-      } else if (ratio < 0.9) {
-        trends[price.type] = 'down';
+    for (const resource of this.resourceDefinitions) {
+      const cachedPrice = this.priceCache.get(resource.id);
+      
+      if (cachedPrice && (now - this.lastUpdate.getTime()) < 10000) {
+        prices[resource.id] = cachedPrice;
       } else {
-        trends[price.type] = 'stable';
+        const priceData = this.calculatePrice(resource);
+        this.priceCache.set(resource.id, priceData);
+        prices[resource.id] = priceData;
       }
-    });
+    }
 
-    return { prices, trends };
+    this.lastUpdate = new Date();
+    return prices;
+  }
+
+  async getMarketSummary(): Promise<MarketSummary> {
+    const prices = await this.getAllPrices();
+    const priceArray = Object.values(prices);
+
+    const topGainers = [...priceArray]
+      .sort((a, b) => b.changePercent - a.changePercent)
+      .slice(0, 3);
+
+    const topLosers = [...priceArray]
+      .sort((a, b) => a.changePercent - b.changePercent)
+      .slice(0, 3);
+
+    return {
+      totalVolume: priceArray.reduce((sum, p) => sum + p.volume, 0),
+      activeRoutes: Math.floor(Math.random() * 50) + 10,
+      topGainers,
+      topLosers,
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  private calculatePrice(resource: { id: string; name: string; basePrice: number; volatility: number }): PriceData {
+    const randomFactor = (Math.random() - 0.5) * 2 * resource.volatility;
+    const currentPrice = Math.round(resource.basePrice * (1 + randomFactor) * 100) / 100;
+    
+    const cachedPrice = this.priceCache.get(resource.id);
+    const previousPrice = cachedPrice?.currentPrice || resource.basePrice;
+    
+    const change = Math.round((currentPrice - previousPrice) * 100) / 100;
+    const changePercent = Math.round((change / previousPrice) * 10000) / 100;
+    
+    let trend: 'up' | 'down' | 'stable' = 'stable';
+    if (changePercent > 1) trend = 'up';
+    else if (changePercent < -1) trend = 'down';
+
+    return {
+      resourceId: resource.id,
+      resourceName: resource.name,
+      basePrice: resource.basePrice,
+      currentPrice,
+      change,
+      changePercent,
+      volume: Math.floor(Math.random() * 10000) + 1000,
+      trend,
+    };
+  }
+
+  async getResourcePrice(resourceId: string): Promise<PriceData | null> {
+    const resource = this.resourceDefinitions.find(r => r.id === resourceId);
+    if (!resource) return null;
+
+    const cachedPrice = this.priceCache.get(resourceId);
+    if (cachedPrice) return cachedPrice;
+
+    const priceData = this.calculatePrice(resource);
+    this.priceCache.set(resourceId, priceData);
+    return priceData;
+  }
+
+  async updatePrice(resourceId: string, modifier: number): Promise<PriceData | null> {
+    const resource = this.resourceDefinitions.find(r => r.id === resourceId);
+    if (!resource) return null;
+
+    const currentPrice = Math.round(resource.basePrice * modifier * 100) / 100;
+    const cachedPrice = this.priceCache.get(resourceId);
+    const previousPrice = cachedPrice?.currentPrice || resource.basePrice;
+    
+    const change = Math.round((currentPrice - previousPrice) * 100) / 100;
+    const changePercent = Math.round((change / previousPrice) * 10000) / 100;
+    
+    let trend: 'up' | 'down' | 'stable' = 'stable';
+    if (changePercent > 1) trend = 'up';
+    else if (changePercent < -1) trend = 'down';
+
+    const priceData: PriceData = {
+      resourceId: resource.id,
+      resourceName: resource.name,
+      basePrice: resource.basePrice,
+      currentPrice,
+      change,
+      changePercent,
+      volume: Math.floor(Math.random() * 10000) + 1000,
+      trend,
+    };
+
+    this.priceCache.set(resourceId, priceData);
+    return priceData;
   }
 }

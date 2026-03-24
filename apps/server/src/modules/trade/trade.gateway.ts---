@@ -1,17 +1,109 @@
-import { WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
-import { Server } from 'socket.io';
-import { OnEvent } from '@nestjs/event-emitter';
+import {
+  WebSocketGateway,
+  WebSocketServer,
+  SubscribeMessage,
+  OnGatewayConnection,
+  OnGatewayDisconnect,
+  MessageBody,
+  ConnectedSocket,
+} from '@nestjs/websockets';
+import { Logger } from '@nestjs/common';
+import { Server, Socket } from 'socket.io';
+
+interface MarketSubscription {
+  socketId: string;
+  resources?: string[];
+  civilizationId?: string;
+}
 
 @WebSocketGateway({
   namespace: '/trade',
-  cors: { origin: '*' },
+  cors: {
+    origin: '*',
+    credentials: true,
+  },
 })
-export class TradeGateway {
+export class TradeGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
-  @OnEvent('trade_updates')
-  handleTradeUpdate(data: any) {
-    this.server.emit('trade_updates', data);
+  private readonly logger = new Logger(TradeGateway.name);
+  private subscriptions: Map<string, MarketSubscription> = new Map();
+  private subscribedClients: Set<string> = new Set();
+
+  handleConnection(client: Socket): void {
+    this.logger.log(`Client connected: ${client.id}`);
+    this.subscriptions.set(client.id, { socketId: client.id });
+  }
+
+  handleDisconnect(client: Socket): void {
+    this.logger.log(`Client disconnected: ${client.id}`);
+    this.subscriptions.delete(client.id);
+    this.subscribedClients.delete(client.id);
+  }
+
+  @SubscribeMessage('subscribe_market')
+  handleSubscribeMarket(
+    @MessageBody() data: { resources?: string[]; civilizationId?: string },
+    @ConnectedSocket() client: Socket,
+  ): void {
+    this.logger.log(`Client ${client.id} subscribing to market: ${JSON.stringify(data)}`);
+    
+    const subscription: MarketSubscription = {
+      socketId: client.id,
+      resources: data?.resources,
+      civilizationId: data?.civilizationId,
+    };
+    
+    this.subscriptions.set(client.id, subscription);
+    this.subscribedClients.add(client.id);
+
+    client.emit('subscription_confirmed', {
+      status: 'success',
+      message: 'Successfully subscribed to market updates',
+      resources: data?.resources || 'all',
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  @SubscribeMessage('unsubscribe_market')
+  handleUnsubscribeMarket(
+    @ConnectedSocket() client: Socket,
+  ): void {
+    this.logger.log(`Client ${client.id} unsubscribing from market`);
+    this.subscribedClients.delete(client.id);
+    
+    client.emit('unsubscription_confirmed', {
+      status: 'success',
+      message: 'Successfully unsubscribed from market updates',
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  broadcastMarketTick(prices: Record<string, any>): void {
+    const tickData = {
+      event: 'market_tick',
+      data: prices,
+      timestamp: new Date().toISOString(),
+    };
+
+    this.server.emit('market_tick', tickData);
+    this.logger.debug(`Broadcasting market tick to ${this.subscribedClients.size} clients`);
+  }
+
+  broadcastToSubscribers(event: string, data: any): void {
+    this.server.emit(event, {
+      event,
+      data,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  getSubscribedClientsCount(): number {
+    return this.subscribedClients.size;
+  }
+
+  getSubscriptions(): Map<string, MarketSubscription> {
+    return this.subscriptions;
   }
 }

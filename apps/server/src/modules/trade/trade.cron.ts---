@@ -1,0 +1,59 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
+import { TradeGateway } from './trade.gateway';
+import { MarketService } from './market.service';
+
+@Injectable()
+export class TradeCron {
+  private readonly logger = new Logger(TradeCron.name);
+  private isRunning = false;
+
+  constructor(
+    private readonly tradeGateway: TradeGateway,
+    private readonly marketService: MarketService,
+  ) {}
+
+  @Cron('*/30 * * * * *')
+  async handleMarketTick() {
+    if (this.isRunning) {
+      this.logger.warn('Previous market tick still running, skipping...');
+      return;
+    }
+
+    this.isRunning = true;
+    const startTime = Date.now();
+
+    try {
+      this.logger.debug('Starting market tick calculation...');
+      
+      const prices = await this.marketService.getAllPrices();
+      
+      this.tradeGateway.broadcastMarketTick(prices);
+      
+      const duration = Date.now() - startTime;
+      this.logger.log(
+        `Market tick completed in ${duration}ms. ` +
+        `Active subscribers: ${this.tradeGateway.getSubscribedClientsCount()}`
+      );
+    } catch (error) {
+      this.logger.error(`Market tick failed: ${error.message}`, error.stack);
+    } finally {
+      this.isRunning = false;
+    }
+  }
+
+  @Cron('0 */5 * * * *')
+  async handleMarketSummary() {
+    try {
+      this.logger.debug('Generating market summary...');
+      
+      const summary = await this.marketService.getMarketSummary();
+      
+      this.tradeGateway.broadcastToSubscribers('market_summary', summary);
+      
+      this.logger.log('Market summary broadcast completed');
+    } catch (error) {
+      this.logger.error(`Market summary failed: ${error.message}`, error.stack);
+    }
+  }
+}
