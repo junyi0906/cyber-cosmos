@@ -1,0 +1,279 @@
+import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Event } from '../events/entities/event.entity';
+
+export interface HeatmapPoint {
+  x: number;
+  y: number;
+  z: number;
+  value: number;
+  factionId: string;
+  factionName: string;
+  factionColor: string;
+}
+
+export interface HeatmapData {
+  points: HeatmapPoint[];
+  bounds: {
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+    minZ: number;
+    maxZ: number;
+  };
+  factions: Map<string, { name: string; color: string; totalInfluence: number }>;
+}
+
+export interface CivilizationSector {
+  id: string;
+  name: string;
+  color: string;
+  sectors: { x: number; y: number; z: number; influence: number }[];
+}
+
+@Injectable()
+export class TimelineService {
+  private civilizationSectors: Map<string, CivilizationSector> = new Map();
+  private lastHeatmapUpdate: number = 0;
+  private cachedHeatmapData: HeatmapData | null = null;
+
+  constructor(
+    @InjectRepository(Event)
+    private eventRepository: Repository<Event>,
+  ) {
+    this.initializeMockData();
+  }
+
+  private initializeMockData() {
+    // Initialize with mock civilization data for demonstration
+    const civilizations = [
+      {
+        id: 'civ-001',
+        name: '星际联邦',
+        color: '#4A90D9',
+        sectors: this.generateClusterSectors(0, 0, 0, 15, 0.8),
+      },
+      {
+        id: 'civ-002',
+        name: '赛博帝国',
+        color: '#D94A4A',
+        sectors: this.generateClusterSectors(50, 20, -30, 12, 0.7),
+      },
+      {
+        id: 'civ-003',
+        name: '机械联盟',
+        color: '#4AD98A',
+        sectors: this.generateClusterSectors(-40, 30, 20, 10, 0.6),
+      },
+      {
+        id: 'civ-004',
+        name: '虚空行者',
+        color: '#9B4AD9',
+        sectors: this.generateClusterSectors(30, -40, 40, 8, 0.5),
+      },
+      {
+        id: 'civ-005',
+        name: '贸易联盟',
+        color: '#D9B84A',
+        sectors: this.generateClusterSectors(-20, -30, -20, 14, 0.65),
+      },
+    ];
+
+    civilizations.forEach(civ => {
+      this.civilizationSectors.set(civ.id, civ);
+    });
+  }
+
+  private generateClusterSectors(
+    centerX: number,
+    centerY: number,
+    centerZ: number,
+    count: number,
+    baseInfluence: number,
+  ): { x: number; y: number; z: number; influence: number }[] {
+    const sectors: { x: number; y: number; z: number; influence: number }[] = [];
+    
+    for (let i = 0; i < count; i++) {
+      // Generate clustered distribution around center
+      const angle = Math.random() * Math.PI * 2;
+      const radius = Math.random() * 30 + 5;
+      const heightVariation = (Math.random() - 0.5) * 20;
+      
+      sectors.push({
+        x: centerX + Math.cos(angle) * radius,
+        y: centerY + heightVariation,
+        z: centerZ + Math.sin(angle) * radius,
+        influence: baseInfluence + (Math.random() * 0.4 - 0.2),
+      });
+    }
+    
+    return sectors;
+  }
+
+  async getHeatmapData(): Promise<HeatmapData> {
+    const now = Date.now();
+    
+    // Cache for 5 seconds to avoid recalculation
+    if (this.cachedHeatmapData && now - this.lastHeatmapUpdate < 5000) {
+      return this.cachedHeatmapData;
+    }
+
+    const points: HeatmapPoint[] = [];
+    const factionStats = new Map<string, { name: string; color: string; totalInfluence: number }>();
+    
+    let minX = Infinity, maxX = -Infinity;
+    let minY = Infinity, maxY = -Infinity;
+    let minZ = Infinity, maxZ = -Infinity;
+
+    // Process each civilization's sectors
+    this.civilizationSectors.forEach((civ, factionId) => {
+      let totalInfluence = 0;
+      
+      civ.sectors.forEach(sector => {
+        // Update bounds
+        minX = Math.min(minX, sector.x);
+        maxX = Math.max(maxX, sector.x);
+        minY = Math.min(minY, sector.y);
+        maxY = Math.max(maxY, sector.y);
+        minZ = Math.min(minZ, sector.z);
+        maxZ = Math.max(maxZ, sector.z);
+        
+        // Calculate density based on nearby sectors
+        const density = this.calculateLocalDensity(sector, civ.sectors);
+        const value = sector.influence * density;
+        totalInfluence += value;
+        
+        points.push({
+          x: sector.x,
+          y: sector.y,
+          z: sector.z,
+          value: value,
+          factionId: factionId,
+          factionName: civ.name,
+          factionColor: civ.color,
+        });
+      });
+      
+      factionStats.set(factionId, {
+        name: civ.name,
+        color: civ.color,
+        totalInfluence: totalInfluence,
+      });
+    });
+
+    // Add padding to bounds
+    const padding = 10;
+    const bounds = {
+      minX: minX - padding,
+      maxX: maxX + padding,
+      minY: minY - padding,
+      maxY: maxY + padding,
+      minZ: minZ - padding,
+      maxZ: maxZ + padding,
+    };
+
+    this.cachedHeatmapData = { points, bounds, factions: factionStats };
+    this.lastHeatmapUpdate = now;
+    
+    return this.cachedHeatmapData;
+  }
+
+  private calculateLocalDensity(
+    sector: { x: number; y: number; z: number },
+    allSectors: { x: number; y: number; z: number; influence: number }[],
+  ): number {
+    const radius = 20;
+    let nearbyCount = 0;
+    let weightedSum = 0;
+    
+    allSectors.forEach(other => {
+      const distance = Math.sqrt(
+        Math.pow(sector.x - other.x, 2) +
+        Math.pow(sector.y - other.y, 2) +
+        Math.pow(sector.z - other.z, 2)
+      );
+      
+      if (distance <= radius && distance > 0) {
+        const weight = 1 - (distance / radius);
+        nearbyCount++;
+        weightedSum += weight;
+      }
+    });
+    
+    // Density factor: more nearby sectors = higher density
+    return 1 + (weightedSum * 0.3);
+  }
+
+  async getFactionTerritoryStats(): Promise<{
+    factionId: string;
+    factionName: string;
+    sectorCount: number;
+    totalInfluence: number;
+    centroid: { x: number; y: number; z: number };
+  }[]> {
+    const stats: any[] = [];
+    
+    this.civilizationSectors.forEach((civ, factionId) => {
+      let totalX = 0, totalY = 0, totalZ = 0;
+      let totalInfluence = 0;
+      
+      civ.sectors.forEach(sector => {
+        totalX += sector.x * sector.influence;
+        totalY += sector.y * sector.influence;
+        totalZ += sector.z * sector.influence;
+        totalInfluence += sector.influence;
+      });
+      
+      stats.push({
+        factionId,
+        factionName: civ.name,
+        sectorCount: civ.sectors.length,
+        totalInfluence,
+        centroid: {
+          x: totalX / totalInfluence,
+          y: totalY / totalInfluence,
+          z: totalZ / totalInfluence,
+        },
+      });
+    });
+    
+    return stats.sort((a, b) => b.totalInfluence - a.totalInfluence);
+  }
+
+  // Update civilization sectors based on events
+  async updateFromEvents(events: Event[]): Promise<void> {
+    // Process events that might affect territory
+    for (const event of events) {
+      if (event.type === 'territory_expansion' || event.type === 'colony_established') {
+        // Add new sectors based on event data
+        // This would integrate with actual event processing
+      }
+    }
+    
+    // Invalidate cache
+    this.cachedHeatmapData = null;
+  }
+
+  // Add a new sector to a civilization
+  addSectorToFaction(
+    factionId: string,
+    x: number,
+    y: number,
+    z: number,
+    influence: number = 0.5,
+  ): boolean {
+    const civ = this.civilizationSectors.get(factionId);
+    if (!civ) return false;
+    
+    civ.sectors.push({ x, y, z, influence });
+    this.cachedHeatmapData = null;
+    return true;
+  }
+
+  // Get all civilizations data
+  getCivilizations(): CivilizationSector[] {
+    return Array.from(this.civilizationSectors.values());
+  }
+}
