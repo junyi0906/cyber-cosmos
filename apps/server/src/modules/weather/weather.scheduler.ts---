@@ -1,28 +1,77 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { ConfigService } from '@nestjs/config';
-import { WeatherService } from './weather.service';
+import { WeatherService, WeatherForecast } from './weather.service';
 import { WeatherGateway } from './weather.gateway';
 
 @Injectable()
-export class WeatherScheduler implements OnModuleInit {
+export class WeatherScheduler {
   private readonly logger = new Logger(WeatherScheduler.name);
-  private weatherGateway: WeatherGateway | null = null;
+  private weatherGateway: WeatherGateway;
+  private isRunning: boolean = false;
 
   constructor(
-    private readonly weatherService: WeatherService,
-    private readonly configService: ConfigService,
+    private readonly weatherService: WeatherService
   ) {}
 
-  onModuleInit() {
-    this.logger.log('Weather Scheduler initialized');
-  }
-
-  // Inject WebSocketGateway after module initialization to avoid circular dependency
-  setWeatherGateway(gateway: WeatherGateway) {
+  setGateway(gateway: WeatherGateway) {
     this.weatherGateway = gateway;
-    this.logger.log('WeatherGateway injected into WeatherScheduler');
   }
 
-  @Cron(CronExpression.EVERY_5_MINUTES)
-  async handleWeatherCycle()
+  @Cron(CronExpression.EVERY_MINUTE)
+  async handleWeatherCycle() {
+    if (this.isRunning) {
+      this.logger.warn('Previous weather cycle still running, skipping...');
+      return;
+    }
+
+    this.isRunning = true;
+    
+    try {
+      this.logger.log('Starting weather cycle advancement...');
+      
+      const newWeather = await this.weatherService.advanceCycle();
+      
+      this.logger.log(`Weather advanced to cycle ${newWeather.cycle}: ${newWeather.name}`);
+      
+      if (this.weatherGateway) {
+        this.weatherGateway.broadcastWeatherUpdate(newWeather);
+        
+        const forecast = await this.weatherService.getForecast(3);
+        this.weatherGateway.broadcastForecastUpdate(forecast);
+      } else {
+        this.logger.warn('WeatherGateway not initialized, skipping broadcast');
+      }
+    } catch (error) {
+      this.logger.error(`Error during weather cycle: ${error.message}`, error.stack);
+    } finally {
+      this.isRunning = false;
+    }
+  }
+
+  @Cron('0 */5 * * * *')
+  async handleForecastRefresh() {
+    try {
+      const forecast = await this.weatherService.getForecast(3);
+      
+      if (this.weatherGateway) {
+        this.weatherGateway.broadcastForecastUpdate(forecast);
+      }
+      
+      this.logger.debug('Forecast cache refreshed');
+    } catch (error) {
+      this.logger.error(`Error refreshing forecast: ${error.message}`);
+    }
+  }
+
+  async triggerManualWeatherChange(): Promise<WeatherForecast> {
+    this.logger.log('Manual weather change triggered');
+    
+    const newWeather = await this.weatherService.advanceCycle();
+    
+    if (this.weatherGateway) {
+      this.weatherGateway.broadcastWeatherUpdate(newWeather);
+    }
+    
+    return newWeather;
+  }
+}

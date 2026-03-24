@@ -1,30 +1,22 @@
 import { Controller, Get } from '@nestjs/common';
 import { WeatherService } from './weather.service';
-import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 
-@ApiTags('weather')
 @Controller('api/weather')
 export class WeatherController {
   constructor(private readonly weatherService: WeatherService) {}
 
   @Get('forecast')
-  @ApiOperation({ summary: '获取未来3个周期的天气预报' })
-  @ApiResponse({ status: 200, description: '返回天气预报数据' })
   async getForecast() {
     return this.weatherService.getForecast(3);
   }
 
   @Get('current')
-  @ApiOperation({ summary: '获取当前天气状态' })
-  @ApiResponse({ status: 200, description: '返回当前天气数据' })
   async getCurrentWeather() {
     return this.weatherService.getCurrentWeather();
   }
 
   @Get('history')
-  @ApiOperation({ summary: '获取历史天气记录' })
-  @ApiResponse({ status: 200, description: '返回历史天气数据' })
-  async getHistory() {
-    return this.weatherService.getWeatherHistory();
+  async getWeatherHistory() {
+    return this.weatherService.getWeatherHistory(10);
   }
 }

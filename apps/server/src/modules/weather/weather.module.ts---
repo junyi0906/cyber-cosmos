@@ -1,10 +1,29 @@
-import { Module } from '@nestjs/common';
-import { EffectsService } from './effects.service';
+import { Module, OnModuleInit } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { ScheduleModule } from '@nestjs/schedule';
 import { WeatherController } from './weather.controller';
+import { WeatherService } from './weather.service';
+import { WeatherGateway } from './weather.gateway';
+import { WeatherScheduler } from './weather.scheduler';
+import { EffectsService } from './effects.service';
+import { Weather } from './entities/weather.entity';
 
 @Module({
+  imports: [
+    TypeOrmModule.forFeature([Weather]),
+    ScheduleModule.forRoot()
+  ],
   controllers: [WeatherController],
-  providers: [EffectsService],
-  exports: [EffectsService],
+  providers: [WeatherService, WeatherGateway, WeatherScheduler, EffectsService],
+  exports: [WeatherService, WeatherGateway]
 })
-export class WeatherModule {}
+export class WeatherModule implements OnModuleInit {
+  constructor(
+    private readonly scheduler: WeatherScheduler,
+    private readonly gateway: WeatherGateway
+  ) {}
+
+  onModuleInit() {
+    this.scheduler.setGateway(this.gateway);
+  }
+}
