@@ -1,3 +1,13 @@
+"""
+Social system module for Cyber-Cosmos.
+Handles diplomacy, alliances, and inter-civilization relations.
+"""
+
 from .diplomacy import DiplomacyManager, RelationType, TreatyType, Treaty
 
-__all__ = ['DiplomacyManager', 'RelationType', 'TreatyType', 'Treaty']
+__all__ = [
+    'DiplomacyManager',
+    'RelationType',
+    'TreatyType',
+    'Treaty',
+]
