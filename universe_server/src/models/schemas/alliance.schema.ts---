@@ -1,0 +1,66 @@
+import { Entity, PrimaryGeneratedColumn, Column, Index } from 'typeorm';
+
+export enum AllianceType {
+  MILITARY = 'military',
+  ECONOMIC = 'economic',
+  RESEARCH = 'research',
+  CULTURAL = 'cultural',
+  DEFENSIVE = 'defensive',
+}
+
+export interface AllianceMember {
+  civilization_id: string;
+  joined_at: Date;
+  role: 'leader' | 'member' | 'founder';
+  contribution_score: number;
+}
+
+@Entity('alliances')
+export class Alliance {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ type: 'varchar', length: 255 })
+  @Index()
+  name: string;
+
+  @Column({ type: 'text', nullable: true })
+  description: string;
+
+  @Column({
+    type: 'enum',
+    enum: AllianceType,
+    default: AllianceType.DEFENSIVE,
+  })
+  alliance_type: AllianceType;
+
+  @Column({ type: 'jsonb', default: [] })
+  members: AllianceMember[];
+
+  @Column({ type: 'uuid', nullable: true })
+  founder_id: string;
+
+  @Column({ type: 'uuid', nullable: true })
+  leader_id: string;
+
+  @Column({ type: 'timestamptz', default: () => 'CURRENT_TIMESTAMP' })
+  @Index()
+  created_at: Date;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  dissolved_at: Date;
+
+  @Column({ type: 'jsonb', nullable: true })
+  charter: {
+    rules?: string[];
+    voting_system?: 'unanimous' | 'majority' | 'leader_decides';
+    resource_sharing?: boolean;
+    mutual_defense?: boolean;
+  };
+
+  @Column({ type: 'integer', default: 0 })
+  total_power: number;
+
+  @Column({ type: 'boolean', default: true })
+  is_active: boolean;
+}

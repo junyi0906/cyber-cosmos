@@ -1,0 +1,131 @@
+import { MigrationInterface, QueryRunner, Table, TableIndex, TableForeignKey } from 'typeorm';
+
+export class ExtendSchema001 implements MigrationInterface {
+  public async up(queryRunner: QueryRunner): Promise<void> {
+    // Create enum types for PostgreSQL
+    await queryRunner.query(`
+      CREATE TYPE event_category AS ENUM ('macro', 'micro', 'civilization', 'diplomatic');
+    `);
+
+    await queryRunner.query(`
+      CREATE TYPE event_type AS ENUM (
+        'supernova', 'black_hole_formation', 'nebula_collision', 'cosmic_radiation_wave',
+        'resource_depletion', 'environmental_mutation', 'tech_singularity',
+        'civilization_rise', 'civilization_fall', 'civilization_evolve',
+        'war_declaration', 'peace_treaty', 'alliance_formation', 'trade_agreement'
+      );
+    `);
+
+    await queryRunner.query(`
+      CREATE TYPE relation_type AS ENUM ('war', 'peace', 'alliance', 'neutral', 'hostile', 'friendly', 'trade_partner');
+    `);
+
+    await queryRunner.query(`
+      CREATE TYPE treaty_type AS ENUM ('non_aggression', 'trade_agreement', 'mutual_defense', 'research_pact', 'open_borders', 'vassalage');
+    `);
+
+    await queryRunner.query(`
+      CREATE TYPE alliance_type AS ENUM ('military', 'economic', 'research', 'cultural', 'defensive');
+    `);
+
+    await queryRunner.query(`
+      CREATE TYPE broadcast_type AS ENUM ('warning', 'greeting', 'trade_offer', 'territorial_claim', 'alliance_invitation', 'declaration', 'distress_signal', 'scientific_discovery');
+    `);
+
+    await queryRunner.query(`
+      CREATE TYPE broadcast_range AS ENUM ('local', 'regional', 'galactic', 'universal');
+    `);
+
+    // Create events table
+    await queryRunner.createTable(
+      new Table({
+        name: 'events',
+        columns: [
+          { name: 'id', type: 'uuid', isPrimary: true, default: 'uuid_generate_v4()' },
+          { name: 'type', type: 'event_type', default: "'resource_depletion'" },
+          { name: 'category', type: 'event_category', default: "'micro'" },
+          { name: 'data', type: 'jsonb', isNullable: true },
+          { name: 'timestamp', type: 'timestamptz', default: 'CURRENT_TIMESTAMP' },
+          { name: 'source_id', type: 'uuid', isNullable: true },
+          { name: 'target_id', type: 'uuid', isNullable: true },
+          { name: 'description', type: 'text', isNullable: true },
+          { name: 'impact', type: 'jsonb', isNullable: true },
+          { name: 'is_processed', type: 'boolean', default: false },
+        ],
+      }),
+      true
+    );
+
+    // Create indexes for events
+    await queryRunner.createIndex('events', new TableIndex({ name: 'IDX_events_type', columnNames: ['type'] }));
+    await queryRunner.createIndex('events', new TableIndex({ name: 'IDX_events_category', columnNames: ['category'] }));
+    await queryRunner.createIndex('events', new TableIndex({ name: 'IDX_events_timestamp', columnNames: ['timestamp'] }));
+    await queryRunner.createIndex('events', new TableIndex({ name: 'IDX_events_source_id', columnNames: ['source_id'] }));
+    await queryRunner.createIndex('events', new TableIndex({ name: 'IDX_events_target_id', columnNames: ['target_id'] }));
+
+    // Create diplomacy_relations table
+    await queryRunner.createTable(
+      new Table({
+        name: 'diplomacy_relations',
+        columns: [
+          { name: 'civilization_a', type: 'uuid', isPrimary: true },
+          { name: 'civilization_b', type: 'uuid', isPrimary: true },
+          { name: 'relation_type', type: 'relation_type', default: "'neutral'" },
+          { name: 'treaties', type: 'jsonb', default: "'[]'::jsonb" },
+          { name: 'trust_level', type: 'integer', default: 0 },
+          { name: 'threat_assessment', type: 'integer', default: 0 },
+          { name: 'relationship_score', type: 'integer', default: 50 },
+          { name: 'established_at', type: 'timestamptz', default: 'CURRENT_TIMESTAMP' },
+          { name: 'last_interaction', type: 'timestamptz', isNullable: true },
+          { name: 'interaction_history', type: 'jsonb', isNullable: true },
+          { name: 'is_active', type: 'boolean', default: true },
+        ],
+      }),
+      true
+    );
+
+    // Create indexes for diplomacy_relations
+    await queryRunner.createIndex('diplomacy_relations', new TableIndex({ name: 'IDX_diplomacy_civ_a', columnNames: ['civilization_a'] }));
+    await queryRunner.createIndex('diplomacy_relations', new TableIndex({ name: 'IDX_diplomacy_civ_b', columnNames: ['civilization_b'] }));
+
+    // Create alliances table
+    await queryRunner.createTable(
+      new Table({
+        name: 'alliances',
+        columns: [
+          { name: 'id', type: 'uuid', isPrimary: true, default: 'uuid_generate_v4()' },
+          { name: 'name', type: 'varchar', length: '255' },
+          { name: 'description', type: 'text', isNullable: true },
+          { name: 'alliance_type', type: 'alliance_type', default: "'defensive'" },
+          { name: 'members', type: 'jsonb', default: "'[]'::jsonb" },
+          { name: 'founder_id', type: 'uuid', isNullable: true },
+          { name: 'leader_id', type: 'uuid', isNullable: true },
+          { name: 'created_at', type: 'timestamptz', default: 'CURRENT_TIMESTAMP' },
+          { name: 'dissolved_at', type: 'timestamptz', isNullable: true },
+          { name: 'charter', type: 'jsonb', isNullable: true },
+          { name: 'total_power', type: 'integer', default: 0 },
+          { name: 'is_active', type: 'boolean', default: true },
+        ],
+      }),
+      true
+    );
+
+    // Create indexes for alliances
+    await queryRunner.createIndex('alliances', new TableIndex({ name: 'IDX_alliances_name', columnNames: ['name'] }));
+    await queryRunner.createIndex('alliances', new TableIndex({ name: 'IDX_alliances_created_at', columnNames: ['created_at'] }));
+
+    // Create broadcasts table
+    await queryRunner.createTable(
+      new Table({
+        name: 'broadcasts',
+        columns: [
+          { name: 'id', type: 'uuid', isPrimary: true, default: 'uuid_generate_v4()' },
+          { name: 'sender_id', type: 'uuid' },
+          { name: 'sender_name', type: 'varchar', length: '255', isNullable: true },
+          { name: 'content', type: 'text' },
+          { name: 'broadcast_type', type: 'broadcast_type', default: "'declaration'" },
+          { name: 'range', type: 'broadcast_range', default: "'regional'" },
+          { name: 'is_encrypted', type: 'boolean', default: false },
+          { name: 'encryption_key_hash', type: 'varchar', length: '64', isNullable: true },
+          { name: 'recipients', type: 'jsonb', isNullable: true },
+          { name: 'sent_at', type: 'timestamptz', default

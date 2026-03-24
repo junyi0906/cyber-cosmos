@@ -1,0 +1,73 @@
+import { Entity, PrimaryColumn, Column, Index, ManyToOne } from 'typeorm';
+
+export enum RelationType {
+  WAR = 'war',
+  PEACE = 'peace',
+  ALLIANCE = 'alliance',
+  NEUTRAL = 'neutral',
+  HOSTILE = 'hostile',
+  FRIENDLY = 'friendly',
+  TRADE_PARTNER = 'trade_partner',
+}
+
+export enum TreatyType {
+  NON_AGGRESSION = 'non_aggression',
+  TRADE_AGREEMENT = 'trade_agreement',
+  MUTUAL_DEFENSE = 'mutual_defense',
+  RESEARCH_PACT = 'research_pact',
+  OPEN_BORDERS = 'open_borders',
+  VASSALAGE = 'vassalage',
+}
+
+export interface Treaty {
+  type: TreatyType;
+  signed_at: Date;
+  expires_at?: Date;
+  terms?: Record<string, any>;
+}
+
+@Entity('diplomacy_relations')
+export class DiplomacyRelation {
+  @PrimaryColumn({ type: 'uuid' })
+  @Index()
+  civilization_a: string;
+
+  @PrimaryColumn({ type: 'uuid' })
+  @Index()
+  civilization_b: string;
+
+  @Column({
+    type: 'enum',
+    enum: RelationType,
+    default: RelationType.NEUTRAL,
+  })
+  relation_type: RelationType;
+
+  @Column({ type: 'jsonb', nullable: true, default: [] })
+  treaties: Treaty[];
+
+  @Column({ type: 'integer', default: 0 })
+  trust_level: number;
+
+  @Column({ type: 'integer', default: 0 })
+  threat_assessment: number;
+
+  @Column({ type: 'integer', default: 50 })
+  relationship_score: number;
+
+  @Column({ type: 'timestamptz', default: () => 'CURRENT_TIMESTAMP' })
+  established_at: Date;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  last_interaction: Date;
+
+  @Column({ type: 'jsonb', nullable: true })
+  interaction_history: Array<{
+    timestamp: Date;
+    action: string;
+    impact: number;
+  }>;
+
+  @Column({ type: 'boolean', default: true })
+  is_active: boolean;
+}
