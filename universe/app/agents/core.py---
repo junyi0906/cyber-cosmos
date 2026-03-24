@@ -1,166 +1,84 @@
 """
 Agent Core Module - BDI Architecture Implementation
-
-This module implements a simplified BDI (Belief-Desire-Intention) architecture
-for agent decision-making in the Cyber-Cosmos simulation.
+BDI (Beliefs-Desires-Intentions) 简化版架构
 """
-import json
-import logging
 import asyncio
-from typing import Dict, Any, List, Optional, Callable
-from dataclasses import dataclass, field, asdict
+import json
+import uuid
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-
-from ..core.database import insert_decision_log, get_decision_logs
+from typing import Any, Dict, List, Optional
+import logging
 
 logger = logging.getLogger(__name__)
 
 
-class DecisionType(Enum):
-    """Types of decisions an agent can make"""
-    EXPLORATION = "exploration"
-    DIPLOMACY = "diplomacy"
-    COMBAT = "combat"
-    RESOURCE = "resource"
-    RESEARCH = "research"
-    EXPANSION = "expansion"
-    TRADE = "trade"
-    ALLIANCE = "alliance"
-    BROADCAST = "broadcast"
-    SURVIVAL = "survival"
+class AgentState(Enum):
+    """Agent 状态枚举"""
+    IDLE = "idle"
+    THINKING = "thinking"
+    ACTING = "acting"
+    WAITING = "waiting"
 
 
 @dataclass
 class Belief:
-    """
-    Belief: What the agent believes about the world
-    Represents the agent's knowledge and perceptions
-    """
+    """信念 - Agent 对世界的认知"""
     key: str
     value: Any
     confidence: float = 1.0
     timestamp: datetime = field(default_factory=datetime.now)
-    source: str = "perception"
-    
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "key": self.key,
-            "value": self.value,
-            "confidence": self.confidence,
-            "timestamp": self.timestamp.isoformat(),
-            "source": self.source
-        }
+    source: str = "observation"
 
 
 @dataclass
 class Desire:
-    """
-    Desire: What the agent wants to achieve
-    Represents goals and motivations
-    """
+    """愿望 - Agent 的目标"""
+    id: str
     name: str
     priority: float
-    description: str = ""
-    target_state: Dict[str, Any] = field(default_factory=dict)
-    deadline: Optional[int] = None  # Tick deadline
-    status: str = "active"  # active, achieved, failed, abandoned
-    
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "name": self.name,
-            "priority": self.priority,
-            "description": self.description,
-            "target_state": self.target_state,
-            "deadline": self.deadline,
-            "status": self.status
-        }
+    description: str
+    status: str = "active"
+    created_at: datetime = field(default_factory=datetime.now)
 
 
 @dataclass
 class Intention:
-    """
-    Intention: What the agent has committed to do
-    Represents chosen courses of action
-    """
-    action: str
-    parameters: Dict[str, Any] = field(default_factory=dict)
-    expected_outcome: str = ""
-    related_desire: str = ""
-    status: str = "pending"  # pending, executing, completed, failed
-    
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "action": self.action,
-            "parameters": self.parameters,
-            "expected_outcome": self.expected_outcome,
-            "related_desire": self.related_desire,
-            "status": self.status
-        }
+    """意图 - Agent 打算采取的行动"""
+    id: str
+    action_type: str
+    target: Optional[str]
+    parameters: Dict[str, Any]
+    expected_outcome: str
+    status: str = "pending"
+    created_at: datetime = field(default_factory=datetime.now)
 
 
 @dataclass
 class DecisionLog:
-    """
-    Decision Log Entry
-    Records the complete decision-making process
-    """
+    """决策日志数据结构"""
+    id: str
     agent_id: str
     tick: int
     context: Dict[str, Any]
-    reasoning: Dict[str, Any]
+    reasoning: str
     action: Dict[str, Any]
-    decision_type: Optional[str] = None
-    log_id: Optional[int] = None
+    beliefs_snapshot: Dict[str, Any]
+    desires_snapshot: List[Dict[str, Any]]
+    intention: Optional[Dict[str, Any]]
     created_at: datetime = field(default_factory=datetime.now)
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "id": self.log_id,
-            "agent_id": self.agent_id,
-            "tick": self.tick,
-            "context": self.context,
-            "reasoning": self.reasoning,
-            "action": self.action,
-            "decision_type": self.decision_type,
-            "created_at": self.created_at.isoformat(),
-            "metadata": self.metadata
-        }
 
 
-class BDIAgent:
-    """
-    Simplified BDI (Belief-Desire-Intention) Architecture
+class BeliefBase:
+    """信念库 - 管理 Agent 的信念"""
     
-    This implements a cognitive architecture where:
-    - Beliefs: Agent's knowledge about the world
-    - Desires: Agent's goals and motivations
-    - Intentions: Agent's committed actions
-    """
+    def __init__(self):
+        self._beliefs: Dict[str, Belief] = {}
     
-    def __init__(self, agent_id: str, name: str = ""):
-        self.agent_id = agent_id
-        self.name = name or agent_id
-        
-        # BDI Components
-        self.beliefs: Dict[str, Belief] = {}
-        self.desires: List[Desire] = []
-        self.intentions: List[Intention] = []
-        
-        # Decision history
-        self.decision_history: List[DecisionLog] = []
-        
-        # Current state
-        self.current_tick = 0
-        self.current_context: Dict[str, Any] = {}
-        
-        # Decision callbacks
-        self._decision_callbacks: List[Callable] = []
-    
-    def add_belief(self, key: str, value: Any, confidence: float = 1.0, source: str = "perception"):
-        """Add or update a belief"""
-        self.beliefs[key] = Belief(
+    def add_belief(self, key: str, value: Any, confidence: float = 1.0, source: str = "observation"):
+        """添加或更新信念"""
+        self._beliefs[key] = Belief(
             key=key,
             value=value,
             confidence=confidence,
@@ -168,113 +86,408 @@ class BDIAgent:
         )
     
     def get_belief(self, key: str) -> Optional[Belief]:
-        """Get a belief by key"""
-        return self.beliefs.get(key)
+        """获取信念"""
+        return self._beliefs.get(key)
     
-    def update_beliefs(self, world_state: Dict[str, Any]):
-        """Update beliefs based on world state perception"""
-        for key, value in world_state.items():
-            self.add_belief(key, value, source="world_state")
+    def get_all_beliefs(self) -> Dict[str, Belief]:
+        """获取所有信念"""
+        return self._beliefs.copy()
     
-    def add_desire(self, name: str, priority: float, description: str = "", 
-                   target_state: Dict[str, Any] = None, deadline: Optional[int] = None):
-        """Add a new desire (goal)"""
-        desire = Desire(
+    def update_belief(self, key: str, value: Any, confidence: Optional[float] = None):
+        """更新信念"""
+        if key in self._beliefs:
+            self._beliefs[key].value = value
+            self._beliefs[key].timestamp = datetime.now()
+            if confidence is not None:
+                self._beliefs[key].confidence = confidence
+    
+    def remove_belief(self, key: str):
+        """移除信念"""
+        self._beliefs.pop(key, None)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典"""
+        return {
+            key: {
+                "value": b.value,
+                "confidence": b.confidence,
+                "timestamp": b.timestamp.isoformat(),
+                "source": b.source
+            }
+            for key, b in self._beliefs.items()
+        }
+
+
+class DesireBase:
+    """愿望库 - 管理 Agent 的目标"""
+    
+    def __init__(self):
+        self._desires: Dict[str, Desire] = {}
+    
+    def add_desire(self, name: str, priority: float, description: str) -> str:
+        """添加愿望"""
+        desire_id = str(uuid.uuid4())[:8]
+        self._desires[desire_id] = Desire(
+            id=desire_id,
             name=name,
             priority=priority,
-            description=description,
-            target_state=target_state or {},
-            deadline=deadline
+            description=description
         )
-        self.desires.append(desire)
-        self.desires.sort(key=lambda d: d.priority, reverse=True)
+        return desire_id
     
-    def remove_desire(self, name: str):
-        """Remove a desire"""
-        self.desires = [d for d in self.desires if d.name != name]
+    def get_desire(self, desire_id: str) -> Optional[Desire]:
+        """获取愿望"""
+        return self._desires.get(desire_id)
     
     def get_active_desires(self) -> List[Desire]:
-        """Get all active desires"""
-        return [d for d in self.desires if d.status == "active"]
-    
-    def add_intention(self, action: str, parameters: Dict[str, Any] = None,
-                      expected_outcome: str = "", related_desire: str = ""):
-        """Add a new intention"""
-        intention = Intention(
-            action=action,
-            parameters=parameters or {},
-            expected_outcome=expected_outcome,
-            related_desire=related_desire
+        """获取所有活跃愿望，按优先级排序"""
+        return sorted(
+            [d for d in self._desires.values() if d.status == "active"],
+            key=lambda x: x.priority,
+            reverse=True
         )
-        self.intentions.append(intention)
     
-    def get_pending_intentions(self) -> List[Intention]:
-        """Get all pending intentions"""
-        return [i for i in self.intentions if i.status == "pending"]
+    def update_desire_status(self, desire_id: str, status: str):
+        """更新愿望状态"""
+        if desire_id in self._desires:
+            self._desires[desire_id].status = status
     
-    def deliberate(self) -> Optional[Intention]:
+    def remove_desire(self, desire_id: str):
+        """移除愿望"""
+        self._desires.pop(desire_id, None)
+    
+    def to_list(self) -> List[Dict[str, Any]]:
+        """转换为列表"""
+        return [
+            {
+                "id": d.id,
+                "name": d.name,
+                "priority": d.priority,
+                "description": d.description,
+                "status": d.status
+            }
+            for d in self._desires.values()
+        ]
+
+
+class IntentionBase:
+    """意图库 - 管理 Agent 的行动计划"""
+    
+    def __init__(self):
+        self._intentions: Dict[str, Intention] = {}
+        self._current_intention: Optional[Intention] = None
+    
+    def add_intention(self, action_type: str, target: Optional[str], 
+                      parameters: Dict[str, Any], expected_outcome: str) -> str:
+        """添加意图"""
+        intention_id = str(uuid.uuid4())[:8]
+        intention = Intention(
+            id=intention_id,
+            action_type=action_type,
+            target=target,
+            parameters=parameters,
+            expected_outcome=expected_outcome
+        )
+        self._intentions[intention_id] = intention
+        return intention_id
+    
+    def set_current_intention(self, intention_id: str):
+        """设置当前意图"""
+        if intention_id in self._intentions:
+            self._current_intention = self._intentions[intention_id]
+    
+    def get_current_intention(self) -> Optional[Intention]:
+        """获取当前意图"""
+        return self._current_intention
+    
+    def complete_intention(self, intention_id: str):
+        """完成意图"""
+        if intention_id in self._intentions:
+            self._intentions[intention_id].status = "completed"
+            if self._current_intention and self._current_intention.id == intention_id:
+                self._current_intention = None
+    
+    def to_dict(self) -> Optional[Dict[str, Any]]:
+        """转换为字典"""
+        if self._current_intention:
+            return {
+                "id": self._current_intention.id,
+                "action_type": self._current_intention.action_type,
+                "target": self._current_intention.target,
+                "parameters": self._current_intention.parameters,
+                "expected_outcome": self._current_intention.expected_outcome,
+                "status": self._current_intention.status
+            }
+        return None
+
+
+class Agent:
+    """基础 Agent 类"""
+    
+    def __init__(self, agent_id: str, name: str, agent_type: str = "generic"):
+        self.agent_id = agent_id
+        self.name = name
+        self.agent_type = agent_type
+        self.state = AgentState.IDLE
+        self.created_at = datetime.now()
+        
+        # 决策日志记录器（延迟初始化）
+        self._decision_logger = None
+    
+    def set_decision_logger(self, logger):
+        """设置决策日志记录器"""
+        self._decision_logger = logger
+    
+    async def log_decision(self, context: Dict[str, Any], reasoning: str, 
+                          action: Dict[str, Any], tick: int = 0):
         """
-        Deliberation process: Choose which intention to execute
-        Based on current beliefs and desires
+        记录决策日志
+        
+        Args:
+            context: 决策上下文（环境状态、感知信息等）
+            reasoning: 决策推理过程
+            action: 采取的行动
+            tick: 当前时间刻
         """
-        active_desires = self.get_active_desires()
+        if self._decision_logger is None:
+            logger.warning(f"Decision logger not set for agent {self.agent_id}")
+            return
+        
+        decision = DecisionLog(
+            id=str(uuid.uuid4()),
+            agent_id=self.agent_id,
+            tick=tick,
+            context=context,
+            reasoning=reasoning,
+            action=action,
+            beliefs_snapshot={},
+            desires_snapshot=[],
+            intention=None
+        )
+        
+        await self._decision_logger.log(decision)
+        logger.debug(f"Agent {self.agent_id} logged decision: {action.get('type', 'unknown')}")
+    
+    async def perceive(self, environment: Dict[str, Any]) -> Dict[str, Any]:
+        """感知环境"""
+        return environment
+    
+    async def decide(self, perception: Dict[str, Any]) -> Dict[str, Any]:
+        """决策"""
+        return {"type": "idle", "parameters": {}}
+    
+    async def act(self, action: Dict[str, Any]) -> Dict[str, Any]:
+        """执行行动"""
+        return {"success": True, "result": {}}
+    
+    async def step(self, environment: Dict[str, Any], tick: int = 0) -> Dict[str, Any]:
+        """执行一步：感知-决策-行动循环"""
+        self.state = AgentState.THINKING
+        
+        # 感知
+        perception = await self.perceive(environment)
+        
+        # 决策
+        action = await self.decide(perception)
+        
+        # 记录决策日志
+        await self.log_decision(
+            context={"environment": environment, "perception": perception},
+            reasoning=f"Based on perception, decided to {action.get('type', 'act')}",
+            action=action,
+            tick=tick
+        )
+        
+        # 行动
+        self.state = AgentState.ACTING
+        result = await self.act(action)
+        
+        self.state = AgentState.IDLE
+        return result
+
+
+class BDIAgent(Agent):
+    """基于 BDI 架构的 Agent"""
+    
+    def __init__(self, agent_id: str, name: str, agent_type: str = "bdi"):
+        super().__init__(agent_id, name, agent_type)
+        
+        # BDI 组件
+        self.beliefs = BeliefBase()
+        self.desires = DesireBase()
+        self.intentions = IntentionBase()
+        
+        # 决策历史
+        self._decision_history: List[DecisionLog] = []
+    
+    def update_belief(self, key: str, value: Any, confidence: float = 1.0, source: str = "observation"):
+        """更新信念"""
+        self.beliefs.add_belief(key, value, confidence, source)
+    
+    def add_desire(self, name: str, priority: float, description: str) -> str:
+        """添加愿望"""
+        return self.desires.add_desire(name, priority, description)
+    
+    def add_intention(self, action_type: str, target: Optional[str],
+                      parameters: Dict[str, Any], expected_outcome: str) -> str:
+        """添加意图"""
+        return self.intentions.add_intention(action_type, target, parameters, expected_outcome)
+    
+    async def perceive(self, environment: Dict[str, Any]) -> Dict[str, Any]:
+        """感知环境并更新信念"""
+        perception = await super().perceive(environment)
+        
+        # 更新信念
+        for key, value in environment.items():
+            if isinstance(value, dict):
+                for sub_key, sub_value in value.items():
+                    self.update_belief(f"{key}.{sub_key}", sub_value, source="perception")
+            else:
+                self.update_belief(key, value, source="perception")
+        
+        return perception
+    
+    async def deliberate(self) -> Optional[Intention]:
+        """
+        慎思过程：从愿望中选择意图
+        简化版：选择优先级最高的活跃愿望
+        """
+        active_desires = self.desires.get_active_desires()
         if not active_desires:
             return None
         
-        # Simple deliberation: choose highest priority desire
-        # and create intention for it
+        # 选择最高优先级的愿望
         top_desire = active_desires[0]
         
-        # Generate intention based on desire type
-        intention = self._generate_intention_for_desire(top_desire)
-        if intention:
-            self.add_intention(
-                action=intention["action"],
-                parameters=intention.get("parameters", {}),
-                expected_outcome=intention.get("expected_outcome", ""),
-                related_desire=top_desire.name
-            )
-            return self.intentions[-1]
+        # 根据愿望生成意图
+        intention_id = self.add_intention(
+            action_type="pursue_goal",
+            target=top_desire.name,
+            parameters={"desire_id": top_desire.id},
+            expected_outcome=f"Achieve {top_desire.name}"
+        )
         
-        return None
+        self.intentions.set_current_intention(intention_id)
+        return self.intentions.get_current_intention()
     
-    def _generate_intention_for_desire(self, desire: Desire) -> Optional[Dict[str, Any]]:
-        """Generate an intention to achieve a desire"""
-        # This can be overridden by subclasses for specific behavior
+    async def plan(self, intention: Optional[Intention]) -> Dict[str, Any]:
+        """
+        规划：将意图转化为具体行动
+        """
+        if intention is None:
+            return {"type": "idle", "parameters": {}}
+        
         return {
-            "action": "pursue_goal",
-            "parameters": {"goal": desire.name},
-            "expected_outcome": f"Achieve {desire.name}"
+            "type": intention.action_type,
+            "target": intention.target,
+            "parameters": intention.parameters
         }
     
-    def register_decision_callback(self, callback: Callable):
-        """Register a callback to be called when a decision is made"""
-        self._decision_callbacks.append(callback)
-
-
-class Agent(BDIAgent):
-    """
-    Main Agent class with decision logging capabilities
-    
-    Extends BDI architecture with:
-    - Decision logging to PostgreSQL
-    - Context-aware reasoning
-    - Action execution with logging
-    """
-    
-    def __init__(self, agent_id: str, name: str = "", civilization_id: str = ""):
-        super().__init__(agent_id, name)
-        self.civilization_id = civilization_id or agent_id
+    async def decide(self, perception: Dict[str, Any]) -> Dict[str, Any]:
+        """BDI 决策过程"""
+        # 慎思
+        intention = await self.deliberate()
         
-        # Agent attributes
-        self.attributes = {
-            "military": 50,
-            "economic": 50,
-            "technology": 50,
-            "culture": 50,
-            "population": 1000
-        }
+        # 规划
+        action = await self.plan(intention)
         
-        # Diplomatic state
-        self.diplomatic_relations: Dict[str, str] = {}  # agent_id -> relation_type
-        self.trust_levels: Dict
+        return action
+    
+    async def log_decision(self, context: Dict[str, Any], reasoning: str,
+                          action: Dict[str, Any], tick: int = 0):
+        """记录 BDI 决策日志"""
+        if self._decision_logger is None:
+            logger.warning(f"Decision logger not set for agent {self.agent_id}")
+            return
+        
+        decision = DecisionLog(
+            id=str(uuid.uuid4()),
+            agent_id=self.agent_id,
+            tick=tick,
+            context=context,
+            reasoning=reasoning,
+            action=action,
+            beliefs_snapshot=self.beliefs.to_dict(),
+            desires_snapshot=self.desires.to_list(),
+            intention=self.intentions.to_dict()
+        )
+        
+        # 保存到历史
+        self._decision_history.append(decision)
+        
+        # 写入数据库
+        await self._decision_logger.log(decision)
+        logger.debug(f"BDIAgent {self.agent_id} logged decision with BDI state")
+    
+    async def step(self, environment: Dict[str, Any], tick: int = 0) -> Dict[str, Any]:
+        """执行一步：感知-慎思-规划-行动循环"""
+        self.state = AgentState.THINKING
+        
+        # 感知并更新信念
+        perception = await self.perceive(environment)
+        
+        # 慎思：选择意图
+        intention = await self.deliberate()
+        
+        # 规划：生成行动
+        action = await self.plan(intention)
+        
+        # 记录决策日志（包含 BDI 状态）
+        reasoning = self._generate_reasoning(perception, intention, action)
+        await self.log_decision(
+            context={
+                "environment": environment,
+                "perception": perception,
+                "active_desires": len(self.desires.get_active_desires())
+            },
+            reasoning=reasoning,
+            action=action,
+            tick=tick
+        )
+        
+        # 行动
+        self.state = AgentState.ACTING
+        result = await self.act(action)
+        
+        # 更新意图状态
+        if intention and result.get("success"):
+            self.intentions.complete_intention(intention.id)
+        
+        self.state = AgentState.IDLE
+        return result
+    
+    def _generate_reasoning(self, perception: Dict[str, Any], 
+                           intention: Optional[Intention],
+                           action: Dict[str, Any]) -> str:
+        """生成决策推理描述"""
+        parts = []
+        
+        # 信念总结
+        beliefs = self.beliefs.get_all_beliefs()
+        if beliefs:
+            parts.append(f"Current beliefs: {len(beliefs)} items")
+        
+        # 意图
+        if intention:
+            parts.append(f"Selected intention: {intention.action_type} -> {intention.target}")
+        else:
+            parts.append("No active intention")
+        
+        # 行动
+        parts.append(f"Decided action: {action.get('type', 'unknown')}")
+        
+        return " | ".join(parts)
+    
+    def get_decision_history(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """获取决策历史"""
+        history = self._decision_history[-limit:]
+        return [
+            {
+                "id": d.id,
+                "tick": d.tick,
+                "reasoning": d.reasoning,
+                "action": d.action,
+                "created_at": d.created_at.isoformat()
+            }
+            for d in history
+        ]

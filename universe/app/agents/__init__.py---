@@ -1,3 +1,5 @@
 # Agents Module
-from .core import Agent, BDIAgent, DecisionLog
----
+from .core import Agent, BDIAgent
+from .decision_logger import DecisionLogger
+
+__all__ = ['Agent', 'BDIAgent', 'DecisionLogger']
