@@ -1,0 +1,435 @@
+"""
+编年史生成器 - 基于事件链生成历史叙事
+"""
+import os
+import json
+from datetime import datetime
+from typing import List, Dict, Any, Optional, Tuple
+from dataclasses import dataclass, field
+from enum import Enum
+import logging
+
+try:
+    from pymongo import MongoClient
+    from pymongo.collection import Collection
+    HAS_MONGO = True
+except ImportError:
+    HAS_MONGO = False
+
+logger = logging.getLogger(__name__)
+
+
+class EventType(Enum):
+    """事件类型枚举"""
+    # 宏观事件
+    SUPERNOVA = "supernova"
+    BLACK_HOLE_FORMATION = "black_hole_formation"
+    NEBULA_COLLISION = "nebula_collision"
+    COSMIC_RADIATION = "cosmic_radiation"
+    
+    # 微观事件
+    RESOURCE_DEPLETION = "resource_depletion"
+    ENVIRONMENTAL_CHANGE = "environmental_change"
+    TECH_SINGULARITY = "tech_singularity"
+    
+    # 文明事件
+    CIVILIZATION_BIRTH = "civilization_birth"
+    CIVILIZATION_EXPANSION = "civilization_expansion"
+    CIVILIZATION_WAR = "civilization_war"
+    CIVILIZATION_ALLIANCE = "civilization_alliance"
+    CIVILIZATION_COLLAPSE = "civilization_collapse"
+    CIVILIZATION_EVOLUTION = "civilization_evolution"
+    
+    # 外交事件
+    DIPLOMACY_WAR = "diplomacy_war"
+    DIPLOMACY_PEACE = "diplomacy_peace"
+    DIPLOMACY_ALLIANCE = "diplomacy_alliance"
+    DIPLOMACY_TRADE = "diplomacy_trade"
+    
+    # 其他
+    DISCOVERY = "discovery"
+    MIGRATION = "migration"
+    BROADCAST = "broadcast"
+
+
+class CausalityType(Enum):
+    """因果关系类型"""
+    TRIGGERS = "triggers"           # 直接触发
+    ENABLES = "enables"             # 使能/创造条件
+    PREVENTS = "prevents"           # 阻止
+    ACCELERATES = "accelerates"     # 加速
+    INFLUENCES = "influences"       # 影响
+
+
+@dataclass
+class Event:
+    """事件数据结构"""
+    event_id: str
+    event_type: str
+    timestamp: int                    # 宇宙时间戳
+    description: str
+    participants: List[str] = field(default_factory=list)  # 参与者ID列表
+    location: Optional[Dict[str, Any]] = None
+    impact: Dict[str, Any] = field(default_factory=dict)
+    cause_event_ids: List[str] = field(default_factory=list)  # 原因事件ID
+    effect_event_ids: List[str] = field(default_factory=list)  # 结果事件ID
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "event_id": self.event_id,
+            "event_type": self.event_type,
+            "timestamp": self.timestamp,
+            "description": self.description,
+            "participants": self.participants,
+            "location": self.location,
+            "impact": self.impact,
+            "cause_event_ids": self.cause_event_ids,
+            "effect_event_ids": self.effect_event_ids,
+            "metadata": self.metadata
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'Event':
+        return cls(
+            event_id=data.get("event_id", ""),
+            event_type=data.get("event_type", ""),
+            timestamp=data.get("timestamp", 0),
+            description=data.get("description", ""),
+            participants=data.get("participants", []),
+            location=data.get("location"),
+            impact=data.get("impact", {}),
+            cause_event_ids=data.get("cause_event_ids", []),
+            effect_event_ids=data.get("effect_event_ids", []),
+            metadata=data.get("metadata", {})
+        )
+
+
+@dataclass
+class EventChain:
+    """事件链结构"""
+    chain_id: str
+    root_events: List[str]            # 根事件ID列表
+    events: Dict[str, Event]          # 所有事件
+    causality_links: List[Tuple[str, str, CausalityType]]  # (cause_id, effect_id, type)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "chain_id": self.chain_id,
+            "root_events": self.root_events,
+            "events": {k: v.to_dict() for k, v in self.events.items()},
+            "causality_links": [(c, e, t.value) for c, e, t in self.causality_links]
+        }
+
+
+@dataclass
+class Narrative:
+    """叙事数据结构"""
+    narrative_id: str
+    narrative_type: str               # epoch_summary, civilization_history, event_chain
+    title: str
+    content: str
+    timestamp: int
+    period_start: int
+    period_end: int
+    related_events: List[str]
+    related_civilizations: List[str]
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "narrative_id": self.narrative_id,
+            "narrative_type": self.narrative_type,
+            "title": self.title,
+            "content": self.content,
+            "timestamp": self.timestamp,
+            "period_start": self.period_start,
+            "period_end": self.period_end,
+            "related_events": self.related_events,
+            "related_civilizations": self.related_civilizations,
+            "metadata": self.metadata
+        }
+
+
+class Chronicler:
+    """
+    编年史生成器
+    负责收集事件、构建事件链、生成历史叙事
+    """
+    
+    def __init__(self, mongo_uri: str = None, db_name: str = "cyber_cosmos"):
+        """
+        初始化编年史生成器
+        
+        Args:
+            mongo_uri: MongoDB连接字符串
+            db_name: 数据库名称
+        """
+        self.mongo_uri = mongo_uri or os.getenv("MONGO_URI", "mongodb://localhost:27017")
+        self.db_name = db_name
+        self.client: Optional[MongoClient] = None
+        self.db = None
+        self.events_collection: Optional[Collection] = None
+        self.narratives_collection: Optional[Collection] = None
+        self._connected = False
+        
+        # 事件类型权重（用于叙事重要性排序）
+        self.event_weights = {
+            EventType.SUPERNOVA.value: 10,
+            EventType.BLACK_HOLE_FORMATION.value: 10,
+            EventType.CIVILIZATION_BIRTH.value: 9,
+            EventType.CIVILIZATION_COLLAPSE.value: 9,
+            EventType.TECH_SINGULARITY.value: 8,
+            EventType.CIVILIZATION_WAR.value: 7,
+            EventType.CIVILIZATION_ALLIANCE.value: 7,
+            EventType.DIPLOMACY_WAR.value: 6,
+            EventType.DIPLOMACY_ALLIANCE.value: 6,
+            EventType.CIVILIZATION_EXPANSION.value: 5,
+            EventType.CIVILIZATION_EVOLUTION.value: 5,
+            EventType.RESOURCE_DEPLETION.value: 4,
+            EventType.ENVIRONMENTAL_CHANGE.value: 4,
+            EventType.DISCOVERY.value: 3,
+            EventType.MIGRATION.value: 3,
+            EventType.DIPLOMACY_TRADE.value: 2,
+            EventType.BROADCAST.value: 1,
+            EventType.NEBULA_COLLISION.value: 6,
+            EventType.COSMIC_RADIATION.value: 5,
+            EventType.DIPLOMACY_PEACE.value: 4,
+        }
+        
+        # 模板目录
+        self.template_dir = os.path.join(os.path.dirname(__file__), "templates")
+    
+    def connect(self) -> bool:
+        """连接数据库"""
+        if not HAS_MONGO:
+            logger.warning("MongoDB driver not available, using in-memory storage")
+            self._connected = False
+            return False
+            
+        try:
+            self.client = MongoClient(self.mongo_uri, serverSelectionTimeoutMS=5000)
+            # 测试连接
+            self.client.admin.command('ping')
+            self.db = self.client[self.db_name]
+            self.events_collection = self.db["events"]
+            self.narratives_collection = self.db["narratives"]
+            self._connected = True
+            logger.info(f"Connected to MongoDB: {self.db_name}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to connect to MongoDB: {e}")
+            self._connected = False
+            return False
+    
+    def disconnect(self):
+        """断开数据库连接"""
+        if self.client:
+            self.client.close()
+            self._connected = False
+            logger.info("Disconnected from MongoDB")
+    
+    def collect_events(
+        self,
+        start_time: int,
+        end_time: int,
+        event_types: List[str] = None,
+        civilization_id: str = None,
+        limit: int = 1000
+    ) -> List[Event]:
+        """
+        从数据库收集指定时间段的事件
+        
+        Args:
+            start_time: 起始时间戳
+            end_time: 结束时间戳
+            event_types: 事件类型过滤列表
+            civilization_id: 文明ID过滤
+            limit: 返回事件数量限制
+            
+        Returns:
+            事件列表
+        """
+        events = []
+        
+        if self._connected and self.events_collection is not None:
+            query = {
+                "timestamp": {"$gte": start_time, "$lte": end_time}
+            }
+            
+            if event_types:
+                query["event_type"] = {"$in": event_types}
+            
+            if civilization_id:
+                query["participants"] = civilization_id
+            
+            cursor = self.events_collection.find(query).sort("timestamp", 1).limit(limit)
+            events = [Event.from_dict(doc) for doc in cursor]
+            logger.info(f"Collected {len(events)} events from MongoDB")
+        else:
+            # 如果没有数据库连接，返回示例数据
+            events = self._generate_sample_events(start_time, end_time)
+            logger.info(f"Generated {len(events)} sample events")
+        
+        return events
+    
+    def _generate_sample_events(self, start_time: int, end_time: int) -> List[Event]:
+        """生成示例事件数据（用于测试）"""
+        sample_events = []
+        current_time = start_time
+        
+        # 生成一些示例事件
+        event_templates = [
+            {
+                "event_type": EventType.CIVILIZATION_BIRTH.value,
+                "description": "一个新的文明在星系边缘诞生",
+                "participants": ["civ_001"],
+                "impact": {"population": 1000, "technology": 1}
+            },
+            {
+                "event_type": EventType.RESOURCE_DEPLETION.value,
+                "description": "母星资源开始枯竭",
+                "participants": ["civ_001"],
+                "impact": {"resources": -50}
+            },
+            {
+                "event_type": EventType.CIVILIZATION_EXPANSION.value,
+                "description": "文明开始向邻近星系扩张",
+                "participants": ["civ_001", "civ_002"],
+                "impact": {"territory": 5}
+            },
+            {
+                "event_type": EventType.CIVILIZATION_WAR.value,
+                "description": "两个文明爆发星际战争",
+                "participants": ["civ_001", "civ_002"],
+                "impact": {"casualties": 10000}
+            },
+            {
+                "event_type": EventType.TECH_SINGULARITY.value,
+                "description": "科技奇点爆发，文明进入新纪元",
+                "participants": ["civ_001"],
+                "impact": {"technology": 100}
+            },
+            {
+                "event_type": EventType.DIPLOMACY_ALLIANCE.value,
+                "description": "文明间签订联盟条约",
+                "participants": ["civ_001", "civ_002"],
+                "impact": {"diplomacy": "alliance"}
+            },
+            {
+                "event_type": EventType.SUPERNOVA.value,
+                "description": "超新星爆发照亮整个星系",
+                "participants": [],
+                "impact": {"radiation": 1000}
+            },
+            {
+                "event_type": EventType.CIVILIZATION_COLLAPSE.value,
+                "description": "一个古老的文明走向衰落",
+                "participants": ["civ_003"],
+                "impact": {"population": -1000000}
+            }
+        ]
+        
+        time_step = (end_time - start_time) // len(event_templates) if event_templates else 1
+        
+        for i, template in enumerate(event_templates):
+            event = Event(
+                event_id=f"event_{i:04d}",
+                event_type=template["event_type"],
+                timestamp=current_time,
+                description=template["description"],
+                participants=template.get("participants", []),
+                impact=template.get("impact", {})
+            )
+            sample_events.append(event)
+            current_time += time_step
+        
+        return sample_events
+    
+    def build_event_chain(
+        self,
+        events: List[Event],
+        max_depth: int = 10
+    ) -> EventChain:
+        """
+        构建事件因果关系链
+        
+        Args:
+            events: 事件列表
+            max_depth: 最大追溯深度
+            
+        Returns:
+            事件链结构
+        """
+        if not events:
+            return EventChain(
+                chain_id=f"chain_{datetime.now().strftime('%Y%m%d%H%M%S')}",
+                root_events=[],
+                events={},
+                causality_links=[]
+            )
+        
+        # 按时间排序
+        sorted_events = sorted(events, key=lambda e: e.timestamp)
+        events_dict = {e.event_id: e for e in sorted_events}
+        
+        # 构建因果关系
+        causality_links = []
+        
+        # 分析事件间的因果关系
+        for i, event in enumerate(sorted_events):
+            # 向前查找可能的原因事件
+            for j in range(max(0, i - max_depth), i):
+                prev_event = sorted_events[j]
+                causality = self._analyze_causality(prev_event, event)
+                if causality:
+                    causality_links.append((prev_event.event_id, event.event_id, causality))
+                    event.cause_event_ids.append(prev_event.event_id)
+                    prev_event.effect_event_ids.append(event.event_id)
+        
+        # 找出根事件（没有原因事件的事件）
+        root_events = [
+            e.event_id for e in sorted_events
+            if not e.cause_event_ids
+        ]
+        
+        chain_id = f"chain_{sorted_events[0].timestamp}_{sorted_events[-1].timestamp}"
+        
+        return EventChain(
+            chain_id=chain_id,
+            root_events=root_events,
+            events=events_dict,
+            causality_links=causality_links
+        )
+    
+    def _analyze_causality(
+        self,
+        cause_event: Event,
+        effect_event: Event
+    ) -> Optional[CausalityType]:
+        """
+        分析两个事件之间的因果关系
+        
+        Args:
+            cause_event: 可能的原因事件
+            effect_event: 可能的结果事件
+            
+        Returns:
+            因果关系类型，如果没有关系则返回None
+        """
+        # 时间必须先后顺序正确
+        if cause_event.timestamp >= effect_event.timestamp:
+            return None
+        
+        # 检查参与者关联
+        common_participants = set(cause_event.participants) & set(effect_event.participants)
+        
+        # 基于事件类型的因果关系规则
+        causality_rules = {
+            # 文明诞生 -> 扩张/发展
+            (EventType.CIVILIZATION_BIRTH.value, EventType.CIVILIZATION_EXPANSION.value): CausalityType.ENABLES,
+            (EventType.CIVILIZATION_BIRTH.value, EventType.RESOURCE_DEPLETION.value): CausalityType.TRIGGERS,
+            
+            # 资源枯竭 -> 战争/迁移
+            (EventType.RESOURCE_DEPLETION.value, EventType.CIVILIZATION_WAR.value): CausalityType.TRIGGERS,
+            (EventType.RESOURCE_DEPLETION.value, EventType.MIGRATION.value): Causality
