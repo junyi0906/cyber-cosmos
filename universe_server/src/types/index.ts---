@@ -1,64 +1,71 @@
-export interface Civilization {
-  id: number;
+export interface TickData {
+  type: 'tick';
+  timestamp: number;
+  universe_age: number;
+  civilizations: CivilizationState[];
+  events: UniverseEvent[];
+}
+
+export interface CivilizationState {
+  id: string;
   name: string;
-  type: string;
-  status: string;
   population: number;
   technology_level: number;
   military_power: number;
-  economy: number;
-  culture: number;
-  ideology: string;
-  home_planet_id: number | null;
-  created_at: Date;
-  updated_at: Date;
+  economic_power: number;
+  culture_value: number;
+  position: { x: number; y: number; z: number };
+  color: string;
+  status: 'active' | 'declining' | 'destroyed';
 }
 
-export interface HistoryEvent {
-  id: number;
-  event_type: string;
-  event_name: string;
+export interface UniverseEvent {
+  id: string;
+  type: string;
+  timestamp: number;
   description: string;
-  civilization_id: number | null;
-  year: number;
-  impact: Record<string, any>;
-  metadata: Record<string, any>;
-  created_at: Date;
+  affected_civilizations: string[];
+  impact: Record<string, number>;
 }
 
-export interface Intervention {
-  id: number;
-  intervention_type: string;
-  target_type: string;
-  target_id: number | null;
-  parameters: Record<string, any>;
-  status: string;
-  result: Record<string, any>;
-  created_at: Date;
-  executed_at: Date | null;
+export interface DecisionLog {
+  type: 'decision';
+  timestamp: number;
+  agent_id: string;
+  agent_name: string;
+  input: string;
+  reasoning: string;
+  action: string;
+  metadata?: Record<string, unknown>;
 }
 
-export interface CreateInterventionDto {
-  intervention_type: string;
-  target_type: string;
-  target_id?: number;
-  parameters?: Record<string, any>;
+export interface WebSocketMessage {
+  type: 'tick' | 'decision' | 'heartbeat' | 'subscribe' | 'unsubscribe';
+  payload: TickData | DecisionLog | HeartbeatPayload | SubscribePayload;
 }
 
-export interface ApiResponse<T> {
-  success: boolean;
-  data?: T;
-  error?: string;
-  message?: string;
+export interface HeartbeatPayload {
+  timestamp: number;
 }
 
-export interface PaginatedResponse<T> {
-  success: boolean;
-  data: T[];
-  pagination: {
-    page: number;
-    limit: number;
-    total: number;
-    totalPages: number;
-  };
+export interface SubscribePayload {
+  channels: string[];
+}
+
+export interface ClientInfo {
+  id: string;
+  socket: WebSocket;
+  isAlive: boolean;
+  subscribedChannels: Set<string>;
+  lastHeartbeat: number;
+  connectedAt: number;
+}
+
+export interface GatewayStats {
+  totalConnections: number;
+  activeConnections: number;
+  messagesReceived: number;
+  messagesSent: number;
+  redisConnected: boolean;
+  uptime: number;
 }

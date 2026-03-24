@@ -1,0 +1,458 @@
+import WebSocket, { WebSocketServer } from 'ws';
+import Redis from 'ioredis';
+import express from 'express';
+import { createServer } from 'http';
+import {
+  TickData,
+  DecisionLog,
+  ClientInfo,
+  GatewayStats,
+  WebSocketMessage
+} from '../../types';
+
+export class UniverseGateway {
+  private wss: WebSocketServer;
+  private redisSubscriber: Redis;
+  private redisPublisher: Redis;
+  private clients: Map<string, ClientInfo> = new Map();
+  private httpServer: ReturnType<typeof createServer>;
+  private app: express.Application;
+  private startTime: number = Date.now();
+  private stats = {
+    messagesReceived: 0,
+    messagesSent: 0
+  };
+
+  private readonly HEARTBEAT_INTERVAL = 30000; // 30 seconds
+  private readonly HEARTBEAT_TIMEOUT = 60000; // 60 seconds
+  private readonly REDIS_CHANNELS = {
+    TICK: 'universe:updates',
+    DECISION: 'universe:decisions',
+    EVENT: 'universe:events'
+  };
+
+  constructor(port: number = 8080, redisUrl: string = 'redis://localhost:6379') {
+    this.app = express();
+    this.httpServer = createServer(this.app);
+    this.wss = new WebSocketServer({ server: this.httpServer });
+    
+    // Redis connections
+    this.redisSubscriber = new Redis(redisUrl);
+    this.redisPublisher = new Redis(redisUrl);
+
+    this.setupExpressRoutes();
+    this.setupWebSocketServer();
+    this.setupRedisSubscriptions();
+    this.startHeartbeatChecker();
+  }
+
+  private setupExpressRoutes(): void {
+    this.app.use(express.json());
+
+    // Health check endpoint
+    this.app.get('/health', (req, res) => {
+      res.json({
+        status: 'healthy',
+        timestamp: Date.now(),
+        uptime: Date.now() - this.startTime
+      });
+    });
+
+    // Stats endpoint
+    this.app.get('/stats', (req, res) => {
+      res.json(this.getStats());
+    });
+
+    // Broadcast endpoint for external services
+    this.app.post('/broadcast/tick', (req, res) => {
+      const tickData: TickData = req.body;
+      this.broadcast_tick(tickData);
+      res.json({ success: true, recipients: this.clients.size });
+    });
+
+    this.app.post('/broadcast/decision', (req, res) => {
+      const decision: DecisionLog = req.body;
+      this.broadcast_decision(decision);
+      res.json({ success: true, recipients: this.clients.size });
+    });
+  }
+
+  private setupWebSocketServer(): void {
+    this.wss.on('connection', (socket: WebSocket, req) => {
+      const clientId = this.generateClientId();
+      const clientInfo: ClientInfo = {
+        id: clientId,
+        socket,
+        isAlive: true,
+        subscribedChannels: new Set(['tick', 'decision']),
+        lastHeartbeat: Date.now(),
+        connectedAt: Date.now()
+      };
+
+      this.clients.set(clientId, clientInfo);
+      console.log(`[Gateway] Client connected: ${clientId} (Total: ${this.clients.size})`);
+
+      // Send welcome message
+      this.sendToClient(socket, {
+        type: 'connection',
+        payload: {
+          clientId,
+          message: 'Connected to Universe Gateway',
+          timestamp: Date.now()
+        }
+      });
+
+      socket.on('message', (data: Buffer) => {
+        this.handleMessage(clientId, data);
+      });
+
+      socket.on('pong', () => {
+        this.handlePong(clientId);
+      });
+
+      socket.on('close', () => {
+        this.handleDisconnect(clientId);
+      });
+
+      socket.on('error', (error) => {
+        console.error(`[Gateway] Client ${clientId} error:`, error.message);
+        this.handleDisconnect(clientId);
+      });
+    });
+
+    this.wss.on('error', (error) => {
+      console.error('[Gateway] WebSocket Server error:', error.message);
+    });
+  }
+
+  private setupRedisSubscriptions(): void {
+    // Subscribe to tick updates from Python simulation
+    this.redisSubscriber.subscribe(this.REDIS_CHANNELS.TICK, (err) => {
+      if (err) {
+        console.error('[Gateway] Failed to subscribe to tick channel:', err.message);
+      } else {
+        console.log(`[Gateway] Subscribed to Redis channel: ${this.REDIS_CHANNELS.TICK}`);
+      }
+    });
+
+    // Subscribe to decision logs
+    this.redisSubscriber.subscribe(this.REDIS_CHANNELS.DECISION, (err) => {
+      if (err) {
+        console.error('[Gateway] Failed to subscribe to decision channel:', err.message);
+      } else {
+        console.log(`[Gateway] Subscribed to Redis channel: ${this.REDIS_CHANNELS.DECISION}`);
+      }
+    });
+
+    // Subscribe to events
+    this.redisSubscriber.subscribe(this.REDIS_CHANNELS.EVENT, (err) => {
+      if (err) {
+        console.error('[Gateway] Failed to subscribe to event channel:', err.message);
+      } else {
+        console.log(`[Gateway] Subscribed to Redis channel: ${this.REDIS_CHANNELS.EVENT}`);
+      }
+    });
+
+    // Handle Redis messages
+    this.redisSubscriber.on('message', (channel: string, message: string) => {
+      this.stats.messagesReceived++;
+      
+      try {
+        const data = JSON.parse(message);
+        
+        switch (channel) {
+          case this.REDIS_CHANNELS.TICK:
+            this.broadcast_tick(data);
+            break;
+          case this.REDIS_CHANNELS.DECISION:
+            this.broadcast_decision(data);
+            break;
+          case this.REDIS_CHANNELS.EVENT:
+            this.broadcast_event(data);
+            break;
+          default:
+            console.warn(`[Gateway] Unknown channel: ${channel}`);
+        }
+      } catch (error) {
+        console.error(`[Gateway] Failed to parse Redis message from ${channel}:`, error);
+      }
+    });
+
+    this.redisSubscriber.on('error', (error) => {
+      console.error('[Gateway] Redis subscriber error:', error.message);
+    });
+
+    this.redisSubscriber.on('connect', () => {
+      console.log('[Gateway] Redis subscriber connected');
+    });
+
+    this.redisSubscriber.on('reconnecting', () => {
+      console.log('[Gateway] Redis subscriber reconnecting...');
+    });
+  }
+
+  private handleMessage(clientId: string, data: Buffer): void {
+    const client = this.clients.get(clientId);
+    if (!client) return;
+
+    this.stats.messagesReceived++;
+
+    try {
+      const message: WebSocketMessage = JSON.parse(data.toString());
+
+      switch (message.type) {
+        case 'heartbeat':
+          client.lastHeartbeat = Date.now();
+          client.isAlive = true;
+          this.sendToClient(client.socket, {
+            type: 'heartbeat_ack',
+            payload: { timestamp: Date.now() }
+          });
+          break;
+
+        case 'subscribe':
+          const subscribePayload = message.payload as { channels?: string[] };
+          if (subscribePayload.channels) {
+            subscribePayload.channels.forEach(ch => client.subscribedChannels.add(ch));
+          }
+          this.sendToClient(client.socket, {
+            type: 'subscribe_ack',
+            payload: { channels: Array.from(client.subscribedChannels) }
+          });
+          break;
+
+        case 'unsubscribe':
+          const unsubscribePayload = message.payload as { channels?: string[] };
+          if (unsubscribePayload.channels) {
+            unsubscribePayload.channels.forEach(ch => client.subscribedChannels.delete(ch));
+          }
+          this.sendToClient(client.socket, {
+            type: 'unsubscribe_ack',
+            payload: { channels: Array.from(client.subscribedChannels) }
+          });
+          break;
+
+        default:
+          console.warn(`[Gateway] Unknown message type from ${clientId}:`, message.type);
+      }
+    } catch (error) {
+      console.error(`[Gateway] Failed to parse message from ${clientId}:`, error);
+    }
+  }
+
+  private handlePong(clientId: string): void {
+    const client = this.clients.get(clientId);
+    if (client) {
+      client.isAlive = true;
+      client.lastHeartbeat = Date.now();
+    }
+  }
+
+  private handleDisconnect(clientId: string): void {
+    const client = this.clients.get(clientId);
+    if (client) {
+      client.isAlive = false;
+      this.clients.delete(clientId);
+      console.log(`[Gateway] Client disconnected: ${clientId} (Remaining: ${this.clients.size})`);
+    }
+  }
+
+  private startHeartbeatChecker(): void {
+    setInterval(() => {
+      const now = Date.now();
+      
+      this.clients.forEach((client, clientId) => {
+        if (!client.isAlive || (now - client.lastHeartbeat) > this.HEARTBEAT_TIMEOUT) {
+          console.log(`[Gateway] Client ${clientId} timed out, terminating connection`);
+          client.socket.terminate();
+          this.clients.delete(clientId);
+          return;
+        }
+
+        // Send ping
+        client.isAlive = false;
+        client.socket.ping();
+      });
+    }, this.HEARTBEAT_INTERVAL);
+  }
+
+  /**
+   * Broadcast tick data to all connected clients
+   */
+  public broadcast_tick(data: TickData): void {
+    const message = {
+      type: 'tick',
+      payload: data,
+      timestamp: Date.now()
+    };
+
+    let sentCount = 0;
+    this.clients.forEach((client) => {
+      if (client.isAlive && client.subscribedChannels.has('tick')) {
+        if (this.sendToClient(client.socket, message)) {
+          sentCount++;
+        }
+      }
+    });
+
+    this.stats.messagesSent += sentCount;
+    console.log(`[Gateway] Broadcast tick to ${sentCount} clients (Universe Age: ${data.universe_age})`);
+  }
+
+  /**
+   * Broadcast decision log to all connected clients
+   */
+  public broadcast_decision(data: DecisionLog): void {
+    const message = {
+      type: 'decision',
+      payload: data,
+      timestamp: Date.now()
+    };
+
+    let sentCount = 0;
+    this.clients.forEach((client) => {
+      if (client.isAlive && client.subscribedChannels.has('decision')) {
+        if (this.sendToClient(client.socket, message)) {
+          sentCount++;
+        }
+      }
+    });
+
+    this.stats.messagesSent += sentCount;
+    console.log(`[Gateway] Broadcast decision from agent ${data.agent_name} to ${sentCount} clients`);
+  }
+
+  /**
+   * Broadcast universe event to all connected clients
+   */
+  public broadcast_event(data: unknown): void {
+    const message = {
+      type: 'event',
+      payload: data,
+      timestamp: Date.now()
+    };
+
+    let sentCount = 0;
+    this.clients.forEach((client) => {
+      if (client.isAlive) {
+        if (this.sendToClient(client.socket, message)) {
+          sentCount++;
+        }
+      }
+    });
+
+    this.stats.messagesSent += sentCount;
+    console.log(`[Gateway] Broadcast event to ${sentCount} clients`);
+  }
+
+  /**
+   * Send message to a specific client
+   */
+  private sendToClient(socket: WebSocket, message: unknown): boolean {
+    if (socket.readyState === WebSocket.OPEN) {
+      try {
+        socket.send(JSON.stringify(message));
+        return true;
+      } catch (error) {
+        console.error('[Gateway] Failed to send message:', error);
+        return false;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Publish tick data to Redis (for other services)
+   */
+  public async publish_tick(data: TickData): Promise<void> {
+    try {
+      await this.redisPublisher.publish(
+        this.REDIS_CHANNELS.TICK,
+        JSON.stringify(data)
+      );
+    } catch (error) {
+      console.error('[Gateway] Failed to publish tick:', error);
+    }
+  }
+
+  /**
+   * Publish decision to Redis
+   */
+  public async publish_decision(data: DecisionLog): Promise<void> {
+    try {
+      await this.redisPublisher.publish(
+        this.REDIS_CHANNELS.DECISION,
+        JSON.stringify(data)
+      );
+    } catch (error) {
+      console.error('[Gateway] Failed to publish decision:', error);
+    }
+  }
+
+  /**
+   * Get gateway statistics
+   */
+  public getStats(): GatewayStats {
+    let activeCount = 0;
+    this.clients.forEach(client => {
+      if (client.isAlive) activeCount++;
+    });
+
+    return {
+      totalConnections: this.clients.size,
+      activeConnections: activeCount,
+      messagesReceived: this.stats.messagesReceived,
+      messagesSent: this.stats.messagesSent,
+      redisConnected: this.redisSubscriber.status === 'ready',
+      uptime: Date.now() - this.startTime
+    };
+  }
+
+  /**
+   * Generate unique client ID
+   */
+  private generateClientId(): string {
+    return `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  /**
+   * Start the gateway server
+   */
+  public start(port: number): Promise<void> {
+    return new Promise((resolve) => {
+      this.httpServer.listen(port, () => {
+        console.log(`[Gateway] Universe Gateway started on port ${port}`);
+        console.log(`[Gateway] WebSocket endpoint: ws://localhost:${port}`);
+        console.log(`[Gateway] HTTP endpoints: http://localhost:${port}/health, /stats`);
+        resolve();
+      });
+    });
+  }
+
+  /**
+   * Graceful shutdown
+   */
+  public async shutdown(): Promise<void> {
+    console.log('[Gateway] Shutting down...');
+
+    // Close all client connections
+    this.clients.forEach((client) => {
+      client.socket.close(1001, 'Server shutting down');
+    });
+    this.clients.clear();
+
+    // Close WebSocket server
+    this.wss.close();
+
+    // Disconnect from Redis
+    await this.redisSubscriber.quit();
+    await this.redisPublisher.quit();
+
+    // Close HTTP server
+    this.httpServer.close();
+
+    console.log('[Gateway] Shutdown complete');
+  }
+}
+
+export default UniverseGateway;
