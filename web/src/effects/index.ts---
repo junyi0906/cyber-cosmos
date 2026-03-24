@@ -1,21 +1,30 @@
 export interface EffectConfig {
   id: string;
   type: 'supernova' | 'blackhole' | 'explosion' | 'wave';
-  position: { x: number; y: number; z: number };
+  x: number;
+  y: number;
   duration: number;
   intensity?: number;
   color?: string;
-  data?: Record<string, unknown>;
 }
 
 export interface EffectRenderer {
-  init(config: EffectConfig): void;
+  init(ctx: CanvasRenderingContext2D, config: EffectConfig): void;
   update(deltaTime: number): boolean;
+  render(ctx: CanvasRenderingContext2D): void;
+  isComplete(): boolean;
   dispose(): void;
-  getObject3D(): THREE.Object3D | null;
 }
 
-export * from './supernova';
-export * from './blackhole';
-export * from './explosion';
-export * from './wave';
+export interface EffectEvent {
+  eventType: 'supernova' | 'blackhole' | 'explosion' | 'wave' | 'collision' | 'star_death';
+  position: { x: number; y: number; z?: number };
+  intensity?: number;
+  metadata?: Record<string, unknown>;
+  timestamp: number;
+}
+
+export { SupernovaEffect } from './supernova';
+export { BlackholeEffect } from './blackhole';
+export { ExplosionEffect } from './explosion';
+export { WaveEffect } from './wave';

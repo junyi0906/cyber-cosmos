@@ -1,10 +1,98 @@
-import * as THREE from 'three';
-import { EffectConfig, EffectRenderer } from './index';
+import { EffectRenderer, EffectConfig } from './index';
 
-interface ExplosionDebris {
-  position: THREE.Vector3;
-  velocity: THREE.Vector3;
-  rotation: THREE.Euler;
-  rotationSpeed: THREE.Vector3;
-  scale: number;
-  life: number
+interface Debris {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  size: number;
+  rotation: number;
+  rotationSpeed: number;
+  life: number;
+  maxLife: number;
+  color: string;
+}
+
+interface Spark {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  maxLife: number;
+  size: number;
+}
+
+export class ExplosionEffect implements EffectRenderer {
+  private config: EffectConfig | null = null;
+  private elapsed: number = 0;
+  private debris: Debris[] = [];
+  private sparks: Spark[] = [];
+  private flashAlpha: number = 1;
+  private shockwaveRadius: number = 0;
+  private shockwaveAlpha: number = 1;
+
+  init(ctx: CanvasRenderingContext2D, config: EffectConfig): void {
+    this.config = config;
+    this.elapsed = 0;
+    this.flashAlpha = 1;
+    this.shockwaveRadius = 0;
+    this.shockwaveAlpha = 1;
+    this.debris = [];
+    this.sparks = [];
+
+    const intensity = config.intensity || 1;
+    const debrisCount = Math.floor(30 * intensity);
+    
+    for (let i = 0; i < debrisCount; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 3 + Math.random() * 8;
+      const hue = 20 + Math.random() * 40;
+      
+      this.debris.push({
+        x: config.x,
+        y: config.y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        size: 3 + Math.random() * 6,
+        rotation: Math.random() * Math.PI * 2,
+        rotationSpeed: (Math.random() - 0.5) * 0.3,
+        life: 0,
+        maxLife: config.duration * (0.5 + Math.random() * 0.5),
+        color: `hsl(${hue}, 100%, ${40 + Math.random() * 20}%)`
+      });
+    }
+
+    const sparkCount = Math.floor(50 * intensity);
+    for (let i = 0; i < sparkCount; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 5 + Math.random() * 15;
+      
+      this.sparks.push({
+        x: config.x,
+        y: config.y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 0,
+        maxLife: config.duration * (0.2 + Math.random() * 0.3),
+        size: 1 + Math.random() * 2
+      });
+    }
+  }
+
+  update(deltaTime: number): boolean {
+    if (!this.config) return true;
+
+    this.elapsed += deltaTime;
+    const progress = this.elapsed / this.config.duration;
+
+    this.flashAlpha = Math.max(0, 1 - progress * 5);
+    this.shockwaveRadius = 100 * (this.config.intensity || 1) * Math.min(1, progress * 3);
+    this.shockwaveAlpha = Math.max(0, 1 - progress * 2);
+
+    this.debris.forEach(d => {
+      d.x += d.vx;
+      d.y += d.vy;
+      d.vy += 0.1;
+      d.vx *= 0.98;
+      d.vy *=
