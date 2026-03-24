@@ -1,0 +1,98 @@
+import { IsArray, IsNumber, IsString, ValidateNested, IsOptional } from 'class-validator';
+import { Type } from 'class-transformer';
+
+export class HeatmapPointDto {
+  @IsNumber()
+  x: number;
+
+  @IsNumber()
+  y: number;
+
+  @IsNumber()
+  value: number;
+
+  @IsOptional()
+  @IsString()
+  civilizationId?: string;
+
+  @IsOptional()
+  @IsString()
+  regionId?: string;
+}
+
+export class HeatmapLayerDto {
+  @IsString()
+  name: string;
+
+  @IsNumber()
+  minValue: number;
+
+  @IsNumber()
+  maxValue: number;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => HeatmapPointDto)
+  data: HeatmapPointDto[];
+
+  @IsOptional()
+  @IsString()
+  colorScale?: string;
+}
+
+export class HeatmapDataDto {
+  @IsNumber()
+  timestamp: number;
+
+  @IsNumber()
+  width: number;
+
+  @IsNumber()
+  height: number;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => HeatmapLayerDto)
+  layers: HeatmapLayerDto[];
+
+  @IsOptional()
+  @IsString()
+  region?: string;
+}
+
+export class CivilizationInfluenceDto {
+  @IsString()
+  civilizationId: string;
+
+  @IsString()
+  name: string;
+
+  @IsNumber()
+  totalInfluence: number;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => HeatmapPointDto)
+  influencePoints: HeatmapPointDto[];
+}
+
+export class HeatmapQueryDto {
+  @IsOptional()
+  @IsString()
+  region?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  timestamp?: number;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  civilizationIds?: string[];
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  resolution?: number = 100;
+}

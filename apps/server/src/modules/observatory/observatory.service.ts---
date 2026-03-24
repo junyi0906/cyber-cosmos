@@ -1,0 +1,265 @@
+import { Injectable } from '@nestjs/common';
+import { TimelineQueryDto, TimelineGranularity } from './dto/timeline-query.dto';
+import { HeatmapDataDto, HeatmapQueryDto, CivilizationInfluenceDto } from './dto/heatmap-data.dto';
+import {
+  CivilizationAnalytics,
+  UniverseAnalytics,
+  TimelineSeries,
+  AnalyticsReport,
+  RadarChartData,
+  ObservatoryEvent,
+} from './interfaces/analytics.interface';
+
+@Injectable()
+export class ObservatoryService {
+  async getTimelineData(query: TimelineQueryDto): Promise<TimelineSeries[]> {
+    // Placeholder implementation - will be connected to TimescaleDB
+    const series: TimelineSeries[] = [];
+    
+    const now = Date.now();
+    const startTime = query.startTime || now - 30 * 24 * 60 * 60 * 1000;
+    const endTime = query.endTime || now;
+    
+    const dataPoints = this.generateMockDataPoints(
+      startTime,
+      endTime,
+      query.granularity || TimelineGranularity.DAY,
+      query.limit || 100,
+    );
+
+    series.push({
+      id: `series-${query.metric}-${Date.now()}`,
+      name: query.metric || 'population',
+      metric: query.metric || 'population',
+      civilizationId: query.civilizationId,
+      data: dataPoints,
+      statistics: this.calculateStatistics(dataPoints),
+    });
+
+    return series;
+  }
+
+  async getHeatmapData(query: HeatmapQueryDto): Promise<HeatmapDataDto> {
+    const resolution = query.resolution || 100;
+    const timestamp = query.timestamp || Date.now();
+
+    const heatmapData: HeatmapDataDto = {
+      timestamp,
+      width: resolution,
+      height: resolution,
+      layers: [
+        {
+          name: 'civilization_influence',
+          minValue: 0,
+          maxValue: 100,
+          data: this.generateMockHeatmapPoints(resolution),
+          colorScale: 'viridis',
+        },
+        {
+          name: 'resource_density',
+          minValue: 0,
+          maxValue: 1000,
+          data: this.generateMockHeatmapPoints(resolution),
+          colorScale: 'plasma',
+        },
+      ],
+      region: query.region,
+    };
+
+    return heatmapData;
+  }
+
+  async getCivilizationInfluences(civilizationIds?: string[]): Promise<CivilizationInfluenceDto[]> {
+    // Mock implementation
+    const influences: CivilizationInfluenceDto[] = [
+      {
+        civilizationId: 'civ-001',
+        name: 'Alpha Centauri Federation',
+        totalInfluence: 8500,
+        influencePoints: this.generateMockHeatmapPoints(50),
+      },
+      {
+        civilizationId: 'civ-002',
+        name: 'Void Collective',
+        totalInfluence: 7200,
+        influencePoints: this.generateMockHeatmapPoints(50),
+      },
+    ];
+
+    if (civilizationIds && civilizationIds.length > 0) {
+      return influences.filter(i => civilizationIds.includes(i.civilizationId));
+    }
+
+    return influences;
+  }
+
+  async getCivilizationAnalytics(civilizationId: string): Promise<CivilizationAnalytics> {
+    return {
+      civilizationId,
+      name: 'Civilization Name',
+      timestamp: Date.now(),
+      metrics: {
+        military: 75,
+        economy: 82,
+        technology: 68,
+        culture: 90,
+        diplomacy: 55,
+      },
+      rank: 1,
+      trend: 'rising',
+    };
+  }
+
+  async getUniverseAnalytics(): Promise<UniverseAnalytics> {
+    return {
+      timestamp: Date.now(),
+      totalPopulation: 15000000000,
+      totalCivilizations: 12,
+      activeTradeRoutes: 45,
+      averageTechLevel: 4.5,
+      conflictIndex: 0.35,
+      cooperationIndex: 0.65,
+    };
+  }
+
+  async generateAnalyticsReport(startTime: number, endTime: number): Promise<AnalyticsReport> {
+    const universeAnalytics = await this.getUniverseAnalytics();
+
+    return {
+      generatedAt: Date.now(),
+      period: { start: startTime, end: endTime },
+      summary: universeAnalytics,
+      civilizationComparisons: [
+        {
+          civilizationId: 'civ-001',
+          name: 'Alpha Centauri Federation',
+          scores: { military: 75, economy: 82, technology: 68, culture: 90, diplomacy: 55 },
+          overallScore: 74,
+          rank: 1,
+        },
+        {
+          civilizationId: 'civ-002',
+          name: 'Void Collective',
+          scores: { military: 88, economy: 60, technology: 75, culture: 45, diplomacy: 70 },
+          overallScore: 67.6,
+          rank: 2,
+        },
+      ],
+      trends: [
+        { metric: 'population', direction: 'up', changePercent: 5.2 },
+        { metric: 'technology', direction: 'up', changePercent: 12.8 },
+        { metric: 'conflicts', direction: 'down', changePercent: -3.5 },
+      ],
+    };
+  }
+
+  async getRadarChartData(civilizationIds: string[]): Promise<RadarChartData> {
+    return {
+      labels: ['Military', 'Economy', 'Technology', 'Culture', 'Diplomacy'],
+      datasets: civilizationIds.map((id, index) => ({
+        label: `Civilization ${index + 1}`,
+        civilizationId: id,
+        data: [
+          Math.random() * 100,
+          Math.random() * 100,
+          Math.random() * 100,
+          Math.random() * 100,
+          Math.random() * 100,
+        ],
+      })),
+    };
+  }
+
+  async getObservatoryEvents(limit: number = 50): Promise<ObservatoryEvent[]> {
+    const events: ObservatoryEvent[] = [];
+    const types: ObservatoryEvent['type'][] = ['milestone', 'disaster', 'discovery', 'conflict', 'trade'];
+
+    for (let i = 0; i < Math.min(limit, 20); i++) {
+      events.push({
+        id: `event-${i}`,
+        type: types[i % types.length],
+        timestamp: Date.now() - i * 3600000,
+        title: `Event ${i + 1}`,
+        description: `Description for event ${i + 1}`,
+        involvedCivilizations: [`civ-${i % 5}`],
+        impact: { population: Math.random() * 1000, resources: Math.random() * 500 },
+        location: { x: Math.random() * 1000, y: Math.random() * 1000 },
+      });
+    }
+
+    return events;
+  }
+
+  private generateMockDataPoints(
+    startTime: number,
+    endTime: number,
+    granularity: TimelineGranularity,
+    limit: number,
+  ): Array<{ timestamp: number; value: number; metadata?: Record<string, unknown> }> {
+    const points: Array<{ timestamp: number; value: number; metadata?: Record<string, unknown> }> = [];
+    
+    const interval = this.getIntervalMs(granularity);
+    const totalPoints = Math.min(Math.floor((endTime - startTime) / interval), limit);
+
+    for (let i = 0; i < totalPoints; i++) {
+      points.push({
+        timestamp: startTime + i * interval,
+        value: Math.floor(Math.random() * 10000) + 1000,
+        metadata: { source: 'mock' },
+      });
+    }
+
+    return points;
+  }
+
+  private getIntervalMs(granularity: TimelineGranularity): number {
+    const intervals: Record<TimelineGranularity, number> = {
+      [TimelineGranularity.HOUR]: 3600000,
+      [TimelineGranularity.DAY]: 86400000,
+      [TimelineGranularity.WEEK]: 604800000,
+      [TimelineGranularity.MONTH]: 2592000000,
+      [TimelineGranularity.YEAR]: 31536000000,
+    };
+    return intervals[granularity];
+  }
+
+  private calculateStatistics(data: Array<{ timestamp: number; value: number }>): {
+    min: number;
+    max: number;
+    mean: number;
+    sum: number;
+    count: number;
+  } {
+    if (data.length === 0) {
+      return { min: 0, max: 0, mean: 0, sum: 0, count: 0 };
+    }
+
+    const values = data.map(d => d.value);
+    const sum = values.reduce((a, b) => a + b, 0);
+
+    return {
+      min: Math.min(...values),
+      max: Math.max(...values),
+      mean: sum / values.length,
+      sum,
+      count: values.length,
+    };
+  }
+
+  private generateMockHeatmapPoints(resolution: number): Array<{ x: number; y: number; value: number }> {
+    const points: Array<{ x: number; y: number; value: number }> = [];
+    const step = Math.max(1, Math.floor(resolution / 20));
+
+    for (let x = 0; x < resolution; x += step) {
+      for (let y = 0; y < resolution; y += step) {
+        points.push({
+          x,
+          y,
+          value: Math.random() * 100,
+        });
+      }
+    }
+
+    return points;
+  }
+}

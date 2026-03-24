@@ -1,0 +1,100 @@
+export interface CivilizationAnalytics {
+  civilizationId: string;
+  name: string;
+  timestamp: number;
+  metrics: {
+    military: number;
+    economy: number;
+    technology: number;
+    culture: number;
+    diplomacy: number;
+  };
+  rank: number;
+  trend: 'rising' | 'stable' | 'declining';
+}
+
+export interface UniverseAnalytics {
+  timestamp: number;
+  totalPopulation: number;
+  totalCivilizations: number;
+  activeTradeRoutes: number;
+  averageTechLevel: number;
+  conflictIndex: number;
+  cooperationIndex: number;
+}
+
+export interface TimelineDataPoint {
+  timestamp: number;
+  value: number;
+  metadata?: Record<string, unknown>;
+}
+
+export interface TimelineSeries {
+  id: string;
+  name: string;
+  metric: string;
+  civilizationId?: string;
+  data: TimelineDataPoint[];
+  statistics: {
+    min: number;
+    max: number;
+    mean: number;
+    sum: number;
+    count: number;
+  };
+}
+
+export interface AnalyticsFilter {
+  startTime?: number;
+  endTime?: number;
+  civilizationIds?: string[];
+  metrics?: string[];
+  granularity?: 'hour' | 'day' | 'week' | 'month' | 'year';
+}
+
+export interface ComparisonResult {
+  civilizationId: string;
+  name: string;
+  scores: Record<string, number>;
+  overallScore: number;
+  rank: number;
+}
+
+export interface AnalyticsReport {
+  generatedAt: number;
+  period: {
+    start: number;
+    end: number;
+  };
+  summary: UniverseAnalytics;
+  civilizationComparisons: ComparisonResult[];
+  trends: {
+    metric: string;
+    direction: 'up' | 'down' | 'stable';
+    changePercent: number;
+  }[];
+}
+
+export interface RadarChartData {
+  labels: string[];
+  datasets: {
+    label: string;
+    data: number[];
+    civilizationId: string;
+  }[];
+}
+
+export interface ObservatoryEvent {
+  id: string;
+  type: 'milestone' | 'disaster' | 'discovery' | 'conflict' | 'trade';
+  timestamp: number;
+  title: string;
+  description: string;
+  involvedCivilizations: string[];
+  impact: Record<string, number>;
+  location?: {
+    x: number;
+    y: number;
+    region?: string;
+  };
+}
