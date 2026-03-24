@@ -1,0 +1,208 @@
+import React, { useState, useMemo } from 'react';
+
+interface Agent {
+  id: string;
+  name: string;
+  type: 'civilization' | 'fleet' | 'station';
+  status: 'active' | 'idle' | 'destroyed';
+  attributes: {
+    military: number;
+    economy: number;
+    technology: number;
+    culture: number;
+  };
+  position: {
+    x: number;
+    y: number;
+    z: number;
+  };
+}
+
+interface AgentSelectorProps {
+  agents: Agent[];
+  selectedIds: string[];
+  onSelectionChange: (ids: string[]) => void;
+  maxSelection?: number;
+}
+
+export const AgentSelector: React.FC<AgentSelectorProps> = ({
+  agents,
+  selectedIds,
+  onSelectionChange,
+  maxSelection = 10
+}) => {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterType, setFilterType] = useState<string>('all');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<'name' | 'military' | 'economy' | 'technology'>('name');
+
+  const filteredAgents = useMemo(() => {
+    let result = agents.filter(agent => {
+      const matchesSearch = agent.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        agent.id.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesType = filterType === 'all' || agent.type === filterType;
+      const matchesStatus = filterStatus === 'all' || agent.status === filterStatus;
+      return matchesSearch && matchesType && matchesStatus;
+    });
+
+    result.sort((a, b) => {
+      if (sortBy === 'name') {
+        return a.name.localeCompare(b.name);
+      }
+      return b.attributes[sortBy] - a.attributes[sortBy];
+    });
+
+    return result;
+  }, [agents, searchTerm, filterType, filterStatus, sortBy]);
+
+  const handleAgentClick = (agentId: string) => {
+    if (selectedIds.includes(agentId)) {
+      onSelectionChange(selectedIds.filter(id => id !== agentId));
+    } else if (selectedIds.length < maxSelection) {
+      onSelectionChange([...selectedIds, agentId]);
+    }
+  };
+
+  const handleSelectAll = () => {
+    const selectableAgents = filteredAgents
+      .filter(a => a.status !== 'destroyed')
+      .slice(0, maxSelection)
+      .map(a => a.id);
+    onSelectionChange(selectableAgents);
+  };
+
+  const handleClearSelection = () => {
+    onSelectionChange([]);
+  };
+
+  const getTypeIcon = (type: Agent['type']) => {
+    switch (type) {
+      case 'civilization': return '🏛️';
+      case 'fleet': return '🚀';
+      case 'station': return '🛰️';
+      default: return '❓';
+    }
+  };
+
+  const getStatusColor = (status: Agent['status']) => {
+    switch (status) {
+      case 'active': return '#4ade80';
+      case 'idle': return '#fbbf24';
+      case 'destroyed': return '#ef4444';
+      default: return '#6b7280';
+    }
+  };
+
+  return (
+    <div className="agent-selector">
+      <div className="selector-header">
+        <h3>选择目标 Agent</h3>
+        <span className="selection-count">
+          已选择: {selectedIds.length} / {maxSelection}
+        </span>
+      </div>
+
+      <div className="selector-controls">
+        <input
+          type="text"
+          placeholder="搜索 Agent..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="search-input"
+        />
+        
+        <div className="filter-group">
+          <select 
+            value={filterType} 
+            onChange={(e) => setFilterType(e.target.value)}
+            className="filter-select"
+          >
+            <option value="all">所有类型</option>
+            <option value="civilization">文明</option>
+            <option value="fleet">舰队</option>
+            <option value="station">空间站</option>
+          </select>
+
+          <select 
+            value={filterStatus} 
+            onChange={(e) => setFilterStatus(e.target.value)}
+            className="filter-select"
+          >
+            <option value="all">所有状态</option>
+            <option value="active">活跃</option>
+            <option value="idle">空闲</option>
+            <option value="destroyed">已毁灭</option>
+          </select>
+
+          <select 
+            value={sortBy} 
+            onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+            className="filter-select"
+          >
+            <option value="name">按名称</option>
+            <option value="military">按军事</option>
+            <option value="economy">按经济</option>
+            <option value="technology">按科技</option>
+          </select>
+        </div>
+
+        <div className="action-buttons">
+          <button onClick={handleSelectAll} className="btn-secondary">
+            全选
+          </button>
+          <button onClick={handleClearSelection} className="btn-secondary">
+            清空
+          </button>
+        </div>
+      </div>
+
+      <div className="agent-list">
+        {filteredAgents.length === 0 ? (
+          <div className="empty-state">
+            没有找到匹配的 Agent
+          </div>
+        ) : (
+          filteredAgents.map(agent => (
+            <div
+              key={agent.id}
+              className={`agent-card ${selectedIds.includes(agent.id) ? 'selected' : ''} ${agent.status === 'destroyed' ? 'disabled' : ''}`}
+              onClick={() => agent.status !== 'destroyed' && handleAgentClick(agent.id)}
+            >
+              <div className="agent-header">
+                <span className="agent-icon">{getTypeIcon(agent.type)}</span>
+                <div className="agent-info">
+                  <span className="agent-name">{agent.name}</span>
+                  <span className="agent-id">ID: {agent.id.slice(0, 8)}...</span>
+                </div>
+                <span 
+                  className="agent-status"
+                  style={{ backgroundColor: getStatusColor(agent.status) }}
+                />
+              </div>
+              
+              <div className="agent-attributes">
+                <div className="attribute">
+                  <span className="attr-label">军事</span>
+                  <div className="attr-bar">
+                    <div 
+                      className="attr-fill military"
+                      style={{ width: `${agent.attributes.military}%` }}
+                    />
+                  </div>
+                  <span className="attr-value">{agent.attributes.military}</span>
+                </div>
+                <div className="attribute">
+                  <span className="attr-label">经济</span>
+                  <div className="attr-bar">
+                    <div 
+                      className="attr-fill economy"
+                      style={{ width: `${agent.attributes.economy}%` }}
+                    />
+                  </div>
+                  <span className="attr-value">{agent.attributes.economy}</span>
+                </div>
+                <div className="attribute">
+                  <span className="attr-label">科技</span>
+                  <div className="attr-bar">
+                    <div 
+                      className="attr-fill technology"
