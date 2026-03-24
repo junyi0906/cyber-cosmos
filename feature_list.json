@@ -629,9 +629,10 @@
       "depends_on": [
         "feat-025"
       ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "依赖集成测试"
+      "passes": true,
+      "last_attempt": "2026-03-24T19:24:21.551146",
+      "notes": "依赖集成测试",
+      "retry_count": 0
     }
   ]
 }
