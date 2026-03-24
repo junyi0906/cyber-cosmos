@@ -1,0 +1,52 @@
+config:
+  target: 'http://localhost:3000'
+  phases:
+    - name: 'Cache Warm-up'
+      duration: 10
+      arrivalRate: 10
+    - name: 'Cache Stampede Simulation'
+      duration: 30
+      arrivalRate: 500
+      rampTo: 1000
+    - name: 'Sustained High Load'
+      duration: 60
+      arrivalRate: 1000
+  defaults:
+    headers:
+      Content-Type: 'application/json'
+  processor: './cache-processor.js'
+
+scenarios:
+  - name: 'Hot Key Access Pattern'
+    weight: 60
+    flow:
+      - function: 'selectHotKey'
+      - get:
+          url: '/api/trade/market/price/{{ hotKey }}'
+          capture:
+            - json: '$.cached'
+              as: 'wasCached'
+            - json: '$.responseTime'
+              as: 'responseTime'
+          expect:
+            - statusCode: 200
+
+  - name: 'Cache Invalidation Storm'
+    weight: 20
+    flow:
+      - function: 'selectResourceForInvalidation'
+      - post:
+          url: '/api/trade/market/invalidate'
+          json:
+            pattern: '{{ invalidationPattern }}'
+          expect:
+            - statusCode: 200
+
+  - name: 'Cache Rebuild Test'
+    weight: 20
+    flow:
+      - function: 'selectExpiredKey'
+      - get:
+          url: '/api/trade/market/rebuild/{{ expiredKey }}'
+          expect:
+            - statusCode: 200

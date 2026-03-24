@@ -1,0 +1,59 @@
+config:
+  target: 'http://localhost:3000'
+  phases:
+    - name: 'Deadlock Detection Phase'
+      duration: 60
+      arrivalRate: 100
+  defaults:
+    headers:
+      Content-Type: 'application/json'
+  processor: './deadlock-processor.js'
+
+scenarios:
+  - name: 'Circular Resource Lock Test'
+    weight: 50
+    flow:
+      - function: 'setupCircularLock'
+      - post:
+          url: '/api/trade/transfer'
+          json:
+            fromCiv: '{{ fromCiv }}'
+            toCiv: '{{ toCiv }}'
+            resourceId: '{{ resourceIdA }}'
+            quantity: 100
+      - think: 0.1
+      - post:
+          url: '/api/trade/transfer'
+          json:
+            fromCiv: '{{ toCiv }}'
+            toCiv: '{{ fromCiv }}'
+            resourceId: '{{ resourceIdB }}'
+            quantity: 100
+          expect:
+            - statusCode:
+                - 200
+                - 409
+                - 423
+
+  - name: 'Concurrent Balance Update'
+    weight: 50
+    flow:
+      - function: 'setupConcurrentUpdate'
+      - parallel:
+          - post:
+              url: '/api/trade/balance/update'
+              json:
+                civilizationId: '{{ civId }}'
+                resourceId: '{{ resourceId }}'
+                delta: 10
+          - post:
+              url: '/api/trade/balance/update'
+              json:
+                civilizationId: '{{ civId }}'
+                resourceId: '{{ resourceId }}'
+                delta: -10
+      - think: 0.5
+      - get:
+          url: '/api/trade/balance/{{ civId }}'
+          expect:
+            - statusCode: 200

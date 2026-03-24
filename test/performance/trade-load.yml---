@@ -1,0 +1,105 @@
+config:
+  target: 'http://localhost:3000'
+  phases:
+    - name: 'Warm-up Phase'
+      duration: 30
+      arrivalRate: 10
+      rampTo: 50
+    - name: 'Ramp-up Phase'
+      duration: 60
+      arrivalRate: 50
+      rampTo: 200
+    - name: 'Peak Load Phase'
+      duration: 120
+      arrivalRate: 200
+      rampTo: 500
+    - name: 'Stress Test Phase'
+      duration: 180
+      arrivalRate: 500
+      rampTo: 1000
+    - name: 'Maximum Load Phase'
+      duration: 60
+      arrivalRate: 1000
+  defaults:
+    headers:
+      Content-Type: 'application/json'
+      Authorization: 'Bearer {{ $randomString() }}'
+  variables:
+    resourceId:
+      - 'iron_ore'
+      - 'energy_crystal'
+      - 'tech_points'
+      - 'rare_minerals'
+      - 'dark_matter'
+    civilizationId:
+      - 'civ_001'
+      - 'civ_002'
+      - 'civ_003'
+      - 'civ_004'
+      - 'civ_005'
+  processor: './trade-processor.js'
+  engines:
+    http:
+      timeout: 30000
+
+scenarios:
+  - name: 'Create Trade Order'
+    weight: 40
+    flow:
+      - function: 'generateTradeOrder'
+      - post:
+          url: '/api/trade/orders'
+          json:
+            civilizationId: '{{ civilizationId }}'
+            type: '{{ orderType }}'
+            resourceId: '{{ resourceId }}'
+            quantity: '{{ quantity }}'
+            price: '{{ price }}'
+          capture:
+            - json: '$.orderId'
+              as: 'orderId'
+          expect:
+            - statusCode: 201
+            - hasProperty: 'orderId'
+
+  - name: 'Execute Trade Transaction'
+    weight: 35
+    flow:
+      - function: 'generateTransaction'
+      - post:
+          url: '/api/trade/execute'
+          json:
+            buyerId: '{{ buyerId }}'
+            sellerId: '{{ sellerId }}'
+            orderId: '{{ orderId }}'
+            quantity: '{{ quantity }}'
+          expect:
+            - statusCode:
+                - 200
+                - 201
+                - 409
+
+  - name: 'Query Market Prices'
+    weight: 15
+    flow:
+      - function: 'generateMarketQuery'
+      - get:
+          url: '/api/trade/market/prices?resourceId={{ resourceId }}'
+          capture:
+            - json: '$.price'
+              as: 'marketPrice'
+          expect:
+            - statusCode: 200
+            - hasProperty: 'price'
+      - think: 1
+
+  - name: 'Cache Stress Test'
+    weight: 10
+    flow:
+      - function: 'generateCacheKey'
+      - get:
+          url: '/api/trade/market/cache/{{ cacheKey }}'
+          expect:
+            - statusCode:
+                - 200
+                - 404

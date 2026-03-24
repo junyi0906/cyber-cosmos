@@ -1,0 +1,43 @@
+'use strict';
+
+const crypto = require('crypto');
+
+const HOT_KEYS = [
+  'market:price:iron_ore',
+  'market:price:energy_crystal',
+  'market:price:tech_points',
+  'market:volume:global',
+  'trade:routes:active'
+];
+
+module.exports = {
+  selectHotKey,
+  selectResourceForInvalidation,
+  selectExpiredKey
+};
+
+function selectHotKey(userContext, events, done) {
+  const key = HOT_KEYS[Math.floor(Math.random() * HOT_KEYS.length)];
+  userContext.vars.hotKey = key;
+  return done();
+}
+
+function selectResourceForInvalidation(userContext, events, done) {
+  const patterns = [
+    'market:price:*',
+    'trade:volume:*',
+    'civilization:balance:*'
+  ];
+  
+  userContext.vars.invalidationPattern = patterns[Math.floor(Math.random() * patterns.length)];
+  return done();
+}
+
+function selectExpiredKey(userContext, events, done) {
+  const resources = ['iron_ore', 'energy_crystal', 'tech_points', 'rare_minerals'];
+  const resource = resources[Math.floor(Math.random() * resources.length)];
+  const timestamp = Date.now() - 300000;
+  
+  userContext.vars.expiredKey = `market:history:${resource}:${timestamp}`;
+  return done();
+}

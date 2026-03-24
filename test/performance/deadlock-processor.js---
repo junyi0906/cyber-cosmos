@@ -1,0 +1,33 @@
+'use strict';
+
+module.exports = {
+  setupCircularLock,
+  setupConcurrentUpdate
+};
+
+function setupCircularLock(userContext, events, done) {
+  const scenarios = [
+    { fromCiv: 'civ_001', toCiv: 'civ_002', resourceIdA: 'iron_ore', resourceIdB: 'energy_crystal' },
+    { fromCiv: 'civ_002', toCiv: 'civ_003', resourceIdA: 'energy_crystal', resourceIdB: 'tech_points' },
+    { fromCiv: 'civ_003', toCiv: 'civ_001', resourceIdA: 'tech_points', resourceIdB: 'iron_ore' }
+  ];
+  
+  const scenario = scenarios[Math.floor(Math.random() * scenarios.length)];
+  
+  userContext.vars.fromCiv = scenario.fromCiv;
+  userContext.vars.toCiv = scenario.toCiv;
+  userContext.vars.resourceIdA = scenario.resourceIdA;
+  userContext.vars.resourceIdB = scenario.resourceIdB;
+  
+  return done();
+}
+
+function setupConcurrentUpdate(userContext, events, done) {
+  const civilizations = ['civ_001', 'civ_002', 'civ_003'];
+  const resources = ['iron_ore', 'energy_crystal', 'tech_points'];
+  
+  userContext.vars.civId = civilizations[Math.floor(Math.random() * civilizations.length)];
+  userContext.vars.resourceId = resources[Math.floor(Math.random() * resources.length)];
+  
+  return done();
+}

@@ -1,0 +1,10 @@
+#!/usr/bin/env node
+
+const fs = require('fs');
+const path = require('path');
+
+function parseArgs() {
+  const args = process.argv.slice(2);
+  const result = {};
+  
+  for (let i = 0; i < args.length

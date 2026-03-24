@@ -1,0 +1,94 @@
+'use strict';
+
+const crypto = require('crypto');
+
+module.exports = {
+  generateTradeOrder,
+  generateTransaction,
+  generateMarketQuery,
+  generateCacheKey,
+  generateDeadlockScenario,
+  generateCacheBreakdownTest
+};
+
+function generateTradeOrder(userContext, events, done) {
+  const orderTypes = ['buy', 'sell'];
+  const resources = ['iron_ore', 'energy_crystal', 'tech_points', 'rare_minerals', 'dark_matter'];
+  const civilizations = ['civ_001', 'civ_002', 'civ_003', 'civ_004', 'civ_005'];
+  
+  userContext.vars.orderType = orderTypes[Math.floor(Math.random() * orderTypes.length)];
+  userContext.vars.resourceId = resources[Math.floor(Math.random() * resources.length)];
+  userContext.vars.civilizationId = civilizations[Math.floor(Math.random() * civilizations.length)];
+  userContext.vars.quantity = Math.floor(Math.random() * 1000) + 10;
+  userContext.vars.price = (Math.random() * 100 + 10).toFixed(2);
+  
+  return done();
+}
+
+function generateTransaction(userContext, events, done) {
+  const civilizations = ['civ_001', 'civ_002', 'civ_003', 'civ_004', 'civ_005'];
+  
+  let buyerIndex = Math.floor(Math.random() * civilizations.length);
+  let sellerIndex = Math.floor(Math.random() * civilizations.length);
+  
+  while (sellerIndex === buyerIndex) {
+    sellerIndex = Math.floor(Math.random() * civilizations.length);
+  }
+  
+  userContext.vars.buyerId = civilizations[buyerIndex];
+  userContext.vars.sellerId = civilizations[sellerIndex];
+  userContext.vars.orderId = `order_${crypto.randomBytes(8).toString('hex')}`;
+  userContext.vars.quantity = Math.floor(Math.random() * 500) + 1;
+  
+  return done();
+}
+
+function generateMarketQuery(userContext, events, done) {
+  const resources = ['iron_ore', 'energy_crystal', 'tech_points', 'rare_minerals', 'dark_matter'];
+  userContext.vars.resourceId = resources[Math.floor(Math.random() * resources.length)];
+  
+  return done();
+}
+
+function generateCacheKey(userContext, events, done) {
+  const keys = [
+    'market_prices_all',
+    'trade_routes_active',
+    'resource_index_global',
+    'civilization_balance',
+    'hot_resource_list'
+  ];
+  
+  const randomKey = keys[Math.floor(Math.random() * keys.length)];
+  const timestamp = Date.now();
+  
+  userContext.vars.cacheKey = `${randomKey}_${timestamp % 1000}`;
+  
+  return done();
+}
+
+function generateDeadlockScenario(userContext, events, done) {
+  const resources = ['iron_ore', 'energy_crystal'];
+  const civilizations = ['civ_001', 'civ_002'];
+  
+  userContext.vars.resourceA = resources[0];
+  userContext.vars.resourceB = resources[1];
+  userContext.vars.civA = civilizations[0];
+  userContext.vars.civB = civilizations[1];
+  
+  return done();
+}
+
+function generateCacheBreakdownTest(userContext, events, done) {
+  const hotKeys = [
+    'market:price:iron_ore',
+    'market:price:energy_crystal',
+    'trade:volume:global',
+    'resource:scarcity:index'
+  ];
+  
+  userContext.vars.hotCacheKey = hotKeys[Math.floor(Math.random() * hotKeys.length)];
+  userContext.vars.timestamp = Date.now();
+  
+  return done();
+}
