@@ -1,55 +1,161 @@
-import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import * as d3 from 'd3';
-import type { TimelineEvent, TimelineFilter, EventType, Civilization, Galaxy } from '../../types/timeline';
-import { EVENT_TYPE_CONFIG, SEVERITY_CONFIG } from '../../types/timeline';
-import { useTimelineData } from '../../hooks/useTimelineData';
-import './Timeline.css';
+import { useMockTimelineData, TimelineEvent, Civilization, TimelineFilters } from '../../hooks/useTimelineData';
 
 interface TimelineProps {
-  initialFilter?: Partial<TimelineFilter>;
   onEventSelect?: (event: TimelineEvent) => void;
-  onTimeRangeChange?: (range: { start: number; end: number }) => void;
+  onTimeChange?: (start: number, end: number) => void;
   height?: number;
-  showFilters?: boolean;
+  initialZoom?: number;
 }
 
-const Timeline: React.FC<TimelineProps> = ({
-  initialFilter,
+const EVENT_COLORS: Record<string, string> = {
+  macro: '#FF6B6B',
+  micro: '#4ECDC4',
+  diplomacy: '#45B7D1',
+  war: '#F7DC6F',
+  discovery: '#BB8FCE',
+  disaster: '#E74C3C',
+};
+
+const EVENT_ICONS: Record<string, string> = {
+  macro: '★',
+  micro: '●',
+  diplomacy: '♦',
+  war: '⚔',
+  discovery: '✦',
+  disaster: '⚡',
+};
+
+export const Timeline: React.FC<TimelineProps> = ({
   onEventSelect,
-  onTimeRangeChange,
-  height = 400,
-  showFilters = true,
+  onTimeChange,
+  height = 300,
+  initialZoom = 1,
 }) => {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const brushRef = useRef<SVGGElement>(null);
-  
+  const [containerWidth, setContainerWidth] = useState(800);
+  const [selectedEvent, setSelectedEvent] = useState<TimelineEvent | null>(null);
+  const [hoveredEvent, setHoveredEvent] = useState<TimelineEvent | null>(null);
+  const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
+  const [zoomLevel, setZoomLevel] = useState(initialZoom);
+  const [visibleRange, setVisibleRange] = useState<{ start: number; end: number } | null>(null);
+
   const {
     events,
+    allEvents,
     civilizations,
     galaxies,
-    isLoading,
+    loading,
     error,
-    selectedEvent,
-    hoveredEvent,
-    zoomLevel,
-    visibleTimeRange,
-    fetchEvents,
-    setFilter,
-    selectEvent,
-    hoverEvent,
-    setZoomLevel,
-    setVisibleTimeRange,
-    filter,
-    replayEvent,
-  } = useTimelineData(initialFilter);
+    filters,
+    updateFilters,
+    resetFilters,
+  } = useMockTimelineData();
 
-  const [containerWidth, setContainerWidth] = useState(800);
-  const [showEventModal, setShowEventModal] = useState(false);
-  const [localFilter, setLocalFilter] = useState<{
-    civilizations: string[];
-    galaxies: string[];
-    eventTypes: EventType[];
-    severity: string[];
-  }>({
-    civilizations: [],
+  const margin = { top: 40, right: 40, bottom: 60, left: 60 };
+  const innerWidth = containerWidth - margin.left - margin.right;
+  const innerHeight = height - margin.top - margin.bottom;
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (containerRef.current) {
+        setContainerWidth(containerRef.current.clientWidth);
+      }
+    };
+
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const timeDomain = useMemo(() => {
+    if (events.length === 0) {
+      const now = Date.now();
+      return [now - 365 * 24 * 60 * 60 * 1000, now];
+    }
+    const timestamps = events.map(e => e.timestamp);
+    const minTime = Math.min(...timestamps);
+    const maxTime = Math.max(...timestamps);
+    const padding = (maxTime - minTime) * 0.1;
+    return [minTime - padding, maxTime + padding];
+  }, [events]);
+
+  const xScale = useMemo(() => {
+    return d3.scaleTime()
+      .domain(timeDomain)
+      .range([0, innerWidth]);
+  }, [timeDomain, innerWidth]);
+
+  const yScale = useMemo(() => {
+    const types = ['macro', 'micro', 'diplomacy', 'war', 'discovery', 'disaster'];
+    return d3.scaleBand<string>()
+      .domain(types)
+      .range([0, innerHeight])
+      .padding(0.3);
+  }, [innerHeight]);
+
+  useEffect(() => {
+    if (!svgRef.current || events.length === 0 || loading) return;
+
+    const svg = d3.select(svgRef.current);
+    svg.selectAll('*').remove();
+
+    const g = svg.append('g')
+      .attr('transform', `translate(${margin.left},${margin.top})`);
+
+    const zoom = d3.zoom<SVGSVGElement, unknown>()
+      .scaleExtent([0.1, 10])
+      .on('zoom', (event) => {
+        const { transform } = event;
+        setZoomLevel(transform.k);
+        
+        const newXScale = transform.rescaleX(xScale);
+        
+        g.selectAll('.event-marker')
+          .attr('cx', d => newXScale((d as TimelineEvent).timestamp));
+        
+        g.selectAll('.event-line')
+          .attr('x1', d => newXScale((d as TimelineEvent).timestamp))
+          .attr('x2', d => newXScale((d as TimelineEvent).timestamp));
+        
+        g.select('.x-axis').call(
+          d3.axisBottom(newXScale)
+            .ticks(Math.floor(innerWidth / 80))
+            .tickFormat(d => d3.timeFormat('%Y-%m-%d')(d as Date))
+        );
+
+        g.select('.grid-lines').selectAll('.grid-line')
+          .attr('x1', d => newXScale(d as Date))
+          .attr('x2', d => newXScale(d as Date));
+
+        const domain = newXScale.domain();
+        setVisibleRange({ start: domain[0].getTime(), end: domain[1].getTime() });
+        onTimeChange?.(domain[0].getTime(), domain[1].getTime());
+      });
+
+    svg.call(zoom);
+
+    const gridLines = g.append('g').attr('class', 'grid-lines');
+    const tickCount = Math.floor(innerWidth / 60);
+    const ticks = xScale.ticks(tickCount);
+    
+    gridLines.selectAll('.grid-line')
+      .data(ticks)
+      .enter()
+      .append('line')
+      .attr('class', 'grid-line')
+      .attr('x1', d => xScale(d))
+      .attr('x2', d => xScale(d))
+      .attr('y1', 0)
+      .attr('y2', innerHeight)
+      .attr('stroke', 'rgba(255,255,255,0.1)')
+      .attr('stroke-dasharray', '2,2');
+
+    g.append('g')
+      .attr('class', 'y-axis')
+      .call(d3.axisLeft(yScale)
+        .tickFormat(d => d.toUpperCase()))
+      .selectAll('text')
+      .attr('fill',
