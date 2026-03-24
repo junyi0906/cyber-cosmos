@@ -1,224 +1,266 @@
-Decision Engine Module - Enhanced decision system for Agent decision making
+Decision Engine Module - Enhanced decision making system for agents
 Feature: feat-012 - Agent Decision Engine Enhancement
 """
 
-import random
-import time
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple, Callable
+import time
+import json
+import math
+
 from .decision_types import (
-    DecisionType, DecisionPriority, DecisionOutcome,
-    DiplomacyStatus, DiplomaticRelation, AllianceInfo, EventImpact, DecisionOption
+    DecisionType,
+    DecisionPriority,
+    DecisionFactor,
+    DiplomaticContext,
+    AllianceContext,
+    EventImpact,
+    DecisionOption,
+    DecisionResult
 )
 
 
-@dataclass
 class DecisionContext:
     """
-    Encapsulates the decision context for an agent.
-    Contains diplomacy relations, alliance status, and event impacts.
+    Encapsulates all context needed for decision making including
+    diplomatic relations, alliance status, and event impacts.
     """
-    civilization_id: str
-    civilization_name: str
     
-    # Civilization attributes
-    military_power: float = 0.5
-    economic_power: float = 0.5
-    technology_level: float = 0.5
-    cultural_influence: float = 0.5
-    population: int = 1000
+    def __init__(
+        self,
+        agent_id: str,
+        current_turn: int = 0,
+        resources: Optional[Dict[str, float]] = None,
+        military_strength: float = 0.5,
+        population_morale: float = 0.5,
+        economic_health: float = 0.5,
+        technological_level: float = 0.5
+    ):
+        self.agent_id = agent_id
+        self.current_turn = current_turn
+        self.timestamp = time.time()
+        
+        # Core state
+        self.resources = resources or {}
+        self.military_strength = military_strength
+        self.population_morale = population_morale
+        self.economic_health = economic_health
+        self.technological_level = technological_level
+        
+        # Diplomatic contexts keyed by target agent/civilization ID
+        self.diplomatic_contexts: Dict[str, DiplomaticContext] = {}
+        
+        # Alliance context (single alliance membership)
+        self.alliance_context: Optional[AllianceContext] = None
+        
+        # Recent events and their impacts
+        self.event_impacts: List[EventImpact] = []
+        
+        # Active threats and opportunities
+        self.active_threats: List[Dict[str, Any]] = []
+        self.active_opportunities: List[Dict[str, Any]] = []
+        
+        # Long-term goals and priorities
+        self.strategic_goals: List[str] = []
+        self.priority_modifier: Dict[DecisionType, float] = {}
+        
+        # Memory of recent decisions
+        self.recent_decisions: List[DecisionResult] = []
+        
+    def add_diplomatic_context(
+        self,
+        target_id: str,
+        relation_type: str = "neutral",
+        trust_score: float = 0.5,
+        treaty_ids: Optional[List[str]] = None,
+        recent_interactions: Optional[List[Dict[str, Any]]] = None,
+        grievances: Optional[List[Dict[str, Any]]] = None,
+        favors_owed: int = 0,
+        last_contact_turn: int = 0
+    ) -> None:
+        """Add or update diplomatic context for a target civilization"""
+        self.diplomatic_contexts[target_id] = DiplomaticContext(
+            relation_type=relation_type,
+            trust_score=trust_score,
+            treaty_ids=treaty_ids or [],
+            recent_interactions=recent_interactions or [],
+            grievances=grievances or [],
+            favors_owed=favors_owed,
+            last_contact_turn=last_contact_turn
+        )
     
-    # Diplomatic context
-    diplomacy_relations: Dict[str, DiplomaticRelation] = field(default_factory=dict)
+    def set_alliance_context(
+        self,
+        is_member: bool = False,
+        alliance_id: Optional[str] = None,
+        alliance_name: Optional[str] = None,
+        member_ids: Optional[List[str]] = None,
+        obligations: Optional[List[str]] = None,
+        voting_power: float = 1.0,
+        contribution_history: Optional[List[Dict[str, Any]]] = None,
+        pending_votes: Optional[List[Dict[str, Any]]] = None
+    ) -> None:
+        """Set the alliance context for this agent"""
+        self.alliance_context = AllianceContext(
+            is_member=is_member,
+            alliance_id=alliance_id,
+            alliance_name=alliance_name,
+            member_ids=member_ids or [],
+            obligations=obligations or [],
+            voting_power=voting_power,
+            contribution_history=contribution_history or [],
+            pending_votes=pending_votes or []
+        )
     
-    # Alliance context
-    current_alliance: Optional[AllianceInfo] = None
-    pending_alliance_invites: List[AllianceInfo] = field(default_factory=list)
+    def add_event_impact(
+        self,
+        event_id: str,
+        event_type: str,
+        severity: float,
+        affected_entities: List[str],
+        impact_type: str,
+        description: str = "",
+        decay_rate: float = 0.1
+    ) -> None:
+        """Add an event impact to the context"""
+        self.event_impacts.append(EventImpact(
+            event_id=event_id,
+            event_type=event_type,
+            severity=severity,
+            affected_entities=affected_entities,
+            impact_type=impact_type,
+            timestamp=time.time(),
+            decay_rate=decay_rate,
+            description=description
+        ))
     
-    # Event context
-    recent_events: List[EventImpact] = field(default_factory=list)
+    def add_threat(
+        self,
+        threat_id: str,
+        threat_type: str,
+        severity: float,
+        source_id: Optional[str] = None,
+        deadline_turn: Optional[int] = None
+    ) -> None:
+        """Add an active threat"""
+        self.active_threats.append({
+            "threat_id": threat_id,
+            "threat_type": threat_type,
+            "severity": severity,
+            "source_id": source_id,
+            "deadline_turn": deadline_turn,
+            "detected_turn": self.current_turn
+        })
     
-    # Strategic context
-    current_threats: List[str] = field(default_factory=list)
-    available_resources: float = 100.0
-    expansion_opportunities: List[str] = field(default_factory=list)
+    def add_opportunity(
+        self,
+        opportunity_id: str,
+        opportunity_type: str,
+        potential_value: float,
+        expires_turn: Optional[int] = None
+    ) -> None:
+        """Add an active opportunity"""
+        self.active_opportunities.append({
+            "opportunity_id": opportunity_id,
+            "opportunity_type": opportunity_type,
+            "potential_value": potential_value,
+            "expires_turn": expires_turn,
+            "detected_turn": self.current_turn
+        })
     
-    # Ideology and personality
-    ideology: str = "neutral"
-    aggression_tendency: float = 0.5
-    cooperation_tendency: float = 0.5
-    risk_tolerance: float = 0.5
+    def get_effective_trust(self, target_id: str) -> float:
+        """Get effective trust score considering recent events"""
+        base_trust = 0.5
+        if target_id in self.diplomatic_contexts:
+            base_trust = self.diplomatic_contexts[target_id].trust_score
+        
+        # Modify based on recent events involving this target
+        event_modifier = 0.0
+        for impact in self.event_impacts:
+            if target_id in impact.affected_entities:
+                decayed_severity = self._decay_impact(impact)
+                if impact.impact_type == "positive":
+                    event_modifier += decayed_severity * 0.1
+                elif impact.impact_type == "negative":
+                    event_modifier -= decayed_severity * 0.1
+        
+        return max(0.0, min(1.0, base_trust + event_modifier))
     
-    # Timestamp
-    context_time: float = field(default_factory=lambda: time.time())
-    
-    def get_relation_with(self, civ_id: str) -> Optional[DiplomaticRelation]:
-        """Get diplomatic relation with a specific civilization"""
-        return self.diplomacy_relations.get(civ_id)
-    
-    def get_trust_level(self, civ_id: str) -> float:
-        """Get trust level with a specific civilization"""
-        relation = self.get_relation_with(civ_id)
-        return relation.trust_level if relation else 0.5
-    
-    def get_threat_level(self, civ_id: str) -> float:
-        """Get threat assessment for a specific civilization"""
-        relation = self.get_relation_with(civ_id)
-        return relation.threat_assessment if relation else 0.5
-    
-    def is_allied_with(self, civ_id: str) -> bool:
-        """Check if allied with a specific civilization"""
-        if self.current_alliance:
-            return civ_id in self.current_alliance.member_ids
-        return False
-    
-    def is_at_war_with(self, civ_id: str) -> bool:
-        """Check if at war with a specific civilization"""
-        relation = self.get_relation_with(civ_id)
-        return relation.status == DiplomacyStatus.AT_WAR if relation else False
-    
-    def get_recent_event_impact(self, event_type: str) -> float:
-        """Calculate cumulative impact of recent events of a specific type"""
-        total_impact = 0.0
-        current_time = time.time()
-        for event in self.recent_events:
-            if event.event_type == event_type:
-                # Decay impact based on time (events older than 1000 time units have minimal impact)
-                time_factor = max(0.1, 1.0 - (current_time - event.timestamp) / 1000.0)
-                total_impact += event.severity * time_factor
-        return min(1.0, total_impact)
+    def _decay_impact(self, impact: EventImpact) -> float:
+        """Calculate decayed impact severity based on time"""
+        time_elapsed = time.time() - impact.timestamp
+        decay_factor = math.exp(-impact.decay_rate * time_elapsed / 3600)  # Decay per hour
+        return impact.severity * decay_factor
     
     def to_dict(self) -> Dict[str, Any]:
+        """Serialize context to dictionary"""
         return {
-            'civilization_id': self.civilization_id,
-            'civilization_name': self.civilization_name,
-            'military_power': self.military_power,
-            'economic_power': self.economic_power,
-            'technology_level': self.technology_level,
-            'cultural_influence': self.cultural_influence,
-            'population': self.population,
-            'diplomacy_relations': {k: v.to_dict() for k, v in self.diplomacy_relations.items()},
-            'current_alliance': self.current_alliance.to_dict() if self.current_alliance else None,
-            'pending_alliance_invites': [a.to_dict() for a in self.pending_alliance_invites],
-            'recent_events': [e.to_dict() for e in self.recent_events],
-            'current_threats': self.current_threats,
-            'available_resources': self.available_resources,
-            'expansion_opportunities': self.expansion_opportunities,
-            'ideology': self.ideology,
-            'aggression_tendency': self.aggression_tendency,
-            'cooperation_tendency': self.cooperation_tendency,
-            'risk_tolerance': self.risk_tolerance,
-            'context_time': self.context_time
+            "agent_id": self.agent_id,
+            "current_turn": self.current_turn,
+            "timestamp": self.timestamp,
+            "resources": self.resources,
+            "military_strength": self.military_strength,
+            "population_morale": self.population_morale,
+            "economic_health": self.economic_health,
+            "technological_level": self.technological_level,
+            "diplomatic_contexts": {
+                k: {
+                    "relation_type": v.relation_type,
+                    "trust_score": v.trust_score,
+                    "treaty_ids": v.treaty_ids,
+                    "favors_owed": v.favors_owed
+                }
+                for k, v in self.diplomatic_contexts.items()
+            },
+            "alliance_context": {
+                "is_member": self.alliance_context.is_member if self.alliance_context else False,
+                "alliance_id": self.alliance_context.alliance_id if self.alliance_context else None,
+                "member_count": len(self.alliance_context.member_ids) if self.alliance_context else 0
+            },
+            "active_threats_count": len(self.active_threats),
+            "active_opportunities_count": len(self.active_opportunities),
+            "recent_events_count": len(self.event_impacts)
         }
 
 
 class DecisionEngine:
     """
-    Enhanced Decision Engine for Agent decision making.
-    Supports diplomacy, alliance, and event-based decision factors.
+    Enhanced decision engine that considers multiple factors including
+    diplomacy, alliances, and recent events when making decisions.
     """
     
     # Base weights for different decision types
     BASE_WEIGHTS: Dict[DecisionType, float] = {
-        DecisionType.DECLARE_WAR: 0.1,
-        DecisionType.SUE_FOR_PEACE: 0.2,
-        DecisionType.FORM_ALLIANCE: 0.3,
-        DecisionType.BREAK_ALLIANCE: 0.05,
-        DecisionType.SIGN_TRADE_AGREEMENT: 0.4,
-        DecisionType.CANCEL_TRADE_AGREEMENT: 0.1,
-        DecisionType.SIGN_NON_AGGRESSION: 0.3,
-        DecisionType.BREAK_NON_AGGRESSION: 0.05,
-        DecisionType.ATTACK_TARGET: 0.2,
-        DecisionType.DEFEND_POSITION: 0.3,
-        DecisionType.RETREAT: 0.15,
-        DecisionType.EXPAND_TERRITORY: 0.35,
-        DecisionType.BUILD_FLEET: 0.3,
-        DecisionType.INVEST_ECONOMY: 0.4,
-        DecisionType.INVEST_TECHNOLOGY: 0.4,
-        DecisionType.INVEST_CULTURE: 0.3,
-        DecisionType.ESTABLISH_TRADE_ROUTE: 0.35,
-        DecisionType.EXPLORE_SECTOR: 0.3,
-        DecisionType.COLONIZE_PLANET: 0.25,
-        DecisionType.RESEARCH_ANOMALY: 0.2,
-        DecisionType.BROADCAST_MESSAGE: 0.15,
-        DecisionType.SEND_GIFT: 0.2,
-        DecisionType.REQUEST_AID: 0.15,
-        DecisionType.CHANGE_IDEOLOGY: 0.05,
-        DecisionType.REFORM_GOVERNMENT: 0.05,
-        DecisionType.CRISIS_RESPONSE: 0.5,
-        DecisionType.NO_ACTION: 0.1,
-        DecisionType.OBSERVE: 0.2,
+        DecisionType.DECLARE_WAR: 0.3,
+        DecisionType.SEEK_PEACE: 0.5,
+        DecisionType.FORM_ALLIANCE: 0.4,
+        DecisionType.BREAK_ALLIANCE: 0.2,
+        DecisionType.SIGN_TREATY: 0.5,
+        DecisionType.BREAK_TREATY: 0.2,
+        DecisionType.INITIATE_TRADE: 0.6,
+        DecisionType.EMBARGO: 0.3,
+        DecisionType.ATTACK: 0.4,
+        DecisionType.DEFEND: 0.7,
+        DecisionType.RETREAT: 0.3,
+        DecisionType.COLONIZE: 0.5,
+        DecisionType.EXPLORE: 0.4,
+        DecisionType.RESEARCH_TECH: 0.6,
+        DecisionType.BROADCAST_MESSAGE: 0.3,
+        DecisionType.WAIT: 0.2,
+        DecisionType.OBSERVE: 0.3,
+        DecisionType.DO_NOTHING: 0.1,
     }
     
-    def __init__(self, context: DecisionContext):
-        self.context = context
-        self.decision_history: List[Dict[str, Any]] = []
-        self.last_decision: Optional[DecisionOption] = None
-        self.last_explanation: str = ""
-    
-    def weigh_options(self, available_options: Optional[List[DecisionType]] = None) -> List[DecisionOption]:
-        """
-        Enhanced decision weight calculation.
-        Considers diplomacy, alliance, and event factors.
-        
-        Args:
-            available_options: List of decision types to consider. If None, uses all.
-            
-        Returns:
-            List of DecisionOption sorted by final weight (highest first)
-        """
-        if available_options is None:
-            available_options = list(DecisionType)
-        
-        options: List[DecisionOption] = []
-        
-        for decision_type in available_options:
-            # Create base option
-            option = DecisionOption(
-                decision_type=decision_type,
-                base_weight=self.BASE_WEIGHTS.get(decision_type, 0.1)
-            )
-            
-            # Apply personality modifiers
-            option.base_weight = self._apply_personality_modifier(option.base_weight, decision_type)
-            
-            # Apply diplomacy modifiers
-            option.diplomacy_modifier = self.consider_diplomacy(decision_type)
-            
-            # Apply alliance modifiers
-            option.alliance_modifier = self.consider_alliance(decision_type)
-            
-            # Apply event modifiers
-            option.event_modifier = self.consider_events(decision_type)
-            
-            # Calculate final weight
-            option.calculate_final_weight()
-            
-            # Generate reasoning
-            option.reasoning = self._generate_option_reasoning(option)
-            
-            options.append(option)
-        
-        # Sort by final weight descending
-        options.sort(key=lambda x: x.final_weight, reverse=True)
-        
-        return options
-    
-    def _apply_personality_modifier(self, base_weight: float, decision_type: DecisionType) -> float:
-        """Apply civilization personality traits to base weight"""
-        modifier = 1.0
-        
-        # Aggression affects military decisions
-        if decision_type in [DecisionType.DECLARE_WAR, DecisionType.ATTACK_TARGET, 
-                            DecisionType.EXPAND_TERRITORY, DecisionType.BUILD_FLEET]:
-            modifier *= (0.5 + self.context.aggression_tendency)
-        
-        # Cooperation affects diplomatic decisions
-        if decision_type in [DecisionType.FORM_ALLIANCE, DecisionType.SIGN_TRADE_AGREEMENT,
-                            DecisionType.SIGN_NON_AGGRESSION, DecisionType.SEND_GIFT]:
-            modifier *= (0.5 + self.context.cooperation_tendency)
-        
-        # Risk tolerance affects bold decisions
-        if decision_type in [DecisionType.DECLARE_WAR, DecisionType.EXPAND_TERRITORY,
-                            DecisionType.COLONIZE_PLANET, DecisionType.RESEARCH_ANOMALY]:
-            modifier *= (0.5 + self.context
+    # Factor weights for decision calculation
+    FACTOR_WEIGHTS: Dict[DecisionFactor, float] = {
+        DecisionFactor.DIPLOMATIC_RELATION: 0.25,
+        DecisionFactor.TREATY_STATUS: 0.15,
+        DecisionFactor.TRUST_LEVEL: 0.20,
+        DecisionFactor.ALLIANCE_MEMBERSHIP: 0.15,
+        DecisionFactor.ALLIANCE_OBLIGATIONS: 0.20,
+        DecisionFactor.RECENT_EVENTS: 0.25,
+        DecisionFactor.THREAT_LEVEL: 0.30,
+        DecisionFactor.OPPORTUNITY_SCORE: 0.20,
+        DecisionFactor.RESOURCE_AVAILABILITY: 0.20,
+        DecisionFactor.ECONOMIC_HEALTH: 0.15,
+        DecisionFactor.MILITARY_STRENGTH:
