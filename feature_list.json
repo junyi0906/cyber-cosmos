@@ -79,9 +79,10 @@
       ],
       "test_command": "cd universe && python -m pytest tests/events/test_types.py -v",
       "depends_on": [],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "事件系统基础，无外部依赖"
+      "passes": true,
+      "last_attempt": "2026-03-24T18:59:31.961888",
+      "notes": "事件系统基础，无外部依赖",
+      "retry_count": 0
     },
     {
       "id": "feat-005",
