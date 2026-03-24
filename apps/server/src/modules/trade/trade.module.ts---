@@ -1,18 +1,8 @@
 import { Module } from '@nestjs/common';
-import { ScheduleModule } from '@nestjs/schedule';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { TradeGateway } from './trade.gateway';
-import { TradeCron } from './trade.cron';
 import { MarketService } from './market.service';
-import { ResourcePrice } from './entities/resource-price.entity';
-import { TradeRoute } from './entities/trade-route.entity';
 
 @Module({
-  imports: [
-    ScheduleModule.forRoot(),
-    TypeOrmModule.forFeature([ResourcePrice, TradeRoute]),
-  ],
-  providers: [TradeGateway, TradeCron, MarketService],
-  exports: [TradeGateway, MarketService],
+  providers: [MarketService],
+  exports: [MarketService],
 })
 export class TradeModule {}

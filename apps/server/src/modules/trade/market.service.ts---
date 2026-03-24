@@ -1,149 +1,90 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { ResourcePrice } from './entities/resource-price.entity';
-import { TradeRoute } from './entities/trade-route.entity';
+import { Injectable } from '@nestjs/common';
 
-interface PriceData {
-  resourceId: string;
-  resourceName: string;
-  basePrice: number;
+export interface MarketState {
   currentPrice: number;
-  change: number;
-  changePercent: number;
-  volume: number;
-  trend: 'up' | 'down' | 'stable';
+  buyVolume: number;
+  sellVolume: number;
 }
 
-interface MarketSummary {
-  totalVolume: number;
-  activeRoutes: number;
-  topGainers: PriceData[];
-  topLosers: PriceData[];
-  timestamp: string;
+export interface PriceCalculationResult {
+  newPrice: number;
+  priceChange: number;
+  direction: 'up' | 'down' | 'stable';
 }
 
 @Injectable()
 export class MarketService {
-  private readonly logger = new Logger(MarketService.name);
-  private priceCache: Map<string, PriceData> = new Map();
-  private lastUpdate: Date = new Date();
+  private readonly MIN_PRICE = 0.01;
+  private readonly DEFAULT_K = 0.1;
 
-  private readonly resourceDefinitions = [
-    { id: 'ore', name: '矿石', basePrice: 100, volatility: 0.15 },
-    { id: 'energy', name: '能源', basePrice: 150, volatility: 0.2 },
-    { id: 'tech_points', name: '技术点', basePrice: 500, volatility: 0.1 },
-    { id: 'dark_matter', name: '暗物质', basePrice: 1000, volatility: 0.3 },
-    { id: 'crystals', name: '晶体', basePrice: 250, volatility: 0.18 },
-    { id: 'biomass', name: '生物质', basePrice: 80, volatility: 0.12 },
-  ];
+  /**
+   * 计算新价格
+   * @param currentState 当前市场状态
+   * @param k 波动系数 (0-1)，影响价格变化幅度
+   * @returns 价格计算结果
+   */
+  calculatePrice(
+    currentState: MarketState,
+    k: number = this.DEFAULT_K,
+  ): PriceCalculationResult {
+    const { currentPrice, buyVolume, sellVolume } = currentState;
+    const volumeDiff = buyVolume - sellVolume;
+    const totalVolume = buyVolume + sellVolume;
 
-  async getAllPrices(): Promise<Record<string, PriceData>> {
-    const prices: Record<string, PriceData> = {};
-    const now = Date.now();
+    // 避免除零
+    const effectiveTotal = totalVolume === 0 ? 1 : totalVolume;
 
-    for (const resource of this.resourceDefinitions) {
-      const cachedPrice = this.priceCache.get(resource.id);
-      
-      if (cachedPrice && (now - this.lastUpdate.getTime()) < 10000) {
-        prices[resource.id] = cachedPrice;
-      } else {
-        const priceData = this.calculatePrice(resource);
-        this.priceCache.set(resource.id, priceData);
-        prices[resource.id] = priceData;
-      }
+    // 计算价格变化率
+    const changeRate = (volumeDiff / effectiveTotal) * k;
+    const priceChange = currentPrice * changeRate;
+
+    // 计算新价格
+    let newPrice = currentPrice + priceChange;
+
+    // 确保价格不低于最小值
+    if (newPrice < this.MIN_PRICE) {
+      newPrice = this.MIN_PRICE;
     }
 
-    this.lastUpdate = new Date();
-    return prices;
-  }
-
-  async getMarketSummary(): Promise<MarketSummary> {
-    const prices = await this.getAllPrices();
-    const priceArray = Object.values(prices);
-
-    const topGainers = [...priceArray]
-      .sort((a, b) => b.changePercent - a.changePercent)
-      .slice(0, 3);
-
-    const topLosers = [...priceArray]
-      .sort((a, b) => a.changePercent - b.changePercent)
-      .slice(0, 3);
+    // 确定价格方向
+    let direction: 'up' | 'down' | 'stable';
+    const epsilon = 0.0001;
+    if (Math.abs(priceChange) < epsilon) {
+      direction = 'stable';
+    } else if (priceChange > 0) {
+      direction = 'up';
+    } else {
+      direction = 'down';
+    }
 
     return {
-      totalVolume: priceArray.reduce((sum, p) => sum + p.volume, 0),
-      activeRoutes: Math.floor(Math.random() * 50) + 10,
-      topGainers,
-      topLosers,
-      timestamp: new Date().toISOString(),
+      newPrice: Number(newPrice.toFixed(4)),
+      priceChange: Number(priceChange.toFixed(4)),
+      direction,
     };
   }
 
-  private calculatePrice(resource: { id: string; name: string; basePrice: number; volatility: number }): PriceData {
-    const randomFactor = (Math.random() - 0.5) * 2 * resource.volatility;
-    const currentPrice = Math.round(resource.basePrice * (1 + randomFactor) * 100) / 100;
-    
-    const cachedPrice = this.priceCache.get(resource.id);
-    const previousPrice = cachedPrice?.currentPrice || resource.basePrice;
-    
-    const change = Math.round((currentPrice - previousPrice) * 100) / 100;
-    const changePercent = Math.round((change / previousPrice) * 10000) / 100;
-    
-    let trend: 'up' | 'down' | 'stable' = 'stable';
-    if (changePercent > 1) trend = 'up';
-    else if (changePercent < -1) trend = 'down';
-
-    return {
-      resourceId: resource.id,
-      resourceName: resource.name,
-      basePrice: resource.basePrice,
-      currentPrice,
-      change,
-      changePercent,
-      volume: Math.floor(Math.random() * 10000) + 1000,
-      trend,
-    };
+  /**
+   * 获取最小价格
+   */
+  getMinPrice(): number {
+    return this.MIN_PRICE;
   }
 
-  async getResourcePrice(resourceId: string): Promise<PriceData | null> {
-    const resource = this.resourceDefinitions.find(r => r.id === resourceId);
-    if (!resource) return null;
-
-    const cachedPrice = this.priceCache.get(resourceId);
-    if (cachedPrice) return cachedPrice;
-
-    const priceData = this.calculatePrice(resource);
-    this.priceCache.set(resourceId, priceData);
-    return priceData;
+  /**
+   * 验证价格是否有效
+   */
+  isValidPrice(price: number): boolean {
+    return price >= this.MIN_PRICE && !isNaN(price) && isFinite(price);
   }
 
-  async updatePrice(resourceId: string, modifier: number): Promise<PriceData | null> {
-    const resource = this.resourceDefinitions.find(r => r.id === resourceId);
-    if (!resource) return null;
-
-    const currentPrice = Math.round(resource.basePrice * modifier * 100) / 100;
-    const cachedPrice = this.priceCache.get(resourceId);
-    const previousPrice = cachedPrice?.currentPrice || resource.basePrice;
-    
-    const change = Math.round((currentPrice - previousPrice) * 100) / 100;
-    const changePercent = Math.round((change / previousPrice) * 10000) / 100;
-    
-    let trend: 'up' | 'down' | 'stable' = 'stable';
-    if (changePercent > 1) trend = 'up';
-    else if (changePercent < -1) trend = 'down';
-
-    const priceData: PriceData = {
-      resourceId: resource.id,
-      resourceName: resource.name,
-      basePrice: resource.basePrice,
-      currentPrice,
-      change,
-      changePercent,
-      volume: Math.floor(Math.random() * 10000) + 1000,
-      trend,
-    };
-
-    this.priceCache.set(resourceId, priceData);
-    return priceData;
+  /**
+   * 批量计算价格变化
+   */
+  calculatePriceBatch(
+    states: MarketState[],
+    k: number = this.DEFAULT_K,
+  ): PriceCalculationResult[] {
+    return states.map((state) => this.calculatePrice(state, k));
   }
 }

@@ -1,44 +1,25 @@
-import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
-
-@Entity('trade_routes')
-export class TradeRoute {
-  @PrimaryGeneratedColumn('uuid')
+export interface TradeRoute {
   id: string;
-
-  @Column()
-  name: string;
-
-  @Column()
   sourceCivilizationId: string;
-
-  @Column()
   targetCivilizationId: string;
-
-  @Column({ type: 'json' })
-  resources: {
-    resourceId: string;
-    quantity: number;
-    price: number;
-  }[];
-
-  @Column({ type: 'decimal', precision: 5, scale: 2, default: 1.0 })
+  resourceType: 'ore' | 'energy' | 'technology';
+  basePrice: number;
+  currentPrice: number;
   efficiency: number;
-
-  @Column({ type: 'int' })
-  distance: number;
-
-  @Column({ default: 'active' })
   status: 'active' | 'suspended' | 'disrupted';
-
-  @Column({ nullable: true })
-  weatherEffect?: string;
-
-  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
-  totalValue: number;
-
-  @CreateDateColumn()
   createdAt: Date;
-
-  @UpdateDateColumn()
   updatedAt: Date;
+}
+
+export interface TradeAgreement {
+  id: string;
+  parties: [string, string];
+  resourceTypes: string[];
+  terms: {
+    minPrice: number;
+    maxPrice: number;
+    volume: number;
+  };
+  validFrom: Date;
+  validUntil: Date;
 }

@@ -1,0 +1,44 @@
+export enum ResourceType {
+  ORE = 'ore',
+  ENERGY = 'energy',
+  TECHNOLOGY = 'technology',
+}
+
+export interface Resource {
+  id: string;
+  type: ResourceType;
+  name: string;
+  baseValue: number;
+  volatilityRange: {
+    min: number;
+    max: number;
+  };
+  description: string;
+}
+
+export const RESOURCE_DEFINITIONS: Resource[] = [
+  {
+    id: 'res-ore-001',
+    type: ResourceType.ORE,
+    name: '稀有矿石',
+    baseValue: 100,
+    volatilityRange: { min: 50, max: 200 },
+    description: '用于建造和制造的基础材料',
+  },
+  {
+    id: 'res-energy-001',
+    type: ResourceType.ENERGY,
+    name: '聚变能源',
+    baseValue: 150,
+    volatilityRange: { min: 80, max: 300 },
+    description: '驱动文明运转的核心能源',
+  },
+  {
+    id: 'res-tech-001',
+    type: ResourceType.TECHNOLOGY,
+    name: '科技点数',
+    baseValue: 500,
+    volatilityRange: { min: 200, max: 1000 },
+    description: '代表先进科技知识的抽象资源',
+  },
+];

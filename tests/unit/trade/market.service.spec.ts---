@@ -1,0 +1,230 @@
+import { MarketService, MarketState } from '../../../apps/server/src/modules/trade/market.service';
+
+describe('MarketService', () => {
+  let service: MarketService;
+
+  beforeEach(() => {
+    service = new MarketService();
+  });
+
+  describe('calculatePrice', () => {
+    it('测试用例1：买入量大于卖出量时价格上涨', () => {
+      const state: MarketState = {
+        currentPrice: 100,
+        buyVolume: 1000,
+        sellVolume: 500,
+      };
+
+      const result = service.calculatePrice(state);
+
+      expect(result.direction).toBe('up');
+      expect(result.newPrice).toBeGreaterThan(state.currentPrice);
+      expect(result.priceChange).toBeGreaterThan(0);
+
+      // 验证计算逻辑：价格变化 = 当前价格 * (买卖差/总量) * k
+      // 买卖差 = 1000 - 500 = 500
+      // 总量 = 1000 + 500 = 1500
+      // 变化率 = 500/1500 * 0.1 = 0.0333...
+      // 价格变化 = 100 * 0.0333... = 3.33...
+      // 新价格 = 103.33...
+      expect(result.newPrice).toBeCloseTo(103.3333, 2);
+    });
+
+    it('测试用例2：卖出量大于买入量时价格下跌', () => {
+      const state: MarketState = {
+        currentPrice: 100,
+        buyVolume: 300,
+        sellVolume: 700,
+      };
+
+      const result = service.calculatePrice(state);
+
+      expect(result.direction).toBe('down');
+      expect(result.newPrice).toBeLessThan(state.currentPrice);
+      expect(result.priceChange).toBeLessThan(0);
+
+      // 验证计算逻辑
+      // 买卖差 = 300 - 700 = -400
+      // 总量 = 300 + 700 = 1000
+      // 变化率 = -400/1000 * 0.1 = -0.04
+      // 价格变化 = 100 * -0.04 = -4
+      // 新价格 = 96
+      expect(result.newPrice).toBeCloseTo(96, 2);
+    });
+
+    it('测试用例3：买卖平衡时价格稳定', () => {
+      const state: MarketState = {
+        currentPrice: 100,
+        buyVolume: 500,
+        sellVolume: 500,
+      };
+
+      const result = service.calculatePrice(state);
+
+      expect(result.direction).toBe('stable');
+      expect(result.newPrice).toBe(state.currentPrice);
+      expect(result.priceChange).toBe(0);
+    });
+
+    it('测试用例4：边界条件 - 价格不低于最小值 0.01', () => {
+      // 场景：极低价格且大量卖出
+      const state: MarketState = {
+        currentPrice: 0.02,
+        buyVolume: 1,
+        sellVolume: 10000,
+      };
+
+      const result = service.calculatePrice(state);
+
+      expect(result.newPrice).toBeGreaterThanOrEqual(0.01);
+      expect(result.newPrice).toBe(service.getMinPrice());
+    });
+
+    it('测试用例4续：价格刚好等于最小值时不再下降', () => {
+      const state: MarketState = {
+        currentPrice: 0.01,
+        buyVolume: 0,
+        sellVolume: 1000,
+      };
+
+      const result = service.calculatePrice(state);
+
+      expect(result.newPrice).toBe(0.01);
+      expect(result.newPrice).toBeGreaterThanOrEqual(service.getMinPrice());
+    });
+
+    it('测试用例5：K 值对价格波动幅度的影响', () => {
+      const state: MarketState = {
+        currentPrice: 100,
+        buyVolume: 1000,
+        sellVolume: 500,
+      };
+
+      // 使用不同的 K 值
+      const smallK = 0.05;
+      const largeK = 0.2;
+
+      const resultSmallK = service.calculatePrice(state, smallK);
+      const resultLargeK = service.calculatePrice(state, largeK);
+
+      // K 值越大，价格波动幅度越大
+      expect(resultLargeK.priceChange).toBeGreaterThan(resultSmallK.priceChange);
+      expect(resultLargeK.newPrice).toBeGreaterThan(resultSmallK.newPrice);
+
+      // 验证比例关系
+      // 小 K 的变化应该大约是大 K 变化的一半
+      const ratio = resultSmallK.priceChange / resultLargeK.priceChange;
+      expect(ratio).toBeCloseTo(smallK / largeK, 2);
+    });
+
+    it('测试用例5续：K=0 时价格不变', () => {
+      const state: MarketState = {
+        currentPrice: 100,
+        buyVolume: 1000,
+        sellVolume: 500,
+      };
+
+      const result = service.calculatePrice(state, 0);
+
+      expect(result.direction).toBe('stable');
+      expect(result.newPrice).toBe(100);
+      expect(result.priceChange).toBe(0);
+    });
+
+    it('测试用例5续：K=1 时最大波动', () => {
+      const state: MarketState = {
+        currentPrice: 100,
+        buyVolume: 1000,
+        sellVolume: 0,
+      };
+
+      const result = service.calculatePrice(state, 1);
+
+      // 全部买入，无卖出时，价格变化 = 100 * (1000/1000) * 1 = 100
+      expect(result.newPrice).toBe(200);
+      expect(result.priceChange).toBe(100);
+    });
+  });
+
+  describe('getMinPrice', () => {
+    it('应返回最小价格 0.01', () => {
+      expect(service.getMinPrice()).toBe(0.01);
+    });
+  });
+
+  describe('isValidPrice', () => {
+    it('有效价格应返回 true', () => {
+      expect(service.isValidPrice(100)).toBe(true);
+      expect(service.isValidPrice(0.01)).toBe(true);
+      expect(service.isValidPrice(0.5)).toBe(true);
+    });
+
+    it('无效价格应返回 false', () => {
+      expect(service.isValidPrice(0)).toBe(false);
+      expect(service.isValidPrice(0.001)).toBe(false);
+      expect(service.isValidPrice(-1)).toBe(false);
+      expect(service.isValidPrice(NaN)).toBe(false);
+      expect(service.isValidPrice(Infinity)).toBe(false);
+    });
+  });
+
+  describe('calculatePriceBatch', () => {
+    it('应批量计算多个市场状态的价格', () => {
+      const states: MarketState[] = [
+        { currentPrice: 100, buyVolume: 1000, sellVolume: 500 },
+        { currentPrice: 100, buyVolume: 300, sellVolume: 700 },
+        { currentPrice: 100, buyVolume: 500, sellVolume: 500 },
+      ];
+
+      const results = service.calculatePriceBatch(states);
+
+      expect(results).toHaveLength(3);
+      expect(results[0].direction).toBe('up');
+      expect(results[1].direction).toBe('down');
+      expect(results[2].direction).toBe('stable');
+    });
+  });
+
+  describe('边界情况测试', () => {
+    it('零交易量时应返回稳定价格', () => {
+      const state: MarketState = {
+        currentPrice: 100,
+        buyVolume: 0,
+        sellVolume: 0,
+      };
+
+      const result = service.calculatePrice(state);
+
+      expect(result.direction).toBe('stable');
+      expect(result.newPrice).toBe(100);
+    });
+
+    it('极大交易量差时应正确计算', () => {
+      const state: MarketState = {
+        currentPrice: 100,
+        buyVolume: 1000000,
+        sellVolume: 1,
+      };
+
+      const result = service.calculatePrice(state);
+
+      expect(result.direction).toBe('up');
+      expect(result.newPrice).toBeGreaterThan(100);
+      // 价格不应超过合理范围
+      expect(result.newPrice).toBeLessThan(1000);
+    });
+
+    it('极小价格变化应被识别为稳定', () => {
+      const state: MarketState = {
+        currentPrice: 100,
+        buyVolume: 501,
+        sellVolume: 500,
+      };
+
+      const result = service.calculatePrice(state, 0.00001);
+
+      // 极小的价格变化可能被判定为稳定
+      expect(['stable', 'up']).toContain(result.direction);
+    });
+  });
+});
