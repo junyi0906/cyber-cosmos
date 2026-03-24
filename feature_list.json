@@ -38,9 +38,10 @@
       ],
       "test_command": "cd universe_server && npm run test:mongo-connection",
       "depends_on": [],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "与 PostgreSQL 互补，存储非结构化数据"
+      "passes": true,
+      "last_attempt": "2026-03-24T18:56:44.501894",
+      "notes": "与 PostgreSQL 互补，存储非结构化数据",
+      "retry_count": 0
     },
     {
       "id": "feat-003",
