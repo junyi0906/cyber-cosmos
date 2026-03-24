@@ -1,11 +1,10 @@
-from .broadcast import BroadcastManager, BroadcastType, Broadcast, BroadcastPriority
 from .encryption import EncryptionEngine, EncryptionLevel
+from .broadcast import BroadcastManager, BroadcastType, BroadcastMessage
 
 __all__ = [
+    'EncryptionEngine',
+    'EncryptionLevel',
     'BroadcastManager',
     'BroadcastType',
-    'Broadcast',
-    'BroadcastPriority',
-    'EncryptionEngine',
-    'EncryptionLevel'
+    'BroadcastMessage'
 ]
