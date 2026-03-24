@@ -4,19 +4,9 @@ Pytest configuration and fixtures for universe tests.
 import pytest
 import sys
 import os
-from unittest.mock import MagicMock, patch
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-
-@pytest.fixture
-def mock_llm_client():
-    """Mock LLM client for testing without actual API calls."""
-    client = MagicMock()
-    client.generate.return_value = "Test response from LLM"
-    client.chat.return_value = {"role": "assistant", "content": "Test chat response"}
-    return client
 
 
 @pytest.fixture
@@ -29,14 +19,13 @@ def sample_civilization():
         "population": 1000000,
         "technology_level": 5,
         "military_power": 100,
-        "economic_power": 200,
-        "culture_value": 150,
-        "location": {"x": 100, "y": 200, "z": 50},
-        "resources": {"minerals": 1000, "energy": 500, "food": 800},
+        "economic_power": 150,
+        "culture_value": 80,
+        "coordinates": {"x": 0, "y": 0, "z": 0},
         "status": "active",
         "ideology": "expansionist",
-        "trust_map": {},
-        "threat_assessment": {}
+        "trust_level": 50,
+        "threat_perception": 30
     }
 
 
@@ -45,25 +34,33 @@ def sample_event():
     """Sample event data for testing."""
     return {
         "id": "evt_001",
-        "type": "disaster",
-        "subtype": "supernova",
+        "type": "supernova",
         "name": "Supernova Explosion",
-        "description": "A massive star has exploded in sector 7G",
-        "location": {"x": 150, "y": 250, "z": 75},
+        "description": "A massive star has exploded",
+        "severity": 0.8,
+        "coordinates": {"x": 10, "y": 20, "z": 30},
         "affected_civilizations": ["civ_001"],
-        "impact": {
-            "population_loss": 0.1,
-            "technology_gain": 0.05,
-            "resource_change": -0.2
-        },
         "timestamp": 1000,
         "duration": 100
     }
 
 
 @pytest.fixture
-def sample_universe_state():
-    """Sample universe state for testing."""
+def sample_diplomatic_state():
+    """Sample diplomatic state for testing."""
+    return {
+        "civ1_id": "civ_001",
+        "civ2_id": "civ_002",
+        "status": "neutral",
+        "trust": 50,
+        "treaties": [],
+        "history": []
+    }
+
+
+@pytest.fixture
+def mock_universe_state():
+    """Mock universe state for testing."""
     return {
         "tick": 1000,
         "civilizations": {
@@ -72,38 +69,18 @@ def sample_universe_state():
                 "name": "Alpha Empire",
                 "population": 1000000,
                 "technology_level": 5,
-                "location": {"x": 100, "y": 200, "z": 50}
+                "coordinates": {"x": 0, "y": 0, "z": 0},
+                "status": "active"
             },
             "civ_002": {
                 "id": "civ_002",
                 "name": "Beta Federation",
                 "population": 800000,
                 "technology_level": 4,
-                "location": {"x": 300, "y": 100, "z": 150}
+                "coordinates": {"x": 50, "y": 50, "z": 0},
+                "status": "active"
             }
         },
         "events": [],
-        "diplomatic_relations": {},
-        "alliances": []
+        "diplomatic_relations": {}
     }
-
-
-@pytest.fixture
-def mock_universe_state(sample_universe_state):
-    """Mock universe state manager."""
-    from unittest.mock import MagicMock
-    state = MagicMock()
-    state.get_state.return_value = sample_universe_state
-    state.get_civilization.return_value = sample_universe_state["civilizations"]["civ_001"]
-    state.get_all_civilizations.return_value = sample_universe_state["civilizations"]
-    state.update_civilization.return_value = True
-    state.add_event.return_value = True
-    return state
-
-
-@pytest.fixture
-def temp_state_file(tmp_path):
-    """Create a temporary state file for testing."""
-    state_file = tmp_path / "test_universe_state.json"
-    state_file.write_text('{"tick": 0, "civilizations": {}, "events": []}')
-    return str(state_file)

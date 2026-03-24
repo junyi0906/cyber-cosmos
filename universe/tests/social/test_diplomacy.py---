@@ -1,0 +1,51 @@
+"""
+Unit tests for the diplomacy and social system.
+"""
+import pytest
+import sys
+import os
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+from universe.diplomacy import DiplomacySystem, DiplomaticRelation, Alliance, Treaty
+
+
+class TestDiplomacySystem:
+    """Test cases for DiplomacySystem class."""
+
+    def setup_method(self):
+        """Set up test fixtures."""
+        self.diplomacy = DiplomacySystem()
+
+    def test_diplomacy_initialization(self):
+        """Test that DiplomacySystem initializes correctly."""
+        assert self.diplomacy is not None
+        assert hasattr(self.diplomacy, 'relations')
+
+    def test_create_relation(self):
+        """Test creation of diplomatic relations."""
+        relation = self.diplomacy.create_relation("civ_001", "civ_002")
+        assert relation is not None
+        assert relation.civ1_id == "civ_001"
+        assert relation.civ2_id == "civ_002"
+
+    def test_get_relation(self):
+        """Test retrieving diplomatic relations."""
+        self.diplomacy.create_relation("civ_001", "civ_002")
+        relation = self.diplomacy.get_relation("civ_001", "civ_002")
+        assert relation is not None
+
+    def test_declare_war(self):
+        """Test war declaration."""
+        self.diplomacy.create_relation("civ_001", "civ_002")
+        result = self.diplomacy.declare_war("civ_001", "civ_002")
+        assert result["status"] == "war"
+        relation = self.diplomacy.get_relation("civ_001", "civ_002")
+        assert relation.status == "war"
+
+    def test_make_peace(self):
+        """Test peace treaty."""
+        self.diplomacy.create_relation("civ_001", "civ_002")
+        self.diplomacy.declare_war("civ_001", "civ_002")
+        result = self.diplomacy.make_peace("civ_001", "civ_002")
+        assert result["status"]

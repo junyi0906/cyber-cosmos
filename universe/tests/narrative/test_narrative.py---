@@ -1,35 +1,153 @@
 """
 Unit tests for the narrative engine.
-Tests chronicle generation, event chains, and civilization history.
 """
 import pytest
 import sys
 import os
-from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
+from universe.narrative import NarrativeEngine, Chronicle, StoryArc
+
 
 class TestNarrativeEngine:
-    """Test suite for narrative engine functionality."""
-    
-    def test_narrative_imports(self):
-        """Test that narrative module can be imported."""
-        try:
-            from universe import narrative
-            assert hasattr(narrative, '__name__')
-        except ImportError:
-            pytest.skip("Narrative module not yet implemented")
-    
-    def test_chronicle_creation(self, sample_civilization):
-        """Test chronicle creation for a civilization."""
-        chronicle = {
-            "civilization_id": sample_civilization["id"],
-            "events": [],
-            "milestones": [],
-            "era": "tribal",
-            "founding_date": 0
-        }
+    """Test cases for NarrativeEngine class."""
+
+    def setup_method(self):
+        """Set up test fixtures."""
+        self.narrative_engine = NarrativeEngine()
+
+    def test_narrative_engine_initialization(self):
+        """Test that NarrativeEngine initializes correctly."""
+        assert self.narrative_engine is not None
+        assert hasattr(self.narrative_engine, 'chronicle')
+
+    def test_generate_event_description(self, sample_event):
+        """Test generation of event descriptions."""
+        description = self.narrative_engine.generate_description(sample_event)
+        assert isinstance(description, str)
+        assert len(description) > 0
+
+    def test_record_history(self, sample_event):
+        """Test recording events to history."""
+        self.narrative_engine.record_event(sample_event)
+        history = self.narrative_engine.get_history()
+        assert len(history) >= 1
+
+    def test_generate_chronicle(self, mock_universe_state):
+        """Test chronicle generation."""
+        chronicle = self.narrative_engine.generate_chronicle(mock_universe_state)
+        assert chronicle is not None
+        assert isinstance(chronicle, str)
+
+    def test_civilization_progression_narrative(self, sample_civilization):
+        """Test narrative for civilization progression."""
+        narrative = self.narrative_engine.generate_progression_story(
+            sample_civilization,
+            from_stage="tribe",
+            to_stage="city_state"
+        )
+        assert narrative is not None
+        assert isinstance(narrative, str)
+
+    def test_civilization_decline_narrative(self, sample_civilization):
+        """Test narrative for civilization decline."""
+        narrative = self.narrative_engine.generate_decline_story(
+            sample_civilization,
+            reason="resource_exhaustion"
+        )
+        assert narrative is not None
+
+    def test_event_impact_calculation(self, sample_event, sample_civilization):
+        """Test calculation of event impacts."""
+        impact = self.narrative_engine.calculate_event_impact(
+            sample_event,
+            sample_civilization
+        )
+        assert isinstance(impact, dict)
+
+    def test_story_arc_creation(self):
+        """Test creation of story arcs."""
+        arc = self.narrative_engine.create_story_arc(
+            title="The Great War",
+            arc_type="conflict",
+            participants=["civ_001", "civ_002"]
+        )
+        assert arc is not None
+        assert arc["title"] == "The Great War"
+
+    def test_timeline_generation(self):
+        """Test timeline generation from events."""
+        events = [
+            {"id": "e1", "timestamp": 100, "name": "Event 1"},
+            {"id": "e2", "timestamp": 200, "name": "Event 2"},
+            {"id": "e3", "timestamp": 150, "name": "Event 3"}
+        ]
+        timeline = self.narrative_engine.generate_timeline(events)
+        assert len(timeline) == 3
+        # Should be sorted by timestamp
+        assert timeline[0]["timestamp"] <= timeline[1]["timestamp"]
+
+
+class TestChronicle:
+    """Test cases for Chronicle class."""
+
+    def setup_method(self):
+        """Set up test fixtures."""
+        self.chronicle = Chronicle()
+
+    def test_chronicle_initialization(self):
+        """Test Chronicle initialization."""
+        assert self.chronicle is not None
+        assert hasattr(self.chronicle, 'entries')
+
+    def test_add_entry(self, sample_event):
+        """Test adding entries to chronicle."""
+        self.chronicle.add_entry(
+            tick=1000,
+            event=sample_event,
+            description="A great event occurred"
+        )
+        entries = self.chronicle.get_entries()
+        assert len(entries) == 1
+
+    def test_get_entries_by_tick_range(self, sample_event):
+        """Test filtering entries by tick range."""
+        self.chronicle.add_entry(tick=100, event=sample_event, description="Entry 1")
+        self.chronicle.add_entry(tick=200, event=sample_event, description="Entry 2")
+        self.chronicle.add_entry(tick=300, event=sample_event, description="Entry 3")
         
-        assert chronicle["civilization_id"] == sample_civilization["id"]
-        assert chronicle["era"] in ["tribal", "city_state", "nation", "space_f
+        entries = self.chronicle.get_entries_by_range(150, 250)
+        assert len(entries) == 1
+
+    def test_export_chronicle(self):
+        """Test chronicle export."""
+        export = self.chronicle.export()
+        assert export is not None
+        assert isinstance(export, (str, dict))
+
+
+class TestStoryArc:
+    """Test cases for StoryArc class."""
+
+    def test_story_arc_creation(self):
+        """Test story arc creation."""
+        arc = StoryArc(
+            arc_id="arc_001",
+            title="Rise of Empire",
+            arc_type="expansion"
+        )
+        assert arc.id == "arc_001"
+        assert arc.title == "Rise of Empire"
+
+    def test_story_arc_add_event(self, sample_event):
+        """Test adding events to story arc."""
+        arc = StoryArc(arc_id="arc_001", title="Test Arc", arc_type="test")
+        arc.add_event(sample_event)
+        assert len(arc.events) == 1
+
+    def test_story_arc_completion(self):
+        """Test story arc completion."""
+        arc = StoryArc(arc_id="arc_001", title="Test Arc", arc_type="test")
+        arc.complete()
+        assert arc.status == "completed"
