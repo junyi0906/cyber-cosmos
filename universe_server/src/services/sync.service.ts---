@@ -1,0 +1,344 @@
+import { EventEmitter } from 'events';
+import WebSocket from 'ws';
+import { EventProxyService, PythonEvent, NodeEvent } from './event.proxy';
+
+export interface SyncConfig {
+  pythonCoreUrl: string;
+  syncInterval: number;
+  reconnectDelay: number;
+  maxReconnectAttempts: number;
+  snapshotInterval: number;
+}
+
+export interface UniverseSnapshot {
+  tick: number;
+  timestamp: number;
+  civilizations: CivilizationState[];
+  events: EventRecord[];
+  globalState: GlobalState;
+}
+
+export interface CivilizationState {
+  id: string;
+  name: string;
+  population: number;
+  technology: number;
+  military: number;
+  economy: number;
+  culture: number;
+  position: { x: number; y: number; z: number };
+  status: 'active' | 'declining' | 'destroyed';
+  relations: Record<string, number>;
+}
+
+export interface EventRecord {
+  id: string;
+  type: string;
+  tick: number;
+  timestamp: number;
+  data: Record<string, unknown>;
+  affectedEntities: string[];
+}
+
+export interface GlobalState {
+  totalPopulation: number;
+  activeWars: number;
+  alliances: number;
+  universeAge: number;
+}
+
+export interface TickMessage {
+  type: 'tick';
+  tick: number;
+  timestamp: number;
+  delta: Record<string, unknown>;
+}
+
+export interface EventMessage {
+  type: 'event';
+  event: PythonEvent;
+}
+
+export type SyncMessage = TickMessage | EventMessage;
+
+export class SyncService extends EventEmitter {
+  private config: SyncConfig;
+  private ws: WebSocket | null = null;
+  private eventProxy: EventProxyService;
+  private syncLoopTimer: NodeJS.Timeout | null = null;
+  private snapshotTimer: NodeJS.Timeout | null = null;
+  private reconnectAttempts: number = 0;
+  private isRunning: boolean = false;
+  private lastTick: number = 0;
+  private pendingSnapshots: Map<string, { resolve: Function; reject: Function; timeout: NodeJS.Timeout }> = new Map();
+  private eventQueue: PythonEvent[] = [];
+  private snapshotCache: UniverseSnapshot | null = null;
+
+  constructor(config: Partial<SyncConfig> = {}) {
+    super();
+    this.config = {
+      pythonCoreUrl: config.pythonCoreUrl || 'ws://localhost:8765',
+      syncInterval: config.syncInterval || 100,
+      reconnectDelay: config.reconnectDelay || 1000,
+      maxReconnectAttempts: config.maxReconnectAttempts || 10,
+      snapshotInterval: config.snapshotInterval || 5000,
+    };
+    this.eventProxy = new EventProxyService();
+    this.setupEventProxyHandlers();
+  }
+
+  private setupEventProxyHandlers(): void {
+    this.eventProxy.on('event:converted', (nodeEvent: NodeEvent) => {
+      this.emit('event', nodeEvent);
+    });
+
+    this.eventProxy.on('event:error', (error: Error) => {
+      this.emit('error', error);
+    });
+  }
+
+  async start(): Promise<void> {
+    if (this.isRunning) {
+      console.warn('[SyncService] Service is already running');
+      return;
+    }
+
+    this.isRunning = true;
+    await this.connect();
+    this.start_sync_loop();
+    this.startSnapshotLoop();
+    console.log('[SyncService] Service started');
+  }
+
+  async stop(): Promise<void> {
+    this.isRunning = false;
+    
+    if (this.syncLoopTimer) {
+      clearInterval(this.syncLoopTimer);
+      this.syncLoopTimer = null;
+    }
+
+    if (this.snapshotTimer) {
+      clearInterval(this.snapshotTimer);
+      this.snapshotTimer = null;
+    }
+
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
+
+    this.pendingSnapshots.forEach(({ reject, timeout }) => {
+      reject(new Error('Service stopped'));
+      clearTimeout(timeout);
+    });
+    this.pendingSnapshots.clear();
+
+    console.log('[SyncService] Service stopped');
+  }
+
+  private async connect(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      try {
+        this.ws = new WebSocket(this.config.pythonCoreUrl);
+
+        this.ws.on('open', () => {
+          console.log('[SyncService] Connected to Python core');
+          this.reconnectAttempts = 0;
+          this.emit('connected');
+          resolve();
+        });
+
+        this.ws.on('message', (data: WebSocket.Data) => {
+          this.handleMessage(data);
+        });
+
+        this.ws.on('error', (error: Error) => {
+          console.error('[SyncService] WebSocket error:', error.message);
+          this.emit('error', error);
+        });
+
+        this.ws.on('close', () => {
+          console.log('[SyncService] Connection closed');
+          this.emit('disconnected');
+          this.handleReconnect();
+        });
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  private handleReconnect(): void {
+    if (!this.isRunning) return;
+
+    if (this.reconnectAttempts >= this.config.maxReconnectAttempts) {
+      console.error('[SyncService] Max reconnect attempts reached');
+      this.emit('error', new Error('Max reconnect attempts reached'));
+      return;
+    }
+
+    this.reconnectAttempts++;
+    const delay = this.config.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
+    
+    console.log(`[SyncService] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.config.maxReconnectAttempts})`);
+    
+    setTimeout(() => {
+      this.connect().catch(err => {
+        console.error('[SyncService] Reconnect failed:', err.message);
+      });
+    }, delay);
+  }
+
+  private handleMessage(data: WebSocket.Data): void {
+    try {
+      const message = JSON.parse(data.toString()) as SyncMessage;
+      
+      switch (message.type) {
+        case 'tick':
+          this.handle_tick(message);
+          break;
+        case 'event':
+          this.handle_event(message);
+          break;
+        case 'snapshot_response':
+          this.handleSnapshotResponse(message as unknown as { requestId: string; snapshot: UniverseSnapshot });
+          break;
+        default:
+          console.warn('[SyncService] Unknown message type:', (message as SyncMessage).type);
+      }
+    } catch (error) {
+      console.error('[SyncService] Failed to parse message:', error);
+    }
+  }
+
+  start_sync_loop(): void {
+    if (this.syncLoopTimer) {
+      clearInterval(this.syncLoopTimer);
+    }
+
+    this.syncLoopTimer = setInterval(() => {
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        this.ws.send(JSON.stringify({ type: 'sync_request', tick: this.lastTick }));
+      }
+    }, this.config.syncInterval);
+  }
+
+  async request_snapshot(): Promise<UniverseSnapshot> {
+    return new Promise((resolve, reject) => {
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+        reject(new Error('WebSocket not connected'));
+        return;
+      }
+
+      const requestId = `snapshot_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      const timeout = setTimeout(() => {
+        this.pendingSnapshots.delete(requestId);
+        reject(new Error('Snapshot request timeout'));
+      }, 10000);
+
+      this.pendingSnapshots.set(requestId, { resolve, reject, timeout });
+
+      this.ws.send(JSON.stringify({
+        type: 'snapshot_request',
+        requestId,
+        tick: this.lastTick,
+      }));
+    });
+  }
+
+  private handleSnapshotResponse(response: { requestId: string; snapshot: UniverseSnapshot }): void {
+    const pending = this.pendingSnapshots.get(response.requestId);
+    if (pending) {
+      clearTimeout(pending.timeout);
+      this.pendingSnapshots.delete(response.requestId);
+      this.snapshotCache = response.snapshot;
+      pending.resolve(response.snapshot);
+    }
+  }
+
+  private startSnapshotLoop(): void {
+    if (this.snapshotTimer) {
+      clearInterval(this.snapshotTimer);
+    }
+
+    this.snapshotTimer = setInterval(async () => {
+      try {
+        const snapshot = await this.request_snapshot();
+        this.emit('snapshot', snapshot);
+      } catch (error) {
+        console.error('[SyncService] Snapshot request failed:', error);
+      }
+    }, this.config.snapshotInterval);
+  }
+
+  handle_tick(message: TickMessage): void {
+    this.lastTick = message.tick;
+    
+    const tickEvent: NodeEvent = {
+      id: `tick_${message.tick}`,
+      type: 'universe:tick',
+      timestamp: message.timestamp,
+      data: {
+        tick: message.tick,
+        delta: message.delta,
+      },
+    };
+
+    this.emit('tick', tickEvent);
+    this.processEventQueue();
+  }
+
+  handle_event(message: EventMessage): void {
+    this.eventQueue.push(message.event);
+    this.processEventQueue();
+  }
+
+  private processEventQueue(): void {
+    while (this.eventQueue.length > 0) {
+      const pythonEvent = this.eventQueue.shift();
+      if (pythonEvent) {
+        this.eventProxy.convertEvent(pythonEvent);
+      }
+    }
+  }
+
+  getCachedSnapshot(): UniverseSnapshot | null {
+    return this.snapshotCache;
+  }
+
+  getLastTick(): number {
+    return this.lastTick;
+  }
+
+  isConnected(): boolean {
+    return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
+  }
+
+  sendCommand(command: string, params: Record<string, unknown> = {}): boolean {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      console.error('[SyncService] Cannot send command: WebSocket not connected');
+      return false;
+    }
+
+    this.ws.send(JSON.stringify({
+      type: 'command',
+      command,
+      params,
+      timestamp: Date.now(),
+    }));
+
+    return true;
+  }
+
+  triggerEvent(eventType: string, targetId: string, params: Record<string, unknown> = {}): boolean {
+    return this.sendCommand('trigger_event', {
+      eventType,
+      targetId,
+      ...params,
+    });
+  }
+}
+
+export default SyncService;

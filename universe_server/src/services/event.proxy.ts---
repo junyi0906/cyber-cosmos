@@ -1,0 +1,275 @@
+import { EventEmitter } from 'events';
+
+export interface PythonEvent {
+  id: string;
+  type: string;
+  category: 'macro' | 'micro' | 'diplomacy' | 'narrative';
+  tick: number;
+  timestamp: number;
+  source?: string;
+  target?: string;
+  data: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+}
+
+export interface NodeEvent {
+  id: string;
+  type: string;
+  timestamp: number;
+  data: Record<string, unknown>;
+  metadata?: {
+    category: string;
+    source?: string;
+    target?: string;
+    tick: number;
+  };
+}
+
+export interface EventMapping {
+  pythonType: string;
+  nodeType: string;
+  transformer?: (data: Record<string, unknown>) => Record<string, unknown>;
+}
+
+export class EventProxyService extends EventEmitter {
+  private eventMappings: Map<string, EventMapping> = new Map();
+  private eventHistory: NodeEvent[] = [];
+  private maxHistorySize: number = 1000;
+
+  constructor() {
+    super();
+    this.initializeEventMappings();
+  }
+
+  private initializeEventMappings(): void {
+    // Macro events
+    this.registerMapping({
+      pythonType: 'supernova',
+      nodeType: 'universe:supernova',
+      transformer: (data) => ({
+        position: data.position,
+        intensity: data.intensity || 1.0,
+        affectedSystems: data.affected_systems || [],
+      }),
+    });
+
+    this.registerMapping({
+      pythonType: 'blackhole_formation',
+      nodeType: 'universe:blackhole',
+      transformer: (data) => ({
+        position: data.position,
+        mass: data.mass,
+        eventHorizon: data.event_horizon,
+      }),
+    });
+
+    this.registerMapping({
+      pythonType: 'nebula_collision',
+      nodeType: 'universe:nebula',
+      transformer: (data) => ({
+        nebulae: data.nebulae,
+        resultType: data.result_type,
+      }),
+    });
+
+    this.registerMapping({
+      pythonType: 'radiation_wave',
+      nodeType: 'universe:radiation',
+      transformer: (data) => ({
+        origin: data.origin,
+        spread: data.spread,
+        intensity: data.intensity,
+      }),
+    });
+
+    // Micro events
+    this.registerMapping({
+      pythonType: 'resource_depletion',
+      nodeType: 'civilization:resource_depletion',
+      transformer: (data) => ({
+        civilizationId: data.civilization_id,
+        resourceType: data.resource_type,
+        remaining: data.remaining,
+      }),
+    });
+
+    this.registerMapping({
+      pythonType: 'environment_change',
+      nodeType: 'civilization:environment_change',
+      transformer: (data) => ({
+        civilizationId: data.civilization_id,
+        changeType: data.change_type,
+        severity: data.severity,
+      }),
+    });
+
+    this.registerMapping({
+      pythonType: 'tech_singularity',
+      nodeType: 'civilization:tech_singularity',
+      transformer: (data) => ({
+        civilizationId: data.civilization_id,
+        techLevel: data.tech_level,
+        breakthrough: data.breakthrough,
+      }),
+    });
+
+    // Diplomacy events
+    this.registerMapping({
+      pythonType: 'war_declaration',
+      nodeType: 'diplomacy:war',
+      transformer: (data) => ({
+        aggressor: data.aggressor,
+        defender: data.defender,
+        reason: data.reason,
+      }),
+    });
+
+    this.registerMapping({
+      pythonType: 'peace_treaty',
+      nodeType: 'diplomacy:peace',
+      transformer: (data) => ({
+        parties: data.parties,
+        terms: data.terms,
+      }),
+    });
+
+    this.registerMapping({
+      pythonType: 'alliance_formation',
+      nodeType: 'diplomacy:alliance',
+      transformer: (data) => ({
+        members: data.members,
+        allianceName: data.alliance_name,
+        ideology: data.ideology,
+      }),
+    });
+
+    this.registerMapping({
+      pythonType: 'trade_agreement',
+      nodeType: 'diplomacy:trade',
+      transformer: (data) => ({
+        parties: data.parties,
+        resources: data.resources,
+        duration: data.duration,
+      }),
+    });
+
+    this.registerMapping({
+      pythonType: 'broadcast',
+      nodeType: 'diplomacy:broadcast',
+      transformer: (data) => ({
+        sender: data.sender,
+        message: data.message,
+        range: data.range,
+      }),
+    });
+
+    // Narrative events
+    this.registerMapping({
+      pythonType: 'civilization_rise',
+      nodeType: 'narrative:civilization_rise',
+      transformer: (data) => ({
+        civilizationId: data.civilization_id,
+        name: data.name,
+        fromStage: data.from_stage,
+        toStage: data.to_stage,
+      }),
+    });
+
+    this.registerMapping({
+      pythonType: 'civilization_fall',
+      nodeType: 'narrative:civilization_fall',
+      transformer: (data) => ({
+        civilizationId: data.civilization_id,
+        name: data.name,
+        cause: data.cause,
+      }),
+    });
+
+    this.registerMapping({
+      pythonType: 'historical_moment',
+      nodeType: 'narrative:historical_moment',
+      transformer: (data) => ({
+        title: data.title,
+        description: data.description,
+        significance: data.significance,
+      }),
+    });
+  }
+
+  registerMapping(mapping: EventMapping): void {
+    this.eventMappings.set(mapping.pythonType, mapping);
+  }
+
+  convertEvent(pythonEvent: PythonEvent): NodeEvent | null {
+    try {
+      const mapping = this.eventMappings.get(pythonEvent.type);
+      
+      let nodeType: string;
+      let transformedData: Record<string, unknown>;
+
+      if (mapping) {
+        nodeType = mapping.nodeType;
+        transformedData = mapping.transformer 
+          ? mapping.transformer(pythonEvent.data)
+          : pythonEvent.data;
+      } else {
+        // Default conversion for unknown event types
+        nodeType = `python:${pythonEvent.type}`;
+        transformedData = pythonEvent.data;
+      }
+
+      const nodeEvent: NodeEvent = {
+        id: pythonEvent.id || this.generateEventId(),
+        type: nodeType,
+        timestamp: pythonEvent.timestamp || Date.now(),
+        data: transformedData,
+        metadata: {
+          category: pythonEvent.category,
+          source: pythonEvent.source,
+          target: pythonEvent.target,
+          tick: pythonEvent.tick,
+        },
+      };
+
+      this.addToHistory(nodeEvent);
+      this.emit('event:converted', nodeEvent);
+      
+      return nodeEvent;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      this.emit('event:error', err);
+      return null;
+    }
+  }
+
+  private generateEventId(): string {
+    return `evt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  private addToHistory(event: NodeEvent): void {
+    this.eventHistory.push(event);
+    
+    if (this.eventHistory.length > this.maxHistorySize) {
+      this.eventHistory.shift();
+    }
+  }
+
+  getHistory(filter?: {
+    type?: string;
+    category?: string;
+    since?: number;
+    limit?: number;
+  }): NodeEvent[] {
+    let events = [...this.eventHistory];
+
+    if (filter) {
+      if (filter.type) {
+        events = events.filter(e => e.type.includes(filter.type!));
+      }
+      
+      if (filter.category) {
+        events = events.filter(e => e.metadata?.category === filter.category);
+      }
+      
+      if (filter.since) {
+        events = events.filter
