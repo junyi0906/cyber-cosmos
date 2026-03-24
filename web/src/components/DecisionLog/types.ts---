@@ -1,72 +1,65 @@
+// Decision Log Types for Cyber-Cosmos
+
 export interface ThoughtNode {
   id: string;
-  type: 'observation' | 'analysis' | 'hypothesis' | 'conclusion' | 'action';
+  type: 'input' | 'reasoning' | 'decision' | 'action';
   content: string;
   timestamp: number;
-  confidence?: number;
   children?: ThoughtNode[];
   metadata?: {
+    confidence?: number;
     source?: string;
-    relevance?: number;
     tags?: string[];
   };
 }
 
-export interface DecisionOption {
-  id: string;
-  name: string;
-  description: string;
-  weight: number;
-  factors: {
-    name: string;
-    value: number;
-    description?: string;
-  }[];
-  selected: boolean;
+export interface DecisionWeight {
+  dimension: string;
+  value: number;
+  maxValue: number;
+  description?: string;
 }
 
-export interface Decision {
+export interface ConsequenceEvent {
+  id: string;
+  timestamp: number;
+  type: 'immediate' | 'short_term' | 'long_term';
+  category: 'military' | 'economic' | 'technological' | 'cultural' | 'diplomatic';
+  title: string;
+  description: string;
+  impact: number; // -100 to 100
+  relatedDecisionId: string;
+  affectedEntities?: string[];
+}
+
+export interface DecisionLog {
   id: string;
   agentId: string;
   agentName: string;
   timestamp: number;
-  context: string;
-  thoughtChain: ThoughtNode;
-  options: DecisionOption[];
-  selectedOption: string;
-  reasoning: string;
-  consequences: Consequence[];
-  status: 'pending' | 'executing' | 'completed' | 'failed';
+  decisionType: string;
+  input: string;
+  reasoning: ThoughtNode[];
+  decision: string;
+  action: string;
+  weights: DecisionWeight[];
+  consequences: ConsequenceEvent[];
+  confidence: number;
+  tags: string[];
 }
 
-export interface Consequence {
-  id: string;
-  decisionId: string;
-  timestamp: number;
-  type: 'immediate' | 'short_term' | 'long_term';
-  category: 'resource' | 'diplomacy' | 'technology' | 'population' | 'territory';
-  description: string;
-  impact: number;
-  affectedEntities: string[];
-  verified: boolean;
-  expectedImpact?: number;
-  deviation?: number;
+export interface DecisionLogFilter {
+  agentId?: string;
+  decisionType?: string;
+  startTime?: number;
+  endTime?: number;
+  tags?: string[];
 }
 
 export interface DecisionLogState {
-  decisions: Decision[];
-  selectedDecision: Decision | null;
+  logs: DecisionLog[];
+  selectedLog: DecisionLog | null;
   loading: boolean;
   error: string | null;
-  filters: {
-    agentId?: string;
-    status?: Decision['status'];
-    timeRange?: [number, number];
-  };
-}
-
-export interface WeightFactor {
-  factor: string;
-  value: number;
-  fullMark: number;
+  filter: DecisionLogFilter;
 }

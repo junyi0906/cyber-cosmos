@@ -1,90 +1,153 @@
-import React, { useState, useMemo } from 'react';
+import React, { useMemo, useRef, useEffect } from 'react';
+import * as d3 from 'd3';
 import type { ThoughtNode } from './types';
 
 interface ThoughtChainProps {
-  thoughtChain: ThoughtNode;
-  maxDepth?: number;
+  nodes: ThoughtNode[];
+  width?: number;
+  height?: number;
   onNodeClick?: (node: ThoughtNode) => void;
-  selectedNodeId?: string;
 }
 
-const typeColors: Record<ThoughtNode['type'], { bg: string; border: string; text: string }> = {
-  observation: { bg: 'bg-blue-900/30', border: 'border-blue-500', text: 'text-blue-300' },
-  analysis: { bg: 'bg-purple-900/30', border: 'border-purple-500', text: 'text-purple-300' },
-  hypothesis: { bg: 'bg-yellow-900/30', border: 'border-yellow-500', text: 'text-yellow-300' },
-  conclusion: { bg: 'bg-green-900/30', border: 'border-green-500', text: 'text-green-300' },
-  action: { bg: 'bg-red-900/30', border: 'border-red-500', text: 'text-red-300' }
+const typeColors: Record<ThoughtNode['type'], string> = {
+  input: '#4CAF50',
+  reasoning: '#2196F3',
+  decision: '#FF9800',
+  action: '#E91E63'
 };
 
-const typeIcons: Record<ThoughtNode['type'], string> = {
-  observation: '👁️',
-  analysis: '🔍',
-  hypothesis: '💡',
-  conclusion: '✓',
-  action: '⚡'
+const typeLabels: Record<ThoughtNode['type'], string> = {
+  input: '输入',
+  reasoning: '推理',
+  decision: '决策',
+  action: '行动'
 };
 
-const ThoughtNodeComponent: React.FC<{
-  node: ThoughtNode;
-  depth: number;
-  maxDepth: number;
-  isExpanded: boolean;
-  onToggle: () => void;
-  onClick: () => void;
-  isSelected: boolean;
-}> = ({ node, depth, maxDepth, isExpanded, onToggle, onClick, isSelected }) => {
-  const colors = typeColors[node.type];
-  const hasChildren = node.children && node.children.length > 0;
-  const canExpand = depth < maxDepth && hasChildren;
+interface TreeNode {
+  id: string;
+  type: ThoughtNode['type'];
+  content: string;
+  timestamp: number;
+  metadata?: ThoughtNode['metadata'];
+  children?: TreeNode[];
+  x?: number;
+  y?: number;
+}
 
-  return (
-    <div className="relative">
-      {/* Connection line to parent */}
-      {depth > 0 && (
-        <div className="absolute left-0 top-0 w-px h-full -translate-x-4 bg-gray-700" />
-      )}
-      
-      {/* Node content */}
-      <div
-        className={`
-          relative ml-4 mb-2 p-3 rounded-lg border-2 cursor-pointer transition-all duration-200
-          ${colors.bg} ${colors.border}
-          ${isSelected ? 'ring-2 ring-white ring-opacity-50' : ''}
-          hover:scale-[1.02] hover:shadow-lg
-        `}
-        onClick={onClick}
-      >
-        {/* Header */}
-        <div className="flex items-center gap-2 mb-2">
-          <span className="text-lg">{typeIcons[node.type]}</span>
-          <span className={`text-xs font-semibold uppercase ${colors.text}`}>
-            {node.type}
-          </span>
-          {node.confidence !== undefined && (
-            <span className="ml-auto text-xs text-gray-400">
-              {(node.confidence * 100).toFixed(0)}% confidence
-            </span>
-          )}
-        </div>
-        
-        {/* Content */}
-        <p className="text-sm text-gray-200 leading-relaxed">{node.content}</p>
-        
-        {/* Metadata */}
-        {node.metadata && (
-          <div className="mt-2 flex flex-wrap gap-2">
-            {node.metadata.source && (
-              <span className="text-xs px-2 py-0.5 bg-gray-800 rounded text-gray-400">
-                📊 {node.metadata.source}
-              </span>
-            )}
-            {node.metadata.tags?.map(tag => (
-              <span key={tag} className="text-xs px-2 py-0.5 bg-gray-700 rounded text-gray-300">
-                #{tag}
-              </span>
-            ))}
-          </div>
-        )}
-        
-        {/* Expand button */}
-        {canExpand && (
+const convertToTree = (nodes: ThoughtNode[]): TreeNode[] => {
+  return nodes.map(node => ({
+    ...node,
+    children: node.children ? convertToTree(node.children) : undefined
+  }));
+};
+
+export const ThoughtChain: React.FC<ThoughtChainProps> = ({
+  nodes,
+  width = 600,
+  height = 400,
+  onNodeClick
+}) => {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const treeData = useMemo(() => {
+    const converted = convertToTree(nodes);
+    if (converted.length === 0) return null;
+    
+    // Create a root node to hold all top-level nodes
+    return {
+      id: 'root',
+      type: 'input' as const,
+      content: '思考链',
+      timestamp: Date.now(),
+      children: converted
+    };
+  }, [nodes]);
+
+  useEffect(() => {
+    if (!svgRef.current || !treeData) return;
+
+    const svg = d3.select(svgRef.current);
+    svg.selectAll('*').remove();
+
+    const margin = { top: 40, right: 120, bottom: 40, left: 120 };
+    const innerWidth = width - margin.left - margin.right;
+    const innerHeight = height - margin.top - margin.bottom;
+
+    const g = svg
+      .append('g')
+      .attr('transform', `translate(${margin.left},${margin.top})`);
+
+    // Create tree layout
+    const treeLayout = d3.tree<TreeNode>().size([innerHeight, innerWidth]);
+
+    const root = d3.hierarchy(treeData);
+    treeLayout(root);
+
+    // Draw links
+    g.selectAll('.link')
+      .data(root.links())
+      .enter()
+      .append('path')
+      .attr('class', 'link')
+      .attr('fill', 'none')
+      .attr('stroke', '#4a5568')
+      .attr('stroke-width', 2)
+      .attr('stroke-opacity', 0.6)
+      .attr('d', d3.linkHorizontal<any, any>()
+        .x((d: any) => d.y)
+        .y((d: any) => d.x)
+      );
+
+    // Draw nodes
+    const nodesGroup = g.selectAll('.node')
+      .data(root.descendants().slice(1)) // Skip root node
+      .enter()
+      .append('g')
+      .attr('class', 'node')
+      .attr('transform', (d: any) => `translate(${d.y},${d.x})`)
+      .style('cursor', 'pointer')
+      .on('click', (event: MouseEvent, d: any) => {
+        if (onNodeClick && d.data) {
+          onNodeClick({
+            id: d.data.id,
+            type: d.data.type,
+            content: d.data.content,
+            timestamp: d.data.timestamp,
+            metadata: d.data.metadata
+          });
+        }
+      });
+
+    // Node circles
+    nodesGroup.append('circle')
+      .attr('r', 12)
+      .attr('fill', (d: any) => typeColors[d.data.type] || '#666')
+      .attr('stroke', '#1a1a2e')
+      .attr('stroke-width', 2)
+      .style('filter', 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))');
+
+    // Node labels
+    nodesGroup.append('text')
+      .attr('dy', '0.31em')
+      .attr('x', (d: any) => d.children ? -18 : 18)
+      .attr('text-anchor', (d: any) => d.children ? 'end' : 'start')
+      .attr('fill', '#e2e8f0')
+      .attr('font-size', '11px')
+      .attr('font-weight', '500')
+      .text((d: any) => {
+        const content = d.data.content || '';
+        return content.length > 25 ? content.substring(0, 25) + '...' : content;
+      });
+
+    // Type badges
+    nodesGroup.append('text')
+      .attr('dy', '-1.5em')
+      .attr('text-anchor', 'middle')
+      .attr('fill', (d: any) => typeColors[d.data.type])
+      .attr('font-size', '9px')
+      .attr('font-weight', 'bold')
+      .text((d: any) => typeLabels[d.data.type]);
+
+    // Confidence indicators
+    nodesGroup.filter((d: any) => d.data
