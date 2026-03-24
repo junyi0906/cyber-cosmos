@@ -1,0 +1,158 @@
+package evolution
+
+import (
+	"context"
+	"log"
+	"sync"
+	"time"
+)
+
+// Engine manages the evolution of the universe
+type Engine struct {
+	cycle       int
+	season      *Season
+	weather     *Weather
+	config      *Config
+	mu          sync.RWMutex
+	ctx         context.Context
+	cancel      context.CancelFunc
+}
+
+// Season represents a game season
+type Season struct {
+	ID          string
+	Name        string
+	StartTime   time.Time
+	EndTime     time.Time
+	CycleCount  int
+	Rules       SeasonRules
+}
+
+// SeasonRules defines configurable rules for a season
+type SeasonRules struct {
+	ResourceMultiplier float64
+	EventFrequency     float64
+	InitialCivCount    int
+}
+
+// Weather represents the cosmic weather system
+type Weather struct {
+	CurrentWeather WeatherType
+	Duration       int
+	TransitionAt   int
+}
+
+// WeatherType defines types of cosmic weather
+type WeatherType string
+
+const (
+	WeatherCalm          WeatherType = "calm"
+	WeatherResourceStorm WeatherType = "resource_storm"
+	WeatherDarkMatter    WeatherType = "dark_matter_wave"
+	WeatherDarkSurge     WeatherType = "dark_surge"
+)
+
+// Config holds evolution engine configuration
+type Config struct {
+	CyclesPerSeason   int
+	WeatherDuration   int
+	TickInterval      time.Duration
+}
+
+// NewEngine creates a new evolution engine
+func NewEngine(cfg *Config) *Engine {
+	ctx, cancel := context.WithCancel(context.Background())
+	return &Engine{
+		cycle:  0,
+		config: cfg,
+		ctx:    ctx,
+		cancel: cancel,
+		weather: &Weather{
+			CurrentWeather: WeatherCalm,
+			Duration:       cfg.WeatherDuration,
+		},
+	}
+}
+
+// Run starts the evolution engine
+func (e *Engine) Run() {
+	ticker := time.NewTicker(e.config.TickInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-e.ctx.Done():
+			return
+		case <-ticker.C:
+			e.tick()
+		}
+	}
+}
+
+// tick processes one evolution cycle
+func (e *Engine) tick() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	e.cycle++
+
+	// Update weather
+	if e.cycle%e.weather.Duration == 0 {
+		e.updateWeather()
+	}
+
+	// Process season
+	if e.cycle%e.config.CyclesPerSeason == 0 {
+		e.endSeason()
+		e.startNewSeason()
+	}
+
+	// Log progress
+	if e.cycle%100 == 0 {
+		log.Printf("Evolution cycle: %d, Weather: %s", e.cycle, e.weather.CurrentWeather)
+	}
+}
+
+// updateWeather changes the cosmic weather
+func (e *Engine) updateWeather() {
+	weathers := []WeatherType{WeatherCalm, WeatherResourceStorm, WeatherDarkMatter, WeatherDarkSurge}
+	// Simple random selection (TODO: implement weighted random)
+	e.weather.CurrentWeather = weathers[e.cycle%len(weathers)]
+	log.Printf("Weather changed to: %s", e.weather.CurrentWeather)
+}
+
+// startNewSeason initializes a new season
+func (e *Engine) startNewSeason() {
+	e.season = &Season{
+		ID:        generateSeasonID(),
+		Name:      "New Era",
+		StartTime: time.Now(),
+		CycleCount: 0,
+		Rules: SeasonRules{
+			ResourceMultiplier: 1.0,
+			EventFrequency:     1.0,
+			InitialCivCount:    10,
+		},
+	}
+	log.Printf("New season started: %s", e.season.ID)
+}
+
+// endSeason finalizes the current season
+func (e *Engine) endSeason() {
+	if e.season == nil {
+		return
+	}
+	// TODO: Calculate season rankings
+	// TODO: Archive universe state
+	// TODO: Generate chronicle
+	log.Printf("Season ended: %s", e.season.ID)
+}
+
+// Stop halts the evolution engine
+func (e *Engine) Stop() {
+	e.cancel()
+}
+
+func generateSeasonID() string {
+	return "season-" + time.Now().Format("20060102-150405")
+}

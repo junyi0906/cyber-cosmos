@@ -3,64 +3,43 @@
 ## 1. 项目概述
 
 ### 1.1 项目名称
-**Cyber-Cosmos: Era of Trade & Relics (赛博宇宙：贸易与遗迹纪元)**
+**Cyber-Cosmos: Void Echoes (赛博宇宙：虚空回响)**
 
 ### 1.2 项目目标
-在现有的动态叙事与外交基础上，引入**经济驱动机制**（星际贸易）、**历史沉淀机制**（文明遗迹）与**环境动态性**（宇宙天气/赛季），将宇宙从单纯的"事件模拟器"升级为具有经济周期、历史厚度和环境策略的复杂生态系统。
+在现有的事件系统、叙事引擎和外交联盟基础上，通过引入经济循环、历史沉淀和环境动态性，将宇宙模拟从"静态交互"推向"动态演化"。本轮核心目标是构建一个具有经济深度、历史厚度和环境多变性的持久化宇宙模拟器。
 
 ### 1.3 核心技术栈
 *   **后端**: Node.js + TypeScript + NestJS (模块化架构)
-*   **数据库**: PostgreSQL (持久化) + Redis (实时状态/缓存) + TimescaleDB (时间序列数据，用于历史分析)
-*   **前端**: React + TypeScript + D3.js (数据可视化) + Socket.io-client
-*   **通信**: REST API (管理操作) + WebSocket (实时数据推送)
-*   **测试**: Jest (单元/集成测试) + Artillery (压力测试)
+*   **前端**: React + TypeScript + Three.js (3D 可视化) + ECharts (数据分析)
+*   **数据库**: PostgreSQL (关系数据) + TimescaleDB (时序数据/天气历史) + Redis (缓存/实时行情)
+*   **通信**: REST API (CRUD) + WebSocket (实时推送/天气预警)
+*   **测试**: Jest (单元/集成) + Supertest (API)
 
 ---
 
 ## 2. 功能列表
 
-本次进化筛选了 4 个核心方向，按优先级排序：
+基于现有架构分析，选择以下 4 个方向进行实施，以形成"经济-环境-历史-观测"的闭环：
 
 ### 2.1 【核心】星际贸易系统
-**价值**：建立文明间的强交互纽带，通过资源流动驱动政治格局变化。
-*   **F-1.1 贸易市场**：
-    *   文明可挂单出售/求购资源（矿石、能源、技术点）。
-    *   全局供需指数：根据买卖单量动态计算资源价格波动。
-*   **F-1.2 贸易路线**：
-    *   建立贸易协定后生成虚拟"航线"。
-    *   航线效率受距离、外交关系、宇宙天气影响。
-    *   商船事件：运输途中可能遭遇海盗或获得意外宝藏。
-*   **F-1.3 经济制裁**：
-    *   外交状态（战争/敌对）自动阻断贸易路线，影响资源获取。
+*   **贸易路线机制**: 文明间可建立贸易协定，根据距离和外交关系计算运输成本。
+*   **动态市场**: 引入供需模型，资源（矿石、能源、技术点）价格根据全服存量动态波动。
+*   **商队事件**: 贸易路线上的商队有概率遭遇海盗或宇宙天气，需护航或承担损失。
 
-### 2.2 【核心】文明遗迹系统
-**价值**：赋予历史事件实际的游戏价值，增加地图争夺点。
-*   **F-2.1 遗迹生成**：
-    *   监听重大事件（如"恒星坍缩"、"帝国分裂"），在事件坐标生成遗迹实例。
-    *   遗迹类型：先驱者工厂（产能加成）、战争坟场（军事加成）、知识库（科技加成）。
-*   **F-2.2 遗迹争夺**：
-    *   遗迹具有归属权，非归属文明可发起"遗迹争夺战"（模拟计算）。
-    *   占领遗迹需消耗军事力量，并提供持续的资源或科技产出。
+### 2.2 【环境】宇宙天气预报
+*   **全局天气系统**: 引入"资源风暴"（增产）、"黑暗波动"（视野受限）、"暗物质浪潮"（科技加速）。
+*   **周期性预报**: 系统每周期生成天气预测，文明需提前调整生产和防御策略。
+*   **环境影响**: 天气直接影响星区资源产出率、舰队移动速度和事件触发概率。
 
-### 2.3 【环境】宇宙天气预报
-**价值**：增加环境不确定性，影响贸易与探索策略。
-*   **F-3.1 天气周期**：
-    *   宇宙分为"平静期"、"资源风暴"、"暗物质浪潮"等阶段。
-    *   每 X 个模拟周期随机切换天气。
-*   **F-3.2 环境影响**：
-    *   **资源风暴**：采矿效率 +50%，但航线事故率 +30%。
-    *   **暗物质浪潮**：科研速度 +50%，但能量消耗翻倍。
-    *   **黑暗波动**：视野范围缩小，外交信任度自然衰减加速。
+### 2.3 【历史】文明遗迹系统
+*   **遗迹生成**: 重大历史事件（如文明毁灭、超新星爆发、史诗战役）在原址生成"遗迹"数据节点。
+*   **探索与争夺**: 文明可派遣考察队探索遗迹，解锁失落科技或获得资源；遗迹周围可能引发新的外交冲突。
+*   **历史回响**: 遗迹会周期性触发"回响事件"，重演历史片段，影响周边文明。
 
-### 2.4 【框架】宇宙赛季机制
-**价值**：提供长期运营目标，允许规则迭代与重置。
-*   **F-4.1 赛季定义**：
-    *   每赛季持续固定模拟时间（如 1000 个周期）。
-    *   赛季规则：可配置本赛季的资源倍率、事件频率、初始文明数量。
-*   **F-4.2 结算与归档**：
-    *   赛季末计算文明评分（综合国力、科技、遗迹占有量）。
-    *   生成"宇宙编年史"快照，存入 TimescaleDB。
-    *   赛季重置：保留文明核心基因，重置地图、资源和遗迹。
+### 2.4 【观测】观测台增强
+*   **宇宙演化时间线**: 可视化展示宇宙关键节点事件（文明兴衰、天气大变）。
+*   **势力范围热力图**: 基于文明控制的星区坐标，渲染动态势力热力图。
+*   **资源流动图**: 展示全宇宙贸易路线的流向和流量大小。
 
 ---
 
@@ -68,53 +47,40 @@
 
 ```text
 cyber-cosmos/
-├── src/
-│   ├── main.ts                     # 入口文件
-│   ├── app.module.ts               # 根模块
-│   ├── config/                     # 配置文件（数据库、常量）
-│   │
-│   ├── core/                       # 核心基础层
-│   │   ├── events/                 # 事件总线基础设施工
-│   │   ├── database/               # 数据库连接与ORM配置
-│   │   └── scheduler/              # 定时任务调度器
-│   │
-│   ├── modules/                    # 业务模块
-│   │   ├── civilization/           # [已有] 文明模块
-│   │   ├── diplomacy/              # [已有] 外交模块
-│   │   ├── narrative/              # [已有] 叙事引擎
-│   │   │
-│   │   ├── trade/                  # [新增] 星际贸易模块
-│   │   │   ├── trade.controller.ts
-│   │   │   ├── trade.service.ts
-│   │   │   ├── market.service.ts   # 市场供需算法
-│   │   │   ├── route.service.ts    # 航线管理
-│   │   │   └── entities/           # 贸易实体
-│   │   │
-│   │   ├── relics/                 # [新增] 文明遗迹模块
-│   │   │   ├── relic.controller.ts
-│   │   │   ├── relic.service.ts
-│   │   │   ├── spawner.listener.ts # 监听事件生成遗迹
-│   │   │   └── entities/
-│   │   │
-│   │   ├── weather/                # [新增] 宇宙天气模块
-│   │   │   ├── weather.service.ts
-│   │   │   ├── effects.service.ts  # 天气效果应用
-│   │   │   └── weather.gateway.ts  # WebSocket推送
-│   │   │
-│   │   └── season/                 # [新增] 赛季系统模块
-│   │       ├── season.manager.ts   # 赛季生命周期管理
-│   │       ├── ranking.service.ts  # 结算算法
-│   │       └── history.service.ts  # 编年史归档
-│   │
-│   └── gateway/                    # WebSocket 网关
-│       └── cosmos.gateway.ts       # 宇宙实时数据推送
-│
-├── test/                           # 测试目录
-│   ├── unit/
-│   └── e2e/
-├── docs/                           # API 文档
-├── SPEC.md                         # 本文档
-└── docker-compose.yml              # 容器编排
+├── apps/
+│   ├── server/                # 后端服务
+│   │   ├── src/
+│   │   │   ├── modules/
+│   │   │   │   ├── trade/     # 新增：贸易系统
+│   │   │   │   │   ├── dto/
+│   │   │   │   │   ├── trade.service.ts
+│   │   │   │   │   └── market.controller.ts
+│   │   │   │   ├── weather/   # 新增：宇宙天气
+│   │   │   │   │   ├── weather.scheduler.ts
+│   │   │   │   │   └── effects.service.ts
+│   │   │   │   ├── relic/     # 新增：遗迹系统
+│   │   │   │   │   ├── relic.generator.ts
+│   │   │   │   │   └── exploration.service.ts
+│   │   │   │   ├── timeline/  # 新增：时间线/观测
+│   │   │   │   └── ...        # 现有模块
+│   │   │   ├── entities/
+│   │   │   └── app.module.ts
+│   │   └── test/
+│   └── client/                # 前端应用
+│       ├── src/
+│       │   ├── components/
+│       │   │   ├── TradeView/ # 贸易界面
+│       │   │   ├── WeatherHUD/# 天气预警组件
+│       │   │   ├── RelicCard/ # 遗迹卡片
+│       │   │   └── Observatory/ # 增强版观测台
+│       │   ├── services/
+│       │   └── hooks/
+│       └── public/
+├── packages/
+│   └── shared-types/          # 共享类型定义
+├── docker-compose.yml
+├── SPEC.md
+└── README.md
 ```
 
 ---
@@ -122,70 +88,109 @@ cyber-cosmos/
 ## 4. 技术方案
 
 ### 4.1 后端架构设计
-采用**领域驱动设计 (DDD)** 思想，解耦各子系统。
 
-*   **贸易引擎**：
-    *   使用 Redis Sorted Set 实现高性能的买卖挂单队列。
-    *   引入"滑点"算法计算实际成交价，模拟真实市场波动。
-*   **遗迹生成**：
-    *   利用现有的 `EventEmitter2`，在 `NarrativeEngine` 抛出 `CriticalEvent` 时，`RelicModule` 监听并触发遗迹生成逻辑。
-*   **天气系统**：
-    *   使用有限状态机 (FSM) 管理天气状态流转。
-    *   通过 WebSocket 广播天气变更，前端无需轮询。
-*   **赛季管理**：
-    *   使用数据库事务处理赛季结算，确保数据一致性。
-    *   利用 TimescaleDB 存储历史快照，支持后续的数据分析图表。
+#### 4.1.1 星际贸易系统
+*   **数据模型**:
+    *   `TradeRoute`: { id, sourceCivId, targetCivId, resourceType, amount, status, expiresAt }
+    *   `MarketOrder`: { id, civId, type: 'BUY'|'SELL', resource, price, quantity }
+*   **核心逻辑**:
+    *   使用 Redis 存储实时行情 (`market:prices`)。
+    *   贸易结算采用异步队列处理，防止阻塞主线程。
+    *   引入 `Transaction` 锁机制，防止并发交易导致的数据不一致。
 
-### 4.2 数据库设计
+#### 4.1.2 宇宙天气系统
+*   **数据模型**:
+    *   `CosmicWeather`: { id, type: 'STORM'|'DARKNESS'|'MATTER', intensity, startTime, endTime, affectedSectors[] }
+*   **核心逻辑**:
+    *   使用 `@nestjs/schedule` 定时任务每小时生成新天气。
+    *   天气效果通过 `EffectManager` 动态修改文明属性（如 `productionRate *= 1.5`）。
+    *   WebSocket 广播天气预警：`event:weather_update`。
 
-**新增表结构：**
+#### 4.1.3 文明遗迹系统
+*   **数据模型**:
+    *   `Relic`: { id, location, type, historicalEventId, lootTable, durability }
+*   **核心逻辑**:
+    *   监听现有 `EventSystem`，当事件严重等级 > 8 时，触发 `RelicGenerator`。
+    *   遗迹探索逻辑类似随机数生成（RNG），结合文明科技等级计算成功率。
 
-1.  **trades (交易订单表)**
-    *   `id`, `civ_id`, `resource_type` (ORE/ENERGY/TECH), `amount`, `price`, `type` (BUY/SELL), `status`, `created_at`
-2.  **trade_routes (贸易路线表)**
-    *   `id`, `source_civ_id`, `target_civ_id`, `efficiency`, `status` (ACTIVE/BLOCKED), `last_tick_at`
-3.  **relics (遗迹表)**
-    *   `id`, `name`, `type`, `coordinates` (JSONB), `owner_id`, `bonus_config` (JSONB), `spawn_event_id`
-4.  **cosmos_weather (天气日志表)**
-    *   `id`, `weather_type`, `start_cycle`, `end_cycle`, `global_modifiers` (JSONB)
-5.  **seasons (赛季表)**
-    *   `id`, `season_number`, `rules_config` (JSONB), `start_at`, `end_at`, `leaderboard` (JSONB)
+### 4.2 前端架构设计
 
-### 4.3 接口设计
+#### 4.2.1 观测台增强
+*   **时间线**: 使用 `vis-timeline` 或自定义 SVG 组件，拉取 `TimelineService` 数据。
+*   **热力图**: 在 Three.js 场景中叠加 Canvas 图层，使用 `simpleheat` 库根据文明坐标渲染热力值。
+*   **数据可视化**: 使用 ECharts 展示资源价格走势（K线图）和文明发展对比（雷达图）。
 
-**REST API:**
+#### 4.2.2 实时交互
+*   监听 WebSocket 频道：
+    *   `trade_updates`: 实时刷新交易状态。
+    *   `weather_alert`: 屏幕顶部显示天气预警横幅。
+    *   `relic_discovered`: 弹出发现遗迹通知。
 
-*   `POST /api/trade/order`: 创建交易订单
-*   `GET /api/trade/market`: 获取当前市场行情 (K线图数据)
-*   `POST /api/trade/route`: 建立贸易路线
-*   `GET /api/relics`: 获取全宇宙遗迹分布
-*   `POST /api/relics/:id/capture`: 尝试占领遗迹
-*   `GET /api/weather`: 获取当前及预测天气
-*   `GET /api/season/info`: 获取当前赛季信息与排名
+### 4.3 数据库设计
 
-**WebSocket Events:**
+新增表结构概览：
 
-*   `weather_updated`: 推送新天气及其全局影响。
-*   `market_tick`: 推送每周期资源价格变动。
-*   `relic_discovered`: 推送新遗迹发现通知。
-*   `season_end`: 推送赛季结算倒计时与结果。
+```sql
+-- 贸易路线
+CREATE TABLE trade_routes (
+    id UUID PRIMARY KEY,
+    source_civ_id UUID REFERENCES civilizations(id),
+    target_civ_id UUID REFERENCES civilizations(id),
+    resource_type VARCHAR(50),
+    rate_per_tick DECIMAL(10, 2),
+    status VARCHAR(20), -- ACTIVE, SUSPENDED, ENDED
+    created_at TIMESTAMP
+);
+
+-- 宇宙天气历史 (使用 TimescaleDB 扩展)
+CREATE TABLE weather_history (
+    time TIMESTAMPTZ NOT NULL,
+    weather_type VARCHAR(50),
+    intensity DECIMAL(3, 2),
+    affected_sectors JSONB
+);
+SELECT create_hypertable('weather_history', 'time');
+
+-- 遗迹
+CREATE TABLE relics (
+    id UUID PRIMARY KEY,
+    name VARCHAR(100),
+    description TEXT,
+    location_x INT,
+    location_y INT,
+    source_event_id UUID,
+    bonus_data JSONB,
+    expires_at TIMESTAMP
+);
+```
+
+### 4.4 接口设计
+
+| 方法 | 路径 | 描述 |
+| :--- | :--- | :--- |
+| POST | `/api/trade/routes` | 建立新贸易路线 |
+| GET | `/api/trade/market` | 获取当前市场行情 |
+| GET | `/api/weather/forecast` | 获取未来 3 个周期的天气预报 |
+| GET | `/api/relics` | 获取当前可见的遗迹列表 |
+| POST | `/api/relics/:id/explore` | 派遣舰队探索遗迹 |
+| GET | `/api/observatory/timeline` | 获取演化时间线数据 |
+| GET | `/api/observatory/heatmap` | 获取势力范围热力数据 |
 
 ---
 
 ## 5. 测试方案
 
 ### 5.1 单元测试
-*   **贸易逻辑**：验证供需算法正确性，测试极端值（如 0 价格或巨额订单）处理。
-*   **天气效果**：验证不同天气对文明属性的计算修正是否正确叠加。
-*   **遗迹生成**：Mock 重大事件，验证遗迹是否在正确坐标生成并携带正确属性。
+*   **贸易逻辑**: 测试供需算法，确保价格波动符合预期（需求增 -> 价格涨）。
+*   **天气效果**: 验证不同天气类型对资源产出的修正系数正确性。
+*   **遗迹生成**: Mock 重大事件，验证遗迹是否正确生成及坐标是否正确。
 
 ### 5.2 集成测试
-*   **贸易闭环**：模拟两个文明，A 下单卖出，B 下单买入，验证资源扣除与增加、交易记录生成。
-*   **赛季流转**：模拟时间推进至赛季末，验证结算逻辑是否触发，数据库是否正确归档。
+*   **贸易流程**: 模拟两个文明建立联盟 -> 开通路线 -> 资源扣除与增加 -> 天气影响路线中断的全流程。
+*   **WebSocket 推送**: 验证天气变化时，客户端是否能收到广播消息。
 
-### 5.3 性能测试
-*   使用 Artillery 模拟 1000 个并发贸易请求，验证 Redis 缓存层与数据库写入性能。
-*   模拟 10000 个遗迹点，测试空间查询性能（需验证是否需要引入 PostGIS）。
+### 5.3 压力测试
+*   使用 Artillery 模拟 1000+ 并发贸易请求，验证 Redis 缓存击穿保护和数据库事务死锁处理。
 
 ---
 
@@ -194,7 +199,7 @@ cyber-cosmos/
 ### 6.1 环境要求
 *   Node.js >= 18
 *   Docker & Docker Compose
-*   PostgreSQL 15 + TimescaleDB 扩展
+*   PostgreSQL 14 + TimescaleDB 扩展
 
 ### 6.2 本地开发启动
 ```bash
@@ -207,17 +212,15 @@ docker-compose up -d postgres redis
 # 3. 运行数据库迁移
 npm run migration:run
 
-# 4. 启动开发服务器
+# 4. 启动后端开发服务
 npm run start:dev
+
+# 5. 启动前端
+cd apps/client && npm run dev
 ```
 
 ### 6.3 生产部署
-*   使用 Dockerfile 构建镜像。
-*   通过 CI/CD 流水线自动部署至 Kubernetes 集群。
-*   配置 Nginx 反向代理，开启 WebSocket 长连接支持。
-*   启用 TimescaleDB 自动压缩策略，归档历史赛季数据。
-
-### 6.4 配置项
-*   `SEASON_DURATION_CYCLES`: 赛季持续周期数 (默认: 1000)
-*   `MARKET_VOLATILITY`: 市场波动系数 (默认: 0.05)
-*   `RELIC_SPAWN_RATE`: 遗迹生成概率 (默认: 0.1)
+*   使用 Dockerfile 构建多阶段镜像。
+*   后端服务水平扩展，通过 Nginx 负载均衡。
+*   TimescaleDB 用于存储历史天气和贸易数据，便于后续大数据分析。
+*   配置 Prometheus + Grafana 监控贸易吞吐量和天气事件延迟。

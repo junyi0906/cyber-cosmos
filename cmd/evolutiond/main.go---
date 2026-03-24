@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	log.Println("Cyber-Cosmos Evolution Daemon starting...")
+	log.Println("Starting Evolution Daemon...")
 
 	// Setup signal handling
 	sigChan := make(chan os.Signal, 1)
@@ -22,18 +22,19 @@ func main() {
 	// Evolution cycle counter
 	cycle := 0
 
-	log.Println("Evolution daemon running...")
-
-	for {
-		select {
-		case <-ticker.C:
+	// Main evolution loop
+	go func() {
+		for range ticker.C {
 			cycle++
 			runEvolutionCycle(cycle)
-		case <-sigChan:
-			log.Println("Shutting down evolution daemon...")
-			return
 		}
-	}
+	}()
+
+	log.Println("Evolution Daemon running...")
+
+	// Wait for shutdown signal
+	<-sigChan
+	log.Println("Shutting down Evolution Daemon...")
 }
 
 func runEvolutionCycle(cycle int) {
@@ -41,10 +42,10 @@ func runEvolutionCycle(cycle int) {
 	// - Process civilization actions
 	// - Update trade routes
 	// - Generate events
-	// - Update cosmic weather
+	// - Update universe weather
 	// - Process relic interactions
 
 	if cycle%100 == 0 {
-		log.Printf("Evolution cycle: %d\n", cycle)
+		log.Printf("Evolution cycle: %d", cycle)
 	}
 }

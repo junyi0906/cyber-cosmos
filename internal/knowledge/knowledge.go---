@@ -1,0 +1,126 @@
+package knowledge
+
+import (
+	"context"
+	"sync"
+)
+
+// KnowledgeBase manages the storage and retrieval of knowledge
+type KnowledgeBase struct {
+	entries  map[string]*Entry
+	indices  map[string][]string
+	mu       sync.RWMutex
+}
+
+// Entry represents a knowledge entry
+type Entry struct {
+	ID          string
+	Type        EntryType
+	Content     string
+	Metadata    map[string]interface{}
+	Embedding   []float64
+	CreatedAt   int64
+	UpdatedAt   int64
+}
+
+// EntryType defines the type of knowledge entry
+type EntryType string
+
+const (
+	EntryTypeEvent      EntryType = "event"
+	EntryTypeRelic      EntryType = "relic"
+	EntryTypeChronicle  EntryType = "chronicle"
+	EntryTypeTechnology EntryType = "technology"
+)
+
+// NewKnowledgeBase creates a new knowledge base instance
+func NewKnowledgeBase() *KnowledgeBase {
+	return &KnowledgeBase{
+		entries: make(map[string]*Entry),
+		indices: make(map[string][]string),
+	}
+}
+
+// Store saves a knowledge entry
+func (kb *KnowledgeBase) Store(ctx context.Context, entry *Entry) error {
+	kb.mu.Lock()
+	defer kb.mu.Unlock()
+
+	entry.UpdatedAt = currentTime()
+	if _, exists := kb.entries[entry.ID]; !exists {
+		entry.CreatedAt = entry.UpdatedAt
+	}
+
+	kb.entries[entry.ID] = entry
+
+	// Update indices
+	kb.indexEntry(entry)
+
+	return nil
+}
+
+// Retrieve fetches a knowledge entry by ID
+func (kb *KnowledgeBase) Retrieve(ctx context.Context, id string) (*Entry, error) {
+	kb.mu.RLock()
+	defer kb.mu.RUnlock()
+
+	entry, ok := kb.entries[id]
+	if !ok {
+		return nil, ErrEntryNotFound
+	}
+
+	return entry, nil
+}
+
+// Search finds entries matching a query
+func (kb *KnowledgeBase) Search(ctx context.Context, query string, limit int) ([]*Entry, error) {
+	kb.mu.RLock()
+	defer kb.mu.RUnlock()
+
+	// TODO: Implement semantic search using embeddings
+	// For now, return empty result
+	return []*Entry{}, nil
+}
+
+// QueryByType retrieves all entries of a specific type
+func (kb *KnowledgeBase) QueryByType(ctx context.Context, entryType EntryType) ([]*Entry, error) {
+	kb.mu.RLock()
+	defer kb.mu.RUnlock()
+
+	ids, ok := kb.indices[string(entryType)]
+	if !ok {
+		return []*Entry{}, nil
+	}
+
+	entries := make([]*Entry, 0, len(ids))
+	for _, id := range ids {
+		if entry, ok := kb.entries[id]; ok {
+			entries = append(entries, entry)
+		}
+	}
+
+	return entries, nil
+}
+
+func (kb *KnowledgeBase) indexEntry(entry *Entry) {
+	typeKey := string(entry.Type)
+	kb.indices[typeKey] = append(kb.indices[typeKey], entry.ID)
+}
+
+func currentTime() int64 {
+	return 0 // TODO: Use actual timestamp
+}
+
+// Errors
+var (
+	ErrEntryNotFound = &KnowledgeError{Message: "entry not found"}
+)
+
+// KnowledgeError represents a knowledge base error
+type KnowledgeError struct {
+	Message string
+}
+
+func (e *KnowledgeError) Error() string {
+	return e.Message
+}

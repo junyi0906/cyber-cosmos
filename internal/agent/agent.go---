@@ -31,7 +31,7 @@ const (
 	StatusActive   AgentStatus = "active"
 	StatusIdle     AgentStatus = "idle"
 	StatusDormant  AgentStatus = "dormant"
-	StatusDefeated AgentStatus = "defeated"
+	StatusDestroyed AgentStatus = "destroyed"
 )
 
 // NewAgent creates a new agent instance
@@ -45,46 +45,25 @@ func NewAgent(id, name string, agentType AgentType) *Agent {
 	}
 }
 
-// Act performs an action based on current state
-func (a *Agent) Act(ctx context.Context, state map[string]interface{}) (map[string]interface{}, error) {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
+// Execute performs an action based on the agent's decision
+func (a *Agent) Execute(ctx context.Context, action string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 
-	// TODO: Implement agent decision making
-	// - Evaluate current state
-	// - Generate possible actions
-	// - Select optimal action
-	// - Return action result
-
-	result := make(map[string]interface{})
-	result["agent_id"] = a.ID
-	result["action"] = "idle"
-
-	return result, nil
+	// TODO: Implement action execution logic
+	return nil
 }
 
-// UpdateStatus changes the agent's status
+// UpdateStatus changes the agent's current status
 func (a *Agent) UpdateStatus(status AgentStatus) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.Status = status
 }
 
-// AddCapability adds a new capability to the agent
-func (a *Agent) AddCapability(capability string) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.Capabilities = append(a.Capabilities, capability)
-}
-
-// HasCapability checks if agent has a specific capability
-func (a *Agent) HasCapability(capability string) bool {
+// GetStatus returns the current status of the agent
+func (a *Agent) GetStatus() AgentStatus {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
-	for _, c := range a.Capabilities {
-		if c == capability {
-			return true
-		}
-	}
-	return false
+	return a.Status
 }

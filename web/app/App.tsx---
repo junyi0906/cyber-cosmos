@@ -1,0 +1,67 @@
+import React, { useEffect, useState } from 'react';
+import UniverseMap from '../components/UniverseMap';
+import TradePanel from '../components/TradePanel';
+import WeatherDisplay from '../components/WeatherDisplay';
+
+interface UniverseState {
+  cycle: number;
+  weather: string;
+  civilizations: Civilization[];
+  tradeRoutes: TradeRoute[];
+}
+
+interface Civilization {
+  id: string;
+  name: string;
+  position: { x: number; y: number };
+  status: string;
+}
+
+interface TradeRoute {
+  id: string;
+  from: string;
+  to: string;
+  resource: string;
+  amount: number;
+}
+
+const App: React.FC = () => {
+  const [state, setState] = useState<UniverseState | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // TODO: Connect to WebSocket for real-time updates
+    fetchInitialState();
+  }, []);
+
+  const fetchInitialState = async () => {
+    try {
+      // TODO: Implement actual API call
+      setState({
+        cycle: 0,
+        weather: 'calm',
+        civilizations: [],
+        tradeRoutes: [],
+      });
+    } catch (error) {
+      console.error('Failed to fetch initial state:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return <div className="loading">Loading Cyber-Cosmos...</div>;
+  }
+
+  return (
+    <div className="app-container">
+      <header className="app-header">
+        <h1>Cyber-Cosmos: Era of Trade & Relics</h1>
+        <WeatherDisplay weather={state?.weather || 'calm'} />
+      </header>
+      
+      <main className="app-main">
+        <div className="universe-view">
+          <UniverseMap 
+            civilizations={state?.civilizations
