@@ -1,0 +1,84 @@
+import {
+  ResourceType,
+  RESOURCE_CONFIGS,
+  getResourceConfig,
+  getAllResourceTypes,
+  getResourceBasePrice,
+} from './resources.enum';
+
+describe('Resources Enum', () => {
+  describe('ResourceType', () => {
+    it('should define ORE resource type', () => {
+      expect(ResourceType.ORE).toBe('ore');
+    });
+
+    it('should define ENERGY resource type', () => {
+      expect(ResourceType.ENERGY).toBe('energy');
+    });
+
+    it('should define TECH_POINT resource type', () => {
+      expect(ResourceType.TECH_POINT).toBe('tech_point');
+    });
+
+    it('should have exactly 3 resource types', () => {
+      const types = Object.values(ResourceType);
+      expect(types).toHaveLength(3);
+    });
+  });
+
+  describe('RESOURCE_CONFIGS', () => {
+    it('should have config for ORE with base price 100', () => {
+      expect(RESOURCE_CONFIGS[ResourceType.ORE].basePrice).toBe(100);
+    });
+
+    it('should have config for ENERGY with base price 150', () => {
+      expect(RESOURCE_CONFIGS[ResourceType.ENERGY].basePrice).toBe(150);
+    });
+
+    it('should have config for TECH_POINT with base price 500', () => {
+      expect(RESOURCE_CONFIGS[ResourceType.TECH_POINT].basePrice).toBe(500);
+    });
+
+    it('should have all required properties for each resource', () => {
+      const requiredProps = ['basePrice', 'baseProduction', 'baseConsumption', 'displayName', 'description'];
+      
+      Object.values(ResourceType).forEach((type) => {
+        const config = RESOURCE_CONFIGS[type];
+        requiredProps.forEach((prop) => {
+          expect(config).toHaveProperty(prop);
+        });
+      });
+    });
+  });
+
+  describe('getResourceConfig', () => {
+    it('should return config for valid resource type', () => {
+      const config = getResourceConfig(ResourceType.ORE);
+      expect(config).toBeDefined();
+      expect(config.basePrice).toBe(100);
+    });
+  });
+
+  describe('getAllResourceTypes', () => {
+    it('should return array of all resource types', () => {
+      const types = getAllResourceTypes();
+      expect(types).toContain(ResourceType.ORE);
+      expect(types).toContain(ResourceType.ENERGY);
+      expect(types).toContain(ResourceType.TECH_POINT);
+    });
+  });
+
+  describe('getResourceBasePrice', () => {
+    it('should return correct base price for ORE', () => {
+      expect(getResourceBasePrice(ResourceType.ORE)).toBe(100);
+    });
+
+    it('should return correct base price for ENERGY', () => {
+      expect(getResourceBasePrice(ResourceType.ENERGY)).toBe(150);
+    });
+
+    it('should return correct base price for TECH_POINT', () => {
+      expect(getResourceBasePrice(ResourceType.TECH_POINT)).toBe(500);
+    });
+  });
+});

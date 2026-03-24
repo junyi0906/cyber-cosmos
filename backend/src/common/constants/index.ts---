@@ -1,0 +1,24 @@
+/**
+ * 常量模块统一导出
+ * 集中管理所有枚举和常量定义
+ */
+
+// 资源相关
+export {
+  ResourceType,
+  ResourceConfig,
+  RESOURCE_CONFIGS,
+  getResourceConfig,
+  getAllResourceTypes,
+  getResourceBasePrice,
+} from './resources.enum';
+
+// 贸易相关
+export {
+  TradeStatus,
+  RouteStabilityThresholds,
+  TradeConfig,
+  MarketConfig,
+  isRouteOperational,
+  calculateRouteStatus,
+} from './trade.constants';

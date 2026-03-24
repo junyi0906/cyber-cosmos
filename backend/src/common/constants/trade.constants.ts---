@@ -1,0 +1,84 @@
+/**
+ * 贸易状态枚举
+ * 定义贸易路线的可能状态
+ */
+export enum TradeStatus {
+  /** 活跃状态 - 贸易正常进行 */
+  ACTIVE = 'active',
+  /** 暂停状态 - 贸易暂时中断 */
+  SUSPENDED = 'suspended',
+  /** 关闭状态 - 贸易路线已终止 */
+  CLOSED = 'closed',
+}
+
+/**
+ * 贸易路线稳定性阈值配置
+ */
+export const RouteStabilityThresholds = {
+  /** 最低稳定性 - 低于此值贸易路线将暂停 */
+  MIN_STABILITY: 0.3,
+  /** 警告稳定性 - 低于此值将发出警告 */
+  WARNING_STABILITY: 0.5,
+  /** 最高稳定性 - 稳定性上限 */
+  MAX_STABILITY: 1.0,
+  /** 稳定性恢复速率（每周期） */
+  RECOVERY_RATE: 0.05,
+  /** 稳定性衰减速率（每周期，受距离影响） */
+  DECAY_RATE_BASE: 0.01,
+} as const;
+
+/**
+ * 贸易配置常量
+ */
+export const TradeConfig = {
+  /** 最大贸易路线数量（每文明） */
+  MAX_ROUTES_PER_CIVILIZATION: 10,
+  /** 单次贸易最小数量 */
+  MIN_TRADE_AMOUNT: 1,
+  /** 单次贸易最大数量 */
+  MAX_TRADE_AMOUNT: 10000,
+  /** 贸易税率基础值 */
+  BASE_TAX_RATE: 0.05,
+  /** 外交关系对稳定性的影响系数 */
+  DIPLOMACY_STABILITY_MODIFIER: 0.2,
+  /** 距离对稳定性的影响系数 */
+  DISTANCE_STABILITY_MODIFIER: 0.1,
+} as const;
+
+/**
+ * 市场配置常量
+ */
+export const MarketConfig = {
+  /** 价格波动上限（相对于基础价格的倍数） */
+  PRICE_UPPER_LIMIT: 3.0,
+  /** 价格波动下限（相对于基础价格的倍数） */
+  PRICE_LOWER_LIMIT: 0.3,
+  /** 供需影响系数 */
+  SUPPLY_DEMAND_FACTOR: 0.1,
+  /** 市场更新间隔（毫秒） */
+  MARKET_UPDATE_INTERVAL: 60000,
+} as const;
+
+/**
+ * 检查贸易路线是否可运营
+ * @param stability 当前稳定性
+ * @returns 是否可运营
+ */
+export function isRouteOperational(stability: number): boolean {
+  return stability >= RouteStabilityThresholds.MIN_STABILITY;
+}
+
+/**
+ * 计算贸易路线状态
+ * @param stability 当前稳定性
+ * @returns 贸易状态
+ */
+export function calculateRouteStatus(stability: number): TradeStatus {
+  if (stability < RouteStabilityThresholds.MIN_STABILITY) {
+    return TradeStatus.SUSPENDED;
+  }
+  if (stability < RouteStabilityThresholds.WARNING_STABILITY) {
+    return TradeStatus.ACTIVE; // 活跃但可能需要警告
+  }
+  return TradeStatus.ACTIVE;
+}

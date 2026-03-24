@@ -1,0 +1,111 @@
+import {
+  TradeStatus,
+  RouteStabilityThresholds,
+  TradeConfig,
+  MarketConfig,
+  isRouteOperational,
+  calculateRouteStatus,
+} from './trade.constants';
+
+describe('Trade Constants', () => {
+  describe('TradeStatus', () => {
+    it('should define ACTIVE status', () => {
+      expect(TradeStatus.ACTIVE).toBe('active');
+    });
+
+    it('should define SUSPENDED status', () => {
+      expect(TradeStatus.SUSPENDED).toBe('suspended');
+    });
+
+    it('should define CLOSED status', () => {
+      expect(TradeStatus.CLOSED).toBe('closed');
+    });
+
+    it('should have exactly 3 trade statuses', () => {
+      const statuses = Object.values(TradeStatus);
+      expect(statuses).toHaveLength(3);
+    });
+  });
+
+  describe('RouteStabilityThresholds', () => {
+    it('should have MIN_STABILITY of 0.3', () => {
+      expect(RouteStabilityThresholds.MIN_STABILITY).toBe(0.3);
+    });
+
+    it('should have WARNING_STABILITY of 0.5', () => {
+      expect(RouteStabilityThresholds.WARNING_STABILITY).toBe(0.5);
+    });
+
+    it('should have MAX_STABILITY of 1.0', () => {
+      expect(RouteStabilityThresholds.MAX_STABILITY).toBe(1.0);
+    });
+
+    it('should have valid threshold order', () => {
+      expect(RouteStabilityThresholds.MIN_STABILITY).toBeLessThan(RouteStabilityThresholds.WARNING_STABILITY);
+      expect(RouteStabilityThresholds.WARNING_STABILITY).toBeLessThan(RouteStabilityThresholds.MAX_STABILITY);
+    });
+  });
+
+  describe('TradeConfig', () => {
+    it('should have MAX_ROUTES_PER_CIVILIZATION defined', () => {
+      expect(TradeConfig.MAX_ROUTES_PER_CIVILIZATION).toBeDefined();
+      expect(TradeConfig.MAX_ROUTES_PER_CIVILIZATION).toBeGreaterThan(0);
+    });
+
+    it('should have valid trade amount limits', () => {
+      expect(TradeConfig.MIN_TRADE_AMOUNT).toBeLessThanOrEqual(TradeConfig.MAX_TRADE_AMOUNT);
+    });
+
+    it('should have BASE_TAX_RATE between 0 and 1', () => {
+      expect(TradeConfig.BASE_TAX_RATE).toBeGreaterThanOrEqual(0);
+      expect(TradeConfig.BASE_TAX_RATE).toBeLessThanOrEqual(1);
+    });
+  });
+
+  describe('MarketConfig', () => {
+    it('should have valid price limits', () => {
+      expect(MarketConfig.PRICE_LOWER_LIMIT).toBeLessThan(1);
+      expect(MarketConfig.PRICE_UPPER_LIMIT).toBeGreaterThan(1);
+    });
+
+    it('should have positive supply demand factor', () => {
+      expect(MarketConfig.SUPPLY_DEMAND_FACTOR).toBeGreaterThan(0);
+    });
+  });
+
+  describe('isRouteOperational', () => {
+    it('should return true for stability above MIN_STABILITY', () => {
+      expect(isRouteOperational(0.5)).toBe(true);
+    });
+
+    it('should return true for stability equal to MIN_STABILITY', () => {
+      expect(isRouteOperational(0.3)).toBe(true);
+    });
+
+    it('should return false for stability below MIN_STABILITY', () => {
+      expect(isRouteOperational(0.2)).toBe(false);
+    });
+
+    it('should return false for zero stability', () => {
+      expect(isRouteOperational(0)).toBe(false);
+    });
+  });
+
+  describe('calculateRouteStatus', () => {
+    it('should return SUSPENDED for stability below MIN_STABILITY', () => {
+      expect(calculateRouteStatus(0.2)).toBe(TradeStatus.SUSPENDED);
+    });
+
+    it('should return ACTIVE for stability at MIN_STABILITY', () => {
+      expect(calculateRouteStatus(0.3)).toBe(TradeStatus.ACTIVE);
+    });
+
+    it('should return ACTIVE for stability above WARNING_STABILITY', () => {
+      expect(calculateRouteStatus(0.7)).toBe(TradeStatus.ACTIVE);
+    });
+
+    it('should return ACTIVE for stability between MIN and WARNING', () => {
+      expect(calculateRouteStatus(0.4)).toBe(TradeStatus.ACTIVE);
+    });
+  });
+});

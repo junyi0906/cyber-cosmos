@@ -1,0 +1,83 @@
+/**
+ * 资源类型枚举
+ * 定义宇宙中三种基础资源类型
+ */
+export enum ResourceType {
+  /** 矿石资源 - 基础建设材料 */
+  ORE = 'ore',
+  /** 能源资源 - 驱动文明运转 */
+  ENERGY = 'energy',
+  /** 技术点 - 科技研发资源 */
+  TECH_POINT = 'tech_point',
+}
+
+/**
+ * 资源配置接口
+ * 定义资源的基础属性
+ */
+export interface ResourceConfig {
+  /** 基础价格（信用点） */
+  basePrice: number;
+  /** 基础产出速率（单位/周期） */
+  baseProduction: number;
+  /** 基础消耗速率（单位/周期） */
+  baseConsumption: number;
+  /** 资源显示名称 */
+  displayName: string;
+  /** 资源描述 */
+  description: string;
+}
+
+/**
+ * 资源配置常量映射
+ * 各资源的基础价格与属性配置
+ */
+export const RESOURCE_CONFIGS: Record<ResourceType, ResourceConfig> = {
+  [ResourceType.ORE]: {
+    basePrice: 100,
+    baseProduction: 10,
+    baseConsumption: 5,
+    displayName: '矿石',
+    description: '基础建设材料，用于建造和维修设施',
+  },
+  [ResourceType.ENERGY]: {
+    basePrice: 150,
+    baseProduction: 8,
+    baseConsumption: 6,
+    displayName: '能源',
+    description: '驱动文明运转的核心资源，维持设施运作',
+  },
+  [ResourceType.TECH_POINT]: {
+    basePrice: 500,
+    baseProduction: 2,
+    baseConsumption: 1,
+    displayName: '技术点',
+    description: '科技研发资源，用于解锁新技术和升级',
+  },
+};
+
+/**
+ * 获取资源配置
+ * @param resourceType 资源类型
+ * @returns 资源配置对象
+ */
+export function getResourceConfig(resourceType: ResourceType): ResourceConfig {
+  return RESOURCE_CONFIGS[resourceType];
+}
+
+/**
+ * 获取所有资源类型列表
+ * @returns 资源类型数组
+ */
+export function getAllResourceTypes(): ResourceType[] {
+  return Object.values(ResourceType);
+}
+
+/**
+ * 获取资源基础价格
+ * @param resourceType 资源类型
+ * @returns 基础价格
+ */
+export function getResourceBasePrice(resourceType: ResourceType): number {
+  return RESOURCE_CONFIGS[resourceType].basePrice;
+}
