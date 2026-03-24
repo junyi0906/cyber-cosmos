@@ -583,7 +583,7 @@
       ],
       "passes": false,
       "last_attempt": null,
-      "notes": "依赖所有核心功能模块"
+      "notes": "未解析到代码文件"
     },
     {
       "id": "feat-025",
