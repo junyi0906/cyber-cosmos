@@ -1,0 +1,8 @@
+import { Module } from '@nestjs/common';
+import { CivilizationService } from './civilization.service';
+
+@Module({
+  providers: [CivilizationService],
+  exports: [CivilizationService],
+})
+export class CivilizationModule {}
