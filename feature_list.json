@@ -480,7 +480,7 @@
         "feat-015"
       ],
       "passes": true,
-      "last_attempt": "2026-03-24T19:16:58.776328",
+      "last_attempt": "2026-03-24T19:17:14.882220",
       "notes": "依赖 REST API 和 WebSocket",
       "retry_count": 0
     },
