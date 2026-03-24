@@ -1,0 +1,60 @@
+export enum WeatherType {
+  STORM = 'STORM',
+  DARKNESS = 'DARKNESS',
+  MATTER = 'MATTER',
+  CALM = 'CALM',
+}
+
+export interface WeatherEffectModifiers {
+  productionRate?: number;
+  visionRange?: number;
+  techSpeed?: number;
+  energyConsumption?: number;
+  tradeAccidentRate?: number;
+  diplomacyTrustDecay?: number;
+}
+
+export interface WeatherEffect {
+  type: WeatherType;
+  name: string;
+  description: string;
+  modifiers: WeatherEffectModifiers;
+  duration: number;
+}
+
+export interface CivilizationAttributes {
+  id: string;
+  name: string;
+  productionRate: number;
+  visionRange: number;
+  techSpeed: number;
+  energyConsumption: number;
+  baseProductionRate: number;
+  baseVisionRange: number;
+  baseTechSpeed: number;
+  baseEnergyConsumption: number;
+  activeWeatherEffects: Map<WeatherType, ActiveWeatherEffect>;
+}
+
+export interface ActiveWeatherEffect {
+  type: WeatherType;
+  appliedAt: number;
+  duration: number;
+  sectorId: string;
+}
+
+export interface Sector {
+  id: string;
+  name: string;
+  coordinates: { x: number; y: number; z: number };
+  weatherType: WeatherType | null;
+  weatherStartTime: number | null;
+  affectedCivilizationIds: string[];
+}
+
+export interface WeatherState {
+  currentWeather: WeatherType;
+  globalModifiers: WeatherEffectModifiers;
+  affectedSectors: Map<string, Sector>;
+  activeEffects: Map<string, ActiveWeatherEffect[]>;
+}
