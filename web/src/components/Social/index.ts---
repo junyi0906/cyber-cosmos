@@ -4,10 +4,9 @@ export { BroadcastPanel } from './BroadcastPanel';
 export { TreatyList } from './TreatyList';
 export { VotingModal } from './VotingModal';
 export type { 
-  Civilization, 
   DiplomacyRelation, 
   Alliance, 
-  Treaty, 
-  Broadcast,
+  Broadcast, 
+  Treaty,
   Vote 
 } from './types';

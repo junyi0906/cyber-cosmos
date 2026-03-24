@@ -1,0 +1,449 @@
+import React, { useMemo, useState } from 'react';
+import type { DiplomacyRelation, Civilization, RelationType } from './types';
+
+interface DiplomacyPanelProps {
+  relations: DiplomacyRelation[];
+  civilizations: Civilization[];
+  onSelectRelation?: (relation: DiplomacyRelation) => void;
+  onProposeAction?: (civId: string, action: string) => void;
+}
+
+const RELATION_COLORS: Record<RelationType, string> = {
+  neutral: '#6b7280',
+  friendly: '#22c55e',
+  allied: '#3b82f6',
+  hostile: '#f97316',
+  at_war: '#ef4444',
+  truce: '#a855f7',
+  trade_agreement: '#14b8a6',
+  non_aggression_pact: '#8b5cf6',
+};
+
+const RELATION_LABELS: Record<RelationType, string> = {
+  neutral: '中立',
+  friendly: '友好',
+  allied: '同盟',
+  hostile: '敌对',
+  at_war: '交战',
+  truce: '休战',
+  trade_agreement: '贸易协定',
+  non_aggression_pact: '互不侵犯',
+};
+
+export const DiplomacyPanel: React.FC<DiplomacyPanelProps> = ({
+  relations,
+  civilizations,
+  onSelectRelation,
+  onProposeAction,
+}) => {
+  const [selectedCiv, setSelectedCiv] = useState<string | null>(null);
+  const [hoveredCell, setHoveredCell] = useState<{ row: string; col: string } | null>(null);
+  const [filter, setFilter] = useState<RelationType | 'all'>('all');
+
+  const aliveCivs = useMemo(() => 
+    civilizations.filter(c => c.isAlive),
+    [civilizations]
+  );
+
+  const relationMatrix = useMemo(() => {
+    const matrix: Map<string, Map<string, DiplomacyRelation | null>> = new Map();
+    
+    aliveCivs.forEach(civ => {
+      matrix.set(civ.id, new Map());
+      aliveCivs.forEach(other => {
+        if (civ.id === other.id) {
+          matrix.get(civ.id)!.set(other.id, null);
+        } else {
+          const relation = relations.find(
+            r => (r.sourceCivId === civ.id && r.targetCivId === other.id) ||
+                 (r.sourceCivId === other.id && r.targetCivId === civ.id)
+          ) || null;
+          matrix.get(civ.id)!.set(other.id, relation);
+        }
+      });
+    });
+    
+    return matrix;
+  }, [aliveCivs, relations]);
+
+  const getRelation = (civ1Id: string, civ2Id: string): DiplomacyRelation | null => {
+    return relationMatrix.get(civ1Id)?.get(civ2Id) || null;
+  };
+
+  const filteredRelations = useMemo(() => {
+    if (filter === 'all') return relations;
+    return relations.filter(r => r.relationType === filter);
+  }, [relations, filter]);
+
+  const getCivById = (id: string) => civilizations.find(c => c.id === id);
+
+  const handleCellClick = (row: string, col: string) => {
+    const relation = getRelation(row, col);
+    if (relation && onSelectRelation) {
+      onSelectRelation(relation);
+    }
+    setSelectedCiv(row);
+  };
+
+  const handleProposeAction = (civId: string, action: string) => {
+    if (onProposeAction) {
+      onProposeAction(civId, action);
+    }
+  };
+
+  return (
+    <div className="diplomacy-panel">
+      <div className="panel-header">
+        <h3>外交关系矩阵</h3>
+        <div className="filter-controls">
+          <select 
+            value={filter} 
+            onChange={(e) => setFilter(e.target.value as RelationType | 'all')}
+            className="relation-filter"
+          >
+            <option value="all">全部关系</option>
+            {Object.entries(RELATION_LABELS).map(([key, label]) => (
+              <option key={key} value={key}>{label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="diplomacy-matrix-container">
+        <div className="matrix-scroll">
+          <table className="diplomacy-matrix">
+            <thead>
+              <tr>
+                <th className="corner-cell"></th>
+                {aliveCivs.map(civ => (
+                  <th 
+                    key={civ.id} 
+                    className="civ-header"
+                    style={{ backgroundColor: civ.color + '20' }}
+                  >
+                    <div className="civ-name-vertical">
+                      {civ.name}
+                    </div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {aliveCivs.map(rowCiv => (
+                <tr key={rowCiv.id}>
+                  <td 
+                    className="civ-label"
+                    style={{ backgroundColor: rowCiv.color + '20' }}
+                  >
+                    {rowCiv.name}
+                  </td>
+                  {aliveCivs.map(colCiv => {
+                    if (rowCiv.id === colCiv.id) {
+                      return (
+                        <td 
+                          key={colCiv.id} 
+                          className="matrix-cell self-cell"
+                          style={{ backgroundColor: rowCiv.color + '40' }}
+                        >
+                          —
+                        </td>
+                      );
+                    }
+                    
+                    const relation = getRelation(rowCiv.id, colCiv.id);
+                    const isHovered = hoveredCell?.row === rowCiv.id && 
+                                     hoveredCell?.col === colCiv.id;
+                    const isSelected = selectedCiv === rowCiv.id;
+                    
+                    return (
+                      <td
+                        key={colCiv.id}
+                        className={`matrix-cell ${isHovered ? 'hovered' : ''} ${isSelected ? 'selected' : ''}`}
+                        style={{
+                          backgroundColor: relation 
+                            ? RELATION_COLORS[relation.relationType] + '60'
+                            : '#1f2937',
+                          borderColor: isHovered ? '#fff' : 'transparent',
+                        }}
+                        onClick={() => handleCellClick(rowCiv.id, colCiv.id)}
+                        onMouseEnter={() => setHoveredCell({ row: rowCiv.id, col: colCiv.id })}
+                        onMouseLeave={() => setHoveredCell(null)}
+                        title={relation ? `${RELATION_LABELS[relation.relationType]} (信任: ${relation.trust})` : '无关系'}
+                      >
+                        {relation && (
+                          <div className="cell-content">
+                            <span className="trust-indicator">
+                              {relation.trust > 50 ? '↑' : relation.trust < 50 ? '↓' : '–'}
+                            </span>
+                          </div>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="relation-legend">
+        {Object.entries(RELATION_COLORS).map(([type, color]) => (
+          <div key={type} className="legend-item">
+            <span 
+              className="legend-color" 
+              style={{ backgroundColor: color }}
+            />
+            <span className="legend-label">{RELATION_LABELS[type as RelationType]}</span>
+          </div>
+        ))}
+      </div>
+
+      {selectedCiv && (
+        <div className="selected-civ-details">
+          <h4>{getCivById(selectedCiv)?.name} 的外交关系</h4>
+          <div className="relation-list">
+            {filteredRelations
+              .filter(r => r.sourceCivId === selectedCiv || r.targetCivId === selectedCiv)
+              .map(relation => {
+                const otherCivId = relation.sourceCivId === selectedCiv 
+                  ? relation.targetCivId 
+                  : relation.sourceCivId;
+                const otherCiv = getCivById(otherCivId);
+                
+                return (
+                  <div 
+                    key={relation.id} 
+                    className="relation-item"
+                    style={{ borderLeftColor: RELATION_COLORS[relation.relationType] }}
+                  >
+                    <div className="relation-info">
+                      <span 
+                        className="civ-badge"
+                        style={{ backgroundColor: otherCiv?.color }}
+                      >
+                        {otherCiv?.name}
+                      </span>
+                      <span className="relation-type">
+                        {RELATION_LABELS[relation.relationType]}
+                      </span>
+                    </div>
+                    <div className="relation-stats">
+                      <div className="stat">
+                        <span className="stat-label">信任</span>
+                        <div className="stat-bar">
+                          <div 
+                            className="stat-fill trust"
+                            style={{ width: `${relation.trust}%` }}
+                          />
+                        </div>
+                        <span className="stat-value">{relation.trust}</span>
+                      </div>
+                      <div className="stat">
+                        <span className="stat-label">威胁</span>
+                        <div className="stat-bar">
+                          <div 
+                            className="stat-fill threat"
+                            style={{ width: `${relation.threat}%` }}
+                          />
+                        </div>
+                        <span className="stat-value">{relation.threat}</span>
+                      </div>
+                    </div>
+                    <div className="relation-actions">
+                      <button 
+                        className="action-btn propose"
+                        onClick={() => handleProposeAction(otherCivId, 'alliance')}
+                      >
+                        结盟
+                      </button>
+                      <button 
+                        className="action-btn propose"
+                        onClick={() => handleProposeAction(otherCivId, 'trade')}
+                      >
+                        贸易
+                      </button>
+                      <button 
+                        className="action-btn warn"
+                        onClick={() => handleProposeAction(otherCivId, 'warn')}
+                      >
+                        警告
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        .diplomacy-panel {
+          background: #0f172a;
+          border-radius: 12px;
+          padding: 20px;
+          color: #e2e8f0;
+        }
+
+        .panel-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 20px;
+        }
+
+        .panel-header h3 {
+          margin: 0;
+          font-size: 18px;
+          color: #f1f5f9;
+        }
+
+        .relation-filter {
+          background: #1e293b;
+          border: 1px solid #334155;
+          color: #e2e8f0;
+          padding: 8px 12px;
+          border-radius: 6px;
+          cursor: pointer;
+        }
+
+        .diplomacy-matrix-container {
+          overflow: auto;
+          max-height: 400px;
+          margin-bottom: 16px;
+        }
+
+        .diplomacy-matrix {
+          border-collapse: collapse;
+          width: 100%;
+        }
+
+        .corner-cell {
+          width: 100px;
+          min-width: 100px;
+        }
+
+        .civ-header {
+          padding: 8px 4px;
+          min-width: 40px;
+          height: 120px;
+          vertical-align: bottom;
+        }
+
+        .civ-name-vertical {
+          writing-mode: vertical-rl;
+          text-orientation: mixed;
+          transform: rotate(180deg);
+          font-size: 11px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          max-height: 100px;
+        }
+
+        .civ-label {
+          padding: 8px 12px;
+          font-size: 12px;
+          font-weight: 500;
+          text-align: left;
+          max-width: 100px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .matrix-cell {
+          width: 40px;
+          height: 40px;
+          text-align: center;
+          vertical-align: middle;
+          cursor: pointer;
+          border: 2px solid transparent;
+          transition: all 0.2s ease;
+          position: relative;
+        }
+
+        .matrix-cell:hover {
+          transform: scale(1.1);
+          z-index: 10;
+        }
+
+        .matrix-cell.selected {
+          border-color: #3b82f6;
+        }
+
+        .self-cell {
+          font-weight: bold;
+          color: rgba(255, 255, 255, 0.5);
+        }
+
+        .cell-content {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          height: 100%;
+        }
+
+        .trust-indicator {
+          font-size: 14px;
+          font-weight: bold;
+        }
+
+        .relation-legend {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 12px;
+          padding: 12px;
+          background: #1e293b;
+          border-radius: 8px;
+          margin-bottom: 16px;
+        }
+
+        .legend-item {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+
+        .legend-color {
+          width: 16px;
+          height: 16px;
+          border-radius: 4px;
+        }
+
+        .legend-label {
+          font-size: 12px;
+          color: #94a3b8;
+        }
+
+        .selected-civ-details {
+          background: #1e293b;
+          border-radius: 8px;
+          padding: 16px;
+        }
+
+        .selected-civ-details h4 {
+          margin: 0 0 12px 0;
+          font-size: 14px;
+          color: #f1f5f9;
+        }
+
+        .relation-list {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+
+        .relation-item {
+          background: #0f172a;
+          border-radius: 8px;
+          padding: 12px;
+          border-left: 4px solid;
+        }
+
+        .relation-info {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          margin-bottom: 8px;
+        }
