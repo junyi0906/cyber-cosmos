@@ -1,0 +1,21 @@
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import Heatmap from './Heatmap';
+
+interface StarSystem {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  z: number;
+  resources: number;
+  population: number;
+  civilization_id: string | null;
+  civilization_name?: string;
+  tech_level?: number;
+  color?: string;
+}
+
+interface StarMapProps {
+  starSystems?: StarSystem[];
+  onStarSelect?: (star: StarSystem) => void;
+  showHeatmap?: boolean
