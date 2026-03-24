@@ -1,0 +1,217 @@
+import { IsString, IsNumber, IsOptional, IsArray, IsEnum, IsBoolean, Min } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+export enum RelicInteractionType {
+  EXPLORE = 'explore',
+  EXCAVATE = 'excavate',
+  CONTEST = 'contest',
+}
+
+export enum RelicEffectType {
+  GALAXY_BUFF = 'galaxy_buff',
+  ONE_TIME_REWARD = 'one_time_reward',
+  PERSISTENT_AURA = 'persistent_aura',
+}
+
+export class ExploreDto {
+  @ApiProperty({ description: '遗迹ID' })
+  @IsString()
+  relicId: string;
+
+  @ApiProperty({ description: '探索的文明ID' })
+  @IsString()
+  civilizationId: string;
+
+  @ApiProperty({ description: '消耗的能源数量', minimum: 0 })
+  @IsNumber()
+  @Min(0)
+  energyCost: number;
+}
+
+export class ExcavateDto {
+  @ApiProperty({ description: '遗迹ID' })
+  @IsString()
+  relicId: string;
+
+  @ApiProperty({ description: '挖掘的文明ID' })
+  @IsString()
+  civilizationId: string;
+
+  @ApiProperty({ description: '消耗的矿石数量', minimum: 0 })
+  @IsNumber()
+  @Min(0)
+  oreCost: number;
+}
+
+export class ContestDto {
+  @ApiProperty({ description: '遗迹ID' })
+  @IsString()
+  relicId: string;
+
+  @ApiProperty({ description: '发起争夺的文明ID' })
+  @IsString()
+  civilizationId: string;
+
+  @ApiProperty({ description: '争夺的文明ID列表' })
+  @IsArray()
+  @IsString({ each: true })
+  contestingCivilizations: string[];
+
+  @ApiPropertyOptional({ description: '争夺原因' })
+  @IsOptional()
+  @IsString()
+  reason?: string;
+}
+
+export class RelicEffectDto {
+  @ApiProperty({ description: '效果类型', enum: RelicEffectType })
+  @IsEnum(RelicEffectType)
+  type: RelicEffectType;
+
+  @ApiProperty({ description: '效果名称' })
+  @IsString()
+  name: string;
+
+  @ApiPropertyOptional({ description: '效果描述' })
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @ApiPropertyOptional({ description: '效果数值' })
+  @IsOptional()
+  @IsNumber()
+  value?: number;
+
+  @ApiPropertyOptional({ description: '效果持续时间（模拟年）' })
+  @IsOptional()
+  @IsNumber()
+  duration?: number;
+
+  @ApiPropertyOptional({ description: '效果是否激活' })
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}
+
+export class ExploreResultDto {
+  @ApiProperty({ description: '是否成功' })
+  isSuccess: boolean;
+
+  @ApiPropertyOptional({ description: '发现的资源' })
+  @IsOptional()
+  discoveredResources?: {
+    ore?: number;
+    energy?: number;
+    technology?: number;
+  };
+
+  @ApiPropertyOptional({ description: '触发的事件ID' })
+  @IsOptional()
+  @IsString()
+  triggeredEventId?: string;
+
+  @ApiPropertyOptional({ description: '事件描述' })
+  @IsOptional()
+  @IsString()
+  eventDescription?: string;
+
+  @ApiPropertyOptional({ description: '遗迹效果' })
+  @IsOptional()
+  relicEffect?: RelicEffectDto;
+
+  @ApiProperty({ description: '消息' })
+  @IsString()
+  message: string;
+}
+
+export class ExcavateResultDto {
+  @ApiProperty({ description: '是否成功' })
+  isSuccess: boolean;
+
+  @ApiPropertyOptional({ description: '获得的奖励' })
+  @IsOptional()
+  rewards?: {
+    ore?: number;
+    energy?: number;
+    technology?: number;
+    specialItem?: string;
+  };
+
+  @ApiPropertyOptional({ description: '遗迹是否耗尽' })
+  @IsOptional()
+  @IsBoolean()
+  isExhausted?: boolean;
+
+  @ApiPropertyOptional({ description: '触发的事件ID' })
+  @IsOptional()
+  @IsString()
+  triggeredEventId?: string;
+
+  @ApiProperty({ description: '消息' })
+  @IsString()
+  message: string;
+}
+
+export class ContestResultDto {
+  @ApiProperty({ description: '是否成功' })
+  isSuccess: boolean;
+
+  @ApiPropertyOptional({ description: '获胜文明ID' })
+  @IsOptional()
+  @IsString()
+  winnerId?: string;
+
+  @ApiPropertyOptional({ description: '外交冲突事件ID' })
+  @IsOptional()
+  @IsString()
+  diplomaticEventId?: string;
+
+  @ApiPropertyOptional({ description: '冲突详情' })
+  @IsOptional()
+  conflictDetails?: {
+    participants: string[];
+    intensity: number;
+    outcome: string;
+  };
+
+  @ApiProperty({ description: '消息' })
+  @IsString()
+  message: string;
+}
+
+export class ApplyEffectDto {
+  @ApiProperty({ description: '遗迹ID' })
+  @IsString()
+  relicId: string;
+
+  @ApiProperty({ description: '目标星系ID' })
+  @IsString()
+  galaxyId: string;
+
+  @ApiProperty({ description: '遗迹效果' })
+  effect: RelicEffectDto;
+}
+
+export class ApplyEffectResultDto {
+  @ApiProperty({ description: '是否成功' })
+  isSuccess: boolean;
+
+  @ApiPropertyOptional({ description: '效果ID' })
+  @IsOptional()
+  @IsString()
+  effectId?: string;
+
+  @ApiPropertyOptional({ description: '生效时间' })
+  @IsOptional()
+  @IsNumber()
+  appliedAt?: number;
+
+  @ApiPropertyOptional({ description: '过期时间' })
+  @IsOptional()
+  @IsNumber()
+  expiresAt?: number;
+
+  @ApiProperty({ description: '消息' })
+  @IsString()
+  message: string;
+}

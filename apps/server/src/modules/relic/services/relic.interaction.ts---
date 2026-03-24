@@ -1,0 +1,259 @@
+import { Injectable, Logger, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import {
+  ExploreDto,
+  ExcavateDto,
+  ContestDto,
+  ExploreResultDto,
+  ExcavateResultDto,
+  ContestResultDto,
+  ApplyEffectDto,
+  ApplyEffectResultDto,
+  RelicEffectType,
+} from '../dto/relic-interaction.dto';
+
+// 遗迹实体接口
+interface Relic {
+  id: string;
+  name: string;
+  description: string;
+  coordinateX: number;
+  coordinateY: number;
+  galaxyId: string;
+  originEventId: string;
+  effectType: RelicEffectType;
+  effectValue: number;
+  effectDuration?: number;
+  remainingExcavations: number;
+  isActive: boolean;
+  createdAt: number;
+  discoveredBy?: string;
+  contestedBy?: string[];
+}
+
+// 文明资源接口
+interface CivilizationResources {
+  ore: number;
+  energy: number;
+  technology: number;
+}
+
+// 文明接口
+interface Civilization {
+  id: string;
+  name: string;
+  resources: CivilizationResources;
+  territory: string[];
+}
+
+// 星系接口
+interface Galaxy {
+  id: string;
+  name: string;
+  coordinateX: number;
+  coordinateY: number;
+  ownerId?: string;
+  buffs: GalaxyBuff[];
+}
+
+interface GalaxyBuff {
+  id: string;
+  source: string;
+  type: string;
+  value: number;
+  expiresAt?: number;
+}
+
+// 事件接口
+interface GameEvent {
+  id: string;
+  type: string;
+  title: string;
+  description: string;
+  participants: string[];
+  coordinateX?: number;
+  coordinateY?: number;
+  severity: 'info' | 'warning' | 'critical';
+  createdAt: number;
+  metadata?: Record<string, any>;
+}
+
+@Injectable()
+export class RelicInteractionService {
+  private readonly logger = new Logger(RelicInteractionService.name);
+
+  // 内存存储（实际项目中应使用数据库）
+  private relics: Map<string, Relic> = new Map();
+  private civilizations: Map<string, Civilization> = new Map();
+  private galaxies: Map<string, Galaxy> = new Map();
+  private events: Map<string, GameEvent> = new Map();
+  private galaxyBuffs: Map<string, GalaxyBuff[]> = new Map();
+
+  constructor(
+    // 在实际项目中注入真实的 Service
+    // @InjectRepository(Relic) private relicRepository: Repository<Relic>,
+    // @Inject(forwardRef(() => CivilizationService)) private civilizationService: CivilizationService,
+    // @Inject(forwardRef(() => EventService)) private eventService: EventService,
+  ) {
+    this.initializeTestData();
+  }
+
+  // 初始化测试数据
+  private initializeTestData(): void {
+    // 创建测试遗迹
+    const testRelic: Relic = {
+      id: 'relic-001',
+      name: '远古文明遗迹',
+      description: '一个神秘消失的高等文明留下的遗迹',
+      coordinateX: 100,
+      coordinateY: 200,
+      galaxyId: 'galaxy-001',
+      originEventId: 'event-ancient-collapse',
+      effectType: RelicEffectType.PERSISTENT_AURA,
+      effectValue: 0.1,
+      effectDuration: 500,
+      remainingExcavations: 5,
+      isActive: true,
+      createdAt: Date.now(),
+      contestedBy: [],
+    };
+    this.relics.set(testRelic.id, testRelic);
+
+    // 创建测试文明
+    const testCiv1: Civilization = {
+      id: 'civ-001',
+      name: '星际联邦',
+      resources: { ore: 1000, energy: 800, technology: 500 },
+      territory: ['galaxy-001'],
+    };
+    const testCiv2: Civilization = {
+      id: 'civ-002',
+      name: '机械帝国',
+      resources: { ore: 1500, energy: 600, technology: 700 },
+      territory: ['galaxy-002'],
+    };
+    this.civilizations.set(testCiv1.id, testCiv1);
+    this.civilizations.set(testCiv2.id, testCiv2);
+
+    // 创建测试星系
+    const testGalaxy: Galaxy = {
+      id: 'galaxy-001',
+      name: '阿尔法星系',
+      coordinateX: 100,
+      coordinateY: 200,
+      ownerId: 'civ-001',
+      buffs: [],
+    };
+    this.galaxies.set(testGalaxy.id, testGalaxy);
+  }
+
+  /**
+   * 探索遗迹 - 消耗能源，随机发现资源或触发事件
+   */
+  async exploreRelic(dto: ExploreDto): Promise<ExploreResultDto> {
+    this.logger.log(`文明 ${dto.civilizationId} 开始探索遗迹 ${dto.relicId}`);
+
+    // 验证遗迹存在
+    const relic = this.relics.get(dto.relicId);
+    if (!relic) {
+      throw new NotFoundException(`遗迹 ${dto.relicId} 不存在`);
+    }
+
+    // 验证文明存在
+    const civilization = this.civilizations.get(dto.civilizationId);
+    if (!civilization) {
+      throw new NotFoundException(`文明 ${dto.civilizationId} 不存在`);
+    }
+
+    // 验证能源是否足够
+    if (civilization.resources.energy < dto.energyCost) {
+      throw new BadRequestException(`能源不足，需要 ${dto.energyCost}，当前 ${civilization.resources.energy}`);
+    }
+
+    // 消耗能源
+    civilization.resources.energy -= dto.energyCost;
+
+    // 随机决定探索结果
+    const roll = Math.random();
+    let result: ExploreResultDto;
+
+    if (roll < 0.3) {
+      // 30% 概率发现资源
+      const discoveredResources = {
+        ore: Math.floor(Math.random() * 200) + 50,
+        energy: Math.floor(Math.random() * 150) + 30,
+        technology: Math.floor(Math.random() * 100) + 20,
+      };
+
+      // 增加资源
+      civilization.resources.ore += discoveredResources.ore;
+      civilization.resources.energy += discoveredResources.energy;
+      civilization.resources.technology += discoveredResources.technology;
+
+      result = {
+        isSuccess: true,
+        discoveredResources,
+        message: `探索成功！发现了丰富的资源储备`,
+      };
+    } else if (roll < 0.6) {
+      // 30% 概率触发事件
+      const event = this.triggerExploreEvent(relic, civilization);
+      result = {
+        isSuccess: true,
+        triggeredEventId: event.id,
+        eventDescription: event.description,
+        message: `探索触发了神秘事件：${event.title}`,
+      };
+    } else if (roll < 0.8) {
+      // 20% 概率发现遗迹效果
+      const effect = {
+        type: relic.effectType,
+        name: `${relic.name}的光环`,
+        description: `来自远古文明的神秘力量`,
+        value: relic.effectValue,
+        duration: relic.effectDuration,
+        isActive: true,
+      };
+
+      // 标记遗迹被发现
+      relic.discoveredBy = dto.civilizationId;
+
+      result = {
+        isSuccess: true,
+        relicEffect: effect,
+        message: `发现了遗迹的核心力量！`,
+      };
+    } else {
+      // 20% 概率无发现
+      result = {
+        isSuccess: true,
+        message: `探索完成，但未发现任何有价值的东西`,
+      };
+    }
+
+    this.logger.log(`探索结果: ${result.message}`);
+    return result;
+  }
+
+  /**
+   * 挖掘遗迹 - 消耗矿石，获得一次性奖励
+   */
+  async excavateRelic(dto: ExcavateDto): Promise<ExcavateResultDto> {
+    this.logger.log(`文明 ${dto.civilizationId} 开始挖掘遗迹 ${dto.relicId}`);
+
+    // 验证遗迹存在
+    const relic = this.relics.get(dto.relicId);
+    if (!relic) {
+      throw new NotFoundException(`遗迹 ${dto.relicId} 不存在`);
+    }
+
+    // 验证遗迹是否可挖掘
+    if (relic.remainingExcavations <= 0) {
+      throw new BadRequestException(`遗迹已被完全挖掘，无法继续`);
+    }
+
+    // 验证文明存在
+    const civilization = this.civilizations.get(dto.civilizationId);
+    if (!civilization) {
+      throw new NotFoundException
