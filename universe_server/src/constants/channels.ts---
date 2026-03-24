@@ -1,0 +1,15 @@
+export const CHANNELS = {
+  UNIVERSE_TICK: 'cyber_cosmos:universe:tick',
+  MAJOR_EVENT: 'cyber_cosmos:universe:major_event',
+  AGENT_DECISION: 'cyber_cosmos:agent:decision',
+} as const;
+
+export type ChannelName = (typeof CHANNELS)[keyof typeof CHANNELS];
+
+export const CHANNEL_DESCRIPTIONS: Record<ChannelName, string> = {
+  [CHANNELS.UNIVERSE_TICK]: '宇宙时间推进事件，每个 tick 广播当前宇宙状态',
+  [CHANNELS.MAJOR_EVENT]: '重大宇宙事件，如超新星爆发、文明毁灭、联盟形成等',
+  [CHANNELS.AGENT_DECISION]: 'Agent 决策事件，记录 Agent 的思考过程和行动决策',
+};
+
+export default CHANNELS;

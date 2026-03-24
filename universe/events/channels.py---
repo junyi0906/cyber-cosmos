@@ -1,0 +1,59 @@
+"""
+Redis Pub/Sub 通道定义
+用于 Python 核心与 Node.js 服务之间的通信
+"""
+
+from enum import Enum
+from typing import Final
+
+
+class ChannelType(str, Enum):
+    """Redis Pub/Sub 通道类型枚举"""
+    
+    UNIVERSE_TICK: Final[str] = "cyber_cosmos:universe:tick"
+    MAJOR_EVENT: Final[str] = "cyber_cosmos:universe:major_event"
+    AGENT_DECISION: Final[str] = "cyber_cosmos:agent:decision"
+
+
+# 通道常量
+UNIVERSE_TICK: Final[str] = "cyber_cosmos:universe:tick"
+MAJOR_EVENT: Final[str] = "cyber_cosmos:universe:major_event"
+AGENT_DECISION: Final[str] = "cyber_cosmos:agent:decision"
+
+
+# 通道描述
+CHANNEL_DESCRIPTIONS: dict[str, str] = {
+    UNIVERSE_TICK: "宇宙时间推进事件，每个 tick 广播当前宇宙状态",
+    MAJOR_EVENT: "重大宇宙事件，如超新星爆发、文明毁灭、联盟形成等",
+    AGENT_DECISION: "Agent 决策事件，记录 Agent 的思考过程和行动决策",
+}
+
+
+# 所有通道列表
+ALL_CHANNELS: list[str] = [
+    UNIVERSE_TICK,
+    MAJOR_EVENT,
+    AGENT_DECISION,
+]
+
+
+def get_channel_name(channel: str) -> str:
+    """获取通道的友好名称"""
+    return channel.split(":")[-1] if ":" in channel else channel
+
+
+def is_valid_channel(channel: str) -> bool:
+    """检查通道是否有效"""
+    return channel in ALL_CHANNELS
+
+
+__all__ = [
+    "ChannelType",
+    "UNIVERSE_TICK",
+    "MAJOR_EVENT",
+    "AGENT_DECISION",
+    "CHANNEL_DESCRIPTIONS",
+    "ALL_CHANNELS",
+    "get_channel_name",
+    "is_valid_channel",
+]

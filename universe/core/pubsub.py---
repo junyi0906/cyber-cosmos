@@ -1,0 +1,258 @@
+"""
+Redis Pub/Sub 封装
+提供 Python 核心与 Node.js 服务之间的消息通信能力
+"""
+
+import json
+import time
+from typing import Any, Callable, Optional
+from dataclasses import dataclass, field
+import redis
+from redis.client import PubSub
+
+from universe.events.channels import (
+    UNIVERSE_TICK,
+    MAJOR_EVENT,
+    AGENT_DECISION,
+    ALL_CHANNELS,
+    is_valid_channel,
+)
+
+
+@dataclass
+class PubSubMessage:
+    """Pub/Sub 消息结构"""
+    channel: str
+    data: dict[str, Any]
+    timestamp: float = field(default_factory=time.time)
+    source: str = "python"
+
+    def to_json(self) -> str:
+        """序列化为 JSON 字符串"""
+        return json.dumps({
+            "channel": self.channel,
+            "data": self.data,
+            "timestamp": self.timestamp,
+            "source": self.source,
+        })
+
+    @classmethod
+    def from_json(cls, json_str: str) -> "PubSubMessage":
+        """从 JSON 字符串反序列化"""
+        obj = json.loads(json_str)
+        return cls(
+            channel=obj.get("channel", ""),
+            data=obj.get("data", {}),
+            timestamp=obj.get("timestamp", time.time()),
+            source=obj.get("source", "unknown"),
+        )
+
+
+MessageHandler = Callable[[PubSubMessage], None]
+
+
+class RedisPubSub:
+    """Redis Pub/Sub 客户端封装"""
+
+    def __init__(
+        self,
+        host: str = "localhost",
+        port: int = 6379,
+        password: Optional[str] = None,
+        db: int = 0,
+        key_prefix: str = "cyber_cosmos:",
+    ):
+        self.host = host
+        self.port = port
+        self.password = password
+        self.db = db
+        self.key_prefix = key_prefix
+        
+        self._client: Optional[redis.Redis] = None
+        self._pubsub: Optional[PubSub] = None
+        self._handlers: dict[str, list[MessageHandler]] = {}
+        self._is_connected: bool = False
+
+    def connect(self) -> bool:
+        """建立 Redis 连接"""
+        try:
+            self._client = redis.Redis(
+                host=self.host,
+                port=self.port,
+                password=self.password,
+                db=self.db,
+                decode_responses=True,
+                socket_connect_timeout=5,
+                socket_timeout=5,
+                retry_on_timeout=True,
+            )
+            
+            # 测试连接
+            self._client.ping()
+            self._pubsub = self._client.pubsub()
+            self._is_connected = True
+            print(f"[Redis] Connected to {self.host}:{self.port}")
+            return True
+            
+        except redis.ConnectionError as e:
+            print(f"[Redis] Connection failed: {e}")
+            self._is_connected = False
+            return False
+        except Exception as e:
+            print(f"[Redis] Unexpected error: {e}")
+            self._is_connected = False
+            return False
+
+    def disconnect(self) -> None:
+        """断开 Redis 连接"""
+        if self._pubsub:
+            self._pubsub.close()
+            self._pubsub = None
+        
+        if self._client:
+            self._client.close()
+            self._client = None
+        
+        self._handlers.clear()
+        self._is_connected = False
+        print("[Redis] Disconnected")
+
+    @property
+    def is_connected(self) -> bool:
+        """检查连接状态"""
+        return self._is_connected and self._client is not None
+
+    def _ensure_connected(self) -> None:
+        """确保已连接"""
+        if not self.is_connected:
+            raise RuntimeError("[Redis] Not connected. Call connect() first.")
+
+    def publish(self, channel: str, data: dict[str, Any]) -> bool:
+        """
+        发布消息到指定通道
+        
+        Args:
+            channel: 通道名称
+            data: 消息数据
+            
+        Returns:
+            是否发布成功
+        """
+        self._ensure_connected()
+        
+        if not is_valid_channel(channel):
+            print(f"[Redis] Warning: Publishing to non-standard channel: {channel}")
+        
+        message = PubSubMessage(
+            channel=channel,
+            data=data,
+            source="python",
+        )
+        
+        try:
+            result = self._client.publish(channel, message.to_json())
+            print(f"[Redis] Published to {channel}, received by {result} subscribers")
+            return True
+        except Exception as e:
+            print(f"[Redis] Failed to publish: {e}")
+            return False
+
+    def subscribe(self, channel: str, handler: MessageHandler) -> bool:
+        """
+        订阅通道并注册消息处理器
+        
+        Args:
+            channel: 通道名称
+            handler: 消息处理函数
+            
+        Returns:
+            是否订阅成功
+        """
+        self._ensure_connected()
+        
+        try:
+            self._pubsub.subscribe(channel)
+            
+            if channel not in self._handlers:
+                self._handlers[channel] = []
+            self._handlers[channel].append(handler)
+            
+            print(f"[Redis] Subscribed to {channel}")
+            return True
+        except Exception as e:
+            print(f"[Redis] Failed to subscribe: {e}")
+            return False
+
+    def unsubscribe(self, channel: str, handler: Optional[MessageHandler] = None) -> bool:
+        """
+        取消订阅通道
+        
+        Args:
+            channel: 通道名称
+            handler: 可选的特定处理器，如果为 None 则移除所有处理器
+            
+        Returns:
+            是否取消订阅成功
+        """
+        self._ensure_connected()
+        
+        try:
+            if handler and channel in self._handlers:
+                if handler in self._handlers[channel]:
+                    self._handlers[channel].remove(handler)
+                
+                if not self._handlers[channel]:
+                    self._pubsub.unsubscribe(channel)
+                    del self._handlers[channel]
+            else:
+                self._pubsub.unsubscribe(channel)
+                if channel in self._handlers:
+                    del self._handlers[channel]
+            
+            print(f"[Redis] Unsubscribed from {channel}")
+            return True
+        except Exception as e:
+            print(f"[Redis] Failed to unsubscribe: {e}")
+            return False
+
+    def listen(self, timeout: float = 1.0) -> None:
+        """
+        监听消息（阻塞式）
+        
+        Args:
+            timeout: 监听超时时间（秒）
+        """
+        self._ensure_connected()
+        
+        try:
+            message = self._pubsub.get_message(timeout=timeout)
+            if message and message["type"] == "message":
+                channel = message["channel"]
+                data = message["data"]
+                
+                try:
+                    parsed = PubSubMessage.from_json(data)
+                    self._dispatch_message(channel, parsed)
+                except json.JSONDecodeError:
+                    print(f"[Redis] Invalid JSON message on {channel}")
+                    
+        except Exception as e:
+            print(f"[Redis] Listen error: {e}")
+
+    def _dispatch_message(self, channel: str, message: PubSubMessage) -> None:
+        """分发消息到注册的处理器"""
+        handlers = self._handlers.get(channel, [])
+        for handler in handlers:
+            try:
+                handler(message)
+            except Exception as e:
+                print(f"[Redis] Handler error on {channel}: {e}")
+
+    # 便捷发布方法
+    def publish_tick(self, tick_data: dict[str, Any]) -> bool:
+        """发布宇宙 tick 事件"""
+        return self.publish(UNIVERSE_TICK, tick_data)
+
+    def publish_major_event(self, event_data: dict[str, Any]) -> bool:
+        """发布重大事件"""
+        return self.publish(M
