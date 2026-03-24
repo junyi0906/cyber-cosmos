@@ -185,9 +185,10 @@
       "depends_on": [
         "feat-007"
       ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "依赖贸易路线服务"
+      "passes": true,
+      "last_attempt": "2026-03-25T00:20:24.567821",
+      "notes": "依赖贸易路线服务",
+      "retry_count": 0
     },
     {
       "id": "feat-009",
