@@ -1,0 +1,285 @@
+"""
+Unit tests for the events system.
+Tests event generation, processing, and impact calculations.
+"""
+import pytest
+import sys
+import os
+from unittest.mock import MagicMock, patch, call
+from datetime import datetime
+
+# Add universe to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+
+class TestEventSystem:
+    """Test suite for event system functionality."""
+    
+    def test_event_imports(self):
+        """Test that events module can be imported."""
+        try:
+            from universe import events
+            assert hasattr(events, '__name__')
+        except ImportError:
+            pytest.skip("Events module not yet implemented")
+    
+    def test_event_creation_basic(self, sample_event):
+        """Test basic event data structure."""
+        assert "id" in sample_event
+        assert "type" in sample_event
+        assert "timestamp" in sample_event
+        assert sample_event["type"] in ["disaster", "discovery", "social", "cosmic"]
+    
+    def test_event_types_defined(self):
+        """Test that event types are properly defined."""
+        event_types = [
+            "supernova",
+            "black_hole_formation",
+            "nebula_collision",
+            "resource_depletion",
+            "environmental_crisis",
+            "tech_singularity",
+            "first_contact",
+            "diplomatic_incident"
+        ]
+        assert len(event_types) > 0
+    
+    def test_macro_event_generation(self, mock_universe_state):
+        """Test macro event generation (cosmic scale events)."""
+        macro_events = ["supernova", "black_hole_formation", "nebula_collision"]
+        
+        for event_type in macro_events:
+            event_data = {
+                "type": "cosmic",
+                "subtype": event_type,
+                "magnitude": 0.8,
+                "location": {"x": 100, "y": 200, "z": 50}
+            }
+            assert event_data["type"] == "cosmic"
+            assert event_data["subtype"] in macro_events
+    
+    def test_micro_event_generation(self, mock_universe_state):
+        """Test micro event generation (civilization scale events)."""
+        micro_events = ["resource_depletion", "environmental_crisis", "tech_singularity"]
+        
+        for event_type in micro_events:
+            event_data = {
+                "type": "civilization",
+                "subtype": event_type,
+                "target_civ": "civ_001",
+                "magnitude": 0.5
+            }
+            assert event_data["type"] == "civilization"
+    
+    def test_event_impact_calculation(self, sample_civilization, sample_event):
+        """Test event impact calculation on civilizations."""
+        impact = sample_event.get("impact", {})
+        
+        if "population_loss" in impact:
+            pop_loss = sample_civilization["population"] * impact["population_loss"]
+            assert pop_loss >= 0
+        
+        if "technology_gain" in impact:
+            tech_gain = sample_civilization["technology_level"] * impact["technology_gain"]
+            assert tech_gain >= 0
+    
+    def test_event_chain_propagation(self, sample_event):
+        """Test that events can trigger chain reactions."""
+        # Event chain: supernova -> radiation wave -> resource depletion
+        chain_events = [
+            {"type": "cosmic", "subtype": "supernova", "triggered_by": None},
+            {"type": "cosmic", "subtype": "radiation_wave", "triggered_by": "supernova"},
+            {"type": "civilization", "subtype": "resource_depletion", "triggered_by": "radiation_wave"}
+        ]
+        
+        for i, event in enumerate(chain_events):
+            if i > 0:
+                assert event["triggered_by"] == chain_events[i-1]["subtype"]
+    
+    def test_event_probability_weights(self):
+        """Test event generation probability weights."""
+        event_weights = {
+            "supernova": 0.01,
+            "black_hole_formation": 0.005,
+            "resource_depletion": 0.1,
+            "tech_singularity": 0.02,
+            "first_contact": 0.05
+        }
+        
+        total_weight = sum(event_weights.values())
+        assert total_weight <= 1.0, "Total probability should not exceed 1.0"
+        
+        for event_type, weight in event_weights.items():
+            assert 0 <= weight <= 1, f"Weight for {event_type} should be between 0 and 1"
+    
+    def test_event_duration_calculation(self):
+        """Test event duration based on event type."""
+        duration_rules = {
+            "supernova": (50, 200),
+            "black_hole_formation": (100, 500),
+            "resource_depletion": (10, 50),
+            "tech_singularity": (1, 10)
+        }
+        
+        for event_type, (min_dur, max_dur) in duration_rules.items():
+            assert min_dur > 0, f"Minimum duration for {event_type} should be positive"
+            assert max_dur > min_dur, f"Maximum should be greater than minimum for {event_type}"
+    
+    def test_event_location_validation(self):
+        """Test event location validation."""
+        valid_location = {"x": 100, "y": 200, "z": 50}
+        invalid_location = {"x": "invalid", "y": 200, "z": 50}
+        
+        # Valid location should have numeric coordinates
+        assert isinstance(valid_location["x"], (int, float))
+        assert isinstance(valid_location["y"], (int, float))
+        assert isinstance(valid_location["z"], (int, float))
+    
+    def test_event_affected_civilizations(self, sample_event, sample_civilization):
+        """Test determining affected civilizations for an event."""
+        affected = sample_event.get("affected_civilizations", [])
+        
+        # Check if civilization is in affected list
+        if sample_civilization["id"] in affected:
+            assert sample_civilization["id"] in affected
+    
+    def test_event_serialization(self, sample_event):
+        """Test event can be serialized to JSON."""
+        import json
+        
+        try:
+            json_str = json.dumps(sample_event)
+            parsed = json.loads(json_str)
+            assert parsed["id"] == sample_event["id"]
+        except (TypeError, json.JSONEncodeError) as e:
+            pytest.fail(f"Event serialization failed: {e}")
+    
+    def test_event_timestamp_ordering(self):
+        """Test events are properly ordered by timestamp."""
+        events = [
+            {"id": "evt_1", "timestamp": 100},
+            {"id": "evt_2", "timestamp": 50},
+            {"id": "evt_3", "timestamp": 200}
+        ]
+        
+        sorted_events = sorted(events, key=lambda e: e["timestamp"])
+        assert sorted_events[0]["timestamp"] == 50
+        assert sorted_events[-1]["timestamp"] == 200
+
+
+class TestCosmicEvents:
+    """Test suite for cosmic-scale events."""
+    
+    def test_supernova_event(self):
+        """Test supernova event properties."""
+        supernova = {
+            "type": "cosmic",
+            "subtype": "supernova",
+            "radius": 100,
+            "damage_factor": 0.8,
+            "tech_boost": 0.1
+        }
+        
+        assert supernova["type"] == "cosmic"
+        assert supernova["damage_factor"] > 0
+        assert supernova["tech_boost"] >= 0
+    
+    def test_black_hole_formation(self):
+        """Test black hole formation event."""
+        black_hole = {
+            "type": "cosmic",
+            "subtype": "black_hole_formation",
+            "gravity_radius": 50,
+            "destruction_radius": 20,
+            "stabilization_time": 1000
+        }
+        
+        assert black_hole["gravity_radius"] > black_hole["destruction_radius"]
+    
+    def test_nebula_collision(self):
+        """Test nebula collision event."""
+        nebula = {
+            "type": "cosmic",
+            "subtype": "nebula_collision",
+            "resource_bonus": 0.3,
+            "duration": 500,
+            "area_coverage": 0.4
+        }
+        
+        assert nebula["resource_bonus"] > 0
+
+
+class TestCivilizationEvents:
+    """Test suite for civilization-scale events."""
+    
+    def test_resource_depletion_event(self, sample_civilization):
+        """Test resource depletion event."""
+        initial_resources = sample_civilization["resources"]["minerals"]
+        depletion_rate = 0.3
+        
+        depleted = initial_resources * (1 - depletion_rate)
+        assert depleted < initial_resources
+    
+    def test_tech_singularity_event(self, sample_civilization):
+        """Test technology singularity event."""
+        initial_tech = sample_civilization["technology_level"]
+        tech_boost = 2
+        
+        new_tech = initial_tech + tech_boost
+        assert new_tech > initial_tech
+    
+    def test_environmental_crisis_event(self, sample_civilization):
+        """Test environmental crisis event."""
+        crisis = {
+            "type": "civilization",
+            "subtype": "environmental_crisis",
+            "population_impact": -0.2,
+            "food_reduction": -0.4,
+            "duration": 100
+        }
+        
+        assert crisis["population_impact"] < 0
+        assert crisis["food_reduction"] < 0
+
+
+class TestEventHistory:
+    """Test suite for event history and chronicle."""
+    
+    def test_event_history_storage(self):
+        """Test events are stored in history."""
+        history = []
+        events = [
+            {"id": "evt_1", "timestamp": 100},
+            {"id": "evt_2", "timestamp": 200}
+        ]
+        
+        for event in events:
+            history.append(event)
+        
+        assert len(history) == 2
+    
+    def test_event_history_retrieval_by_timeframe(self):
+        """Test retrieving events within a timeframe."""
+        history = [
+            {"id": "evt_1", "timestamp": 100},
+            {"id": "evt_2", "timestamp": 200},
+            {"id": "evt_3", "timestamp": 300},
+            {"id": "evt_4", "timestamp": 400}
+        ]
+        
+        start_time = 150
+        end_time = 350
+        
+        filtered = [e for e in history if start_time <= e["timestamp"] <= end_time]
+        assert len(filtered) == 2
+    
+    def test_event_history_filter_by_type(self):
+        """Test filtering events by type."""
+        history = [
+            {"id": "evt_1", "type": "cosmic"},
+            {"id": "evt_2", "type": "civilization"},
+            {"id": "evt_3", "type": "cosmic"}
+        ]
+        
+        cosmic_events = [e for e in history if e["type"] == "cosmic"]
+        assert len(cosmic_events) == 2

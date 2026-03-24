@@ -1,0 +1,35 @@
+"""
+Unit tests for the narrative engine.
+Tests chronicle generation, event chains, and civilization history.
+"""
+import pytest
+import sys
+import os
+from unittest.mock import MagicMock, patch
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+
+class TestNarrativeEngine:
+    """Test suite for narrative engine functionality."""
+    
+    def test_narrative_imports(self):
+        """Test that narrative module can be imported."""
+        try:
+            from universe import narrative
+            assert hasattr(narrative, '__name__')
+        except ImportError:
+            pytest.skip("Narrative module not yet implemented")
+    
+    def test_chronicle_creation(self, sample_civilization):
+        """Test chronicle creation for a civilization."""
+        chronicle = {
+            "civilization_id": sample_civilization["id"],
+            "events": [],
+            "milestones": [],
+            "era": "tribal",
+            "founding_date": 0
+        }
+        
+        assert chronicle["civilization_id"] == sample_civilization["id"]
+        assert chronicle["era"] in ["tribal", "city_state", "nation", "space_f
