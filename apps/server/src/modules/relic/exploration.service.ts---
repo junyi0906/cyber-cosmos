@@ -1,0 +1,64 @@
+import { Injectable, Logger, NotFoundException, ConflictException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+
+/**
+ * 遗迹探索服务
+ * 负责处理遗迹的探索、奖励分配及争夺逻辑
+ */
+
+// --- 接口定义 ---
+
+export interface LootItem {
+  type: 'RESOURCE' | 'LOST_TECH';
+  name: string;
+  amount?: number;
+  description?: string;
+  probability: number; // 0.0 到 1.0
+}
+
+export interface Relic {
+  id: string;
+  name: string;
+  type: 'FACTORY' | 'GRAVEYARD' | 'LIBRARY';
+  status: 'IDLE' | 'EXPLORING' | 'CONTESTED' | 'DEPLETED';
+  currentExplorerId: string | null;
+  lootTable: LootItem[];
+  coordinates: { x: number; y: number };
+}
+
+export interface Civilization {
+  id: string;
+  name: string;
+  techLevel: number; // 文明科技等级
+  resources: Record<string, number>;
+  discoveredTechs: string[];
+}
+
+export interface Fleet {
+  id: string;
+  civilizationId: string;
+  status: 'IDLE' | 'DEPLOYED' | 'IN_TRANSIT';
+  power: number;
+}
+
+export class ExploreRelicDto {
+  civilizationId: string;
+  relicId: string;
+  fleetId: string;
+}
+
+export class ExplorationResultDto {
+  success: boolean;
+  rewards?: LootItem[];
+  message: string;
+  conflictTriggered?: boolean;
+}
+
+// --- 服务实现 ---
+
+@Injectable()
+export class ExplorationService {
+  private readonly logger = new Logger(ExplorationService.name);
+
+  // 模拟数据库存储 (实际项目中应注入 Repository)
+  private relics: Map<string
