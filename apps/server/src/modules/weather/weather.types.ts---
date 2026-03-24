@@ -1,0 +1,46 @@
+export enum WeatherType {
+  CALM = 'CALM',
+  RESOURCE_STORM = 'RESOURCE_STORM',
+  DARK_FLUCTUATION = 'DARK_FLUCTUATION',
+  DARK_MATTER_WAVE = 'DARK_MATTER_WAVE',
+  ION_STORM = 'ION_STORM',
+  NEBULA_FOG = 'NEBULA_FOG',
+}
+
+export interface Weather {
+  id: string;
+  sectorId: string;
+  type: WeatherType;
+  intensity: number;
+  startTime: Date;
+  endTime: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface WeatherEffect {
+  type: WeatherType;
+  name: string;
+  description: string;
+  duration: number;
+  modifiers: {
+    resourceMultiplier: number;
+    energyConsumptionMultiplier: number;
+    sensorRangeModifier: number;
+    researchSpeedMultiplier: number;
+    tradeEfficiencyMultiplier: number;
+    mutationRisk: number;
+    diplomaticVisibilityModifier: number;
+  };
+}
+
+export interface WeatherForecast {
+  sectorId: string;
+  forecasts: {
+    weatherType: WeatherType;
+    intensity: number;
+    startTime: Date;
+    endTime: Date;
+    probability: number;
+  }[];
+}

@@ -1,279 +1,85 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, MoreThan } from 'typeorm';
-import { WeatherState, WeatherType } from './weather.entity';
-import {
-  WEATHER_EFFECTS,
-  WEATHER_TRANSITION_MATRIX,
-  WEATHER_DURATION_RANGE,
-  WeatherEffect,
-} from './weather.effects';
+import { Injectable, Logger } from '@nestjs/common';
+import { WeatherType, Weather, WeatherForecast } from './weather.types';
 
 @Injectable()
 export class WeatherService {
   private readonly logger = new Logger(WeatherService.name);
+  private weatherCache: Map<string, Weather> = new Map();
 
-  constructor(
-    @InjectRepository(WeatherState)
-    private readonly weatherRepository: Repository<WeatherState>,
-  ) {}
+  constructor() {
+    this.initializeDefaultWeather();
+  }
 
-  /**
-   * 获取扇区当前天气状态
-   */
-  async getSectorWeather(sectorId: string): Promise<WeatherState> {
-    let weather = await this.weatherRepository.findOne({
-      where: { sectorId },
+  private initializeDefaultWeather(): void {
+    // 初始化默认天气数据
+    const defaultSectors = ['sector-alpha', 'sector-beta', 'sector-gamma'];
+    
+    defaultSectors.forEach((sectorId) => {
+      this.weatherCache.set(sectorId, {
+        id: `weather-${sectorId}`,
+        sectorId,
+        type: WeatherType.CALM,
+        intensity: 1.0,
+        startTime: new Date(),
+        endTime: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24小时后
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
     });
+  }
 
-    if (!weather) {
-      weather = await this.initializeSectorWeather(sectorId);
-    }
+  async getWeatherBySector(sectorId: string): Promise<Weather | null> {
+    return this.weatherCache.get(sectorId) || null;
+  }
 
-    // 检查是否需要转换天气
-    if (new Date() >= weather.nextChangeAt) {
-      weather = await this.transitionWeather(sectorId);
-    }
+  async updateWeather(sectorId: string, type: WeatherType, intensity: number): Promise<Weather> {
+    const existingWeather = this.weatherCache.get(sectorId);
+    
+    const weather: Weather = {
+      id: existingWeather?.id || `weather-${sectorId}`,
+      sectorId,
+      type,
+      intensity,
+      startTime: existingWeather?.startTime || new Date(),
+      endTime: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      createdAt: existingWeather?.createdAt || new Date(),
+      updatedAt: new Date(),
+    };
 
+    this.weatherCache.set(sectorId, weather);
+    this.logger.log(`Weather updated for sector ${sectorId}: ${type} at intensity ${intensity}`);
+    
     return weather;
   }
 
-  /**
-   * 转换扇区天气状态
-   */
-  async transitionWeather(sectorId: string): Promise<WeatherState> {
-    let weather = await this.weatherRepository.findOne({
-      where: { sectorId },
-    });
-
-    if (!weather) {
-      weather = await this.initializeSectorWeather(sectorId);
-      return weather;
-    }
-
-    const currentWeather = weather.currentWeather;
-    const nextWeather = this.selectNextWeather(currentWeather);
-    const duration = this.getRandomDuration(nextWeather);
-
-    weather.previousWeather = currentWeather;
-    weather.currentWeather = nextWeather;
-    weather.nextChangeAt = new Date(Date.now() + duration * 60 * 1000);
-    weather.transitionCount += 1;
-    weather.metadata = {
-      ...weather.metadata,
-      lastTransition: new Date().toISOString(),
-      transitionDuration: duration,
-    };
-
-    const updatedWeather = await this.weatherRepository.save(weather);
-
-    this.logger.log(
-      `Weather transitioned for sector ${sectorId}: ${currentWeather} -> ${nextWeather}`,
-    );
-
-    return updatedWeather;
-  }
-
-  /**
-   * 获取所有扇区天气状态
-   */
-  async getAllSectorWeather(): Promise<WeatherState[]> {
-    const weathers = await this.weatherRepository.find();
-    const now = new Date();
-
-    // 检查并更新需要转换的天气
-    const updatedWeathers = await Promise.all(
-      weathers.map(async (weather) => {
-        if (now >= weather.nextChangeAt) {
-          return this.transitionWeather(weather.sectorId);
-        }
-        return weather;
-      }),
-    );
-
-    return updatedWeathers;
-  }
-
-  /**
-   * 获取天气效果配置
-   */
-  getWeatherEffects(weather: WeatherState): WeatherEffect {
-    return WEATHER_EFFECTS[weather.currentWeather] || WEATHER_EFFECTS[WeatherType.NORMAL];
-  }
-
-  /**
-   * 根据天气类型获取效果配置
-   */
-  getWeatherEffectsByType(weatherType: WeatherType): WeatherEffect {
-    return WEATHER_EFFECTS[weatherType] || WEATHER_EFFECTS[WeatherType.NORMAL];
-  }
-
-  /**
-   * 初始化扇区天气
-   */
-  async initializeSectorWeather(sectorId: string): Promise<WeatherState> {
-    const initialWeather = WeatherType.NORMAL;
-    const duration = this.getRandomDuration(initialWeather);
-
-    const weather = this.weatherRepository.create({
-      sectorId,
-      currentWeather: initialWeather,
-      previousWeather: initialWeather,
-      nextChangeAt: new Date(Date.now() + duration * 60 * 1000),
-      transitionCount: 0,
-      metadata: {
-        initialized: true,
-        createdAt: new Date().toISOString(),
-      },
-    });
-
-    const savedWeather = await this.weatherRepository.save(weather);
-
-    this.logger.log(`Initialized weather for sector ${sectorId}`);
-
-    return savedWeather;
-  }
-
-  /**
-   * 批量初始化多个扇区天气
-   */
-  async initializeSectors(sectorIds: string[]): Promise<WeatherState[]> {
-    return Promise.all(
-      sectorIds.map((sectorId) => this.initializeSectorWeather(sectorId)),
-    );
-  }
-
-  /**
-   * 获取即将发生天气变化的扇区
-   */
-  async getUpcomingTransitions(withinMinutes: number = 30): Promise<WeatherState[]> {
-    const now = new Date();
-    const threshold = new Date(now.getTime() + withinMinutes * 60 * 1000);
-
-    return this.weatherRepository.find({
-      where: {
-        nextChangeAt: Between(now, threshold),
-      },
-    });
-  }
-
-  /**
-   * 获取特定天气类型的所有扇区
-   */
-  async getSectorsByWeatherType(weatherType: WeatherType): Promise<WeatherState[]> {
-    return this.weatherRepository.find({
-      where: { currentWeather: weatherType },
-    });
-  }
-
-  /**
-   * 强制设置扇区天气（用于事件触发）
-   */
-  async forceWeather(
-    sectorId: string,
-    weatherType: WeatherType,
-    durationMinutes?: number,
-  ): Promise<WeatherState> {
-    let weather = await this.weatherRepository.findOne({
-      where: { sectorId },
-    });
-
-    if (!weather) {
-      weather = await this.initializeSectorWeather(sectorId);
-    }
-
-    const duration = durationMinutes || this.getRandomDuration(weatherType);
-
-    weather.previousWeather = weather.currentWeather;
-    weather.currentWeather = weatherType;
-    weather.nextChangeAt = new Date(Date.now() + duration * 60 * 1000);
-    weather.metadata = {
-      ...weather.metadata,
-      forcedTransition: true,
-      forcedAt: new Date().toISOString(),
-    };
-
-    return this.weatherRepository.save(weather);
-  }
-
-  /**
-   * 根据转换矩阵选择下一个天气状态
-   */
-  private selectNextWeather(currentWeather: WeatherType): WeatherType {
-    const transitions = WEATHER_TRANSITION_MATRIX[currentWeather];
-    const random = Math.random();
-    let cumulative = 0;
-
-    for (const [weather, probability] of Object.entries(transitions)) {
-      cumulative += probability;
-      if (random <= cumulative) {
-        return weather as WeatherType;
-      }
-    }
-
-    // 默认返回正常天气
-    return WeatherType.NORMAL;
-  }
-
-  /**
-   * 获取随机持续时间
-   */
-  private getRandomDuration(weatherType: WeatherType): number {
-    const range = WEATHER_DURATION_RANGE[weatherType];
-    return Math.floor(Math.random() * (range.max - range.min + 1)) + range.min;
-  }
-
-  /**
-   * 计算天气对贸易路线的影响
-   */
-  calculateTradeModifier(weather: WeatherState): number {
-    const effects = this.getWeatherEffects(weather);
-    return effects.tradeEfficiency;
-  }
-
-  /**
-   * 计算天气对资源产出的影响
-   */
-  calculateResourceModifier(weather: WeatherState): number {
-    const effects = this.getWeatherEffects(weather);
-    return effects.resourceBonus;
-  }
-
-  /**
-   * 计算天气对科研的影响
-   */
-  calculateResearchModifier(weather: WeatherState): number {
-    const effects = this.getWeatherEffects(weather);
-    return effects.researchBonus;
-  }
-
-  /**
-   * 获取扇区天气摘要
-   */
-  async getWeatherSummary(): Promise<{
-    totalSectors: number;
-    weatherDistribution: Record<WeatherType, number>;
-    activeEffects: WeatherEffect[];
-  }> {
-    const allWeather = await this.getAllSectorWeather();
-    const distribution: Record<WeatherType, number> = {} as Record<WeatherType, number>;
-
-    for (const type of Object.values(WeatherType)) {
-      distribution[type] = 0;
-    }
-
-    for (const weather of allWeather) {
-      distribution[weather.currentWeather]++;
-    }
-
-    const activeEffects = [...new Set(allWeather.map((w) => w.currentWeather))].map(
-      (type) => WEATHER_EFFECTS[type],
-    );
-
+  async getForecast(sectorId: string): Promise<WeatherForecast> {
+    const currentWeather = await this.getWeatherBySector(sectorId);
+    
     return {
-      totalSectors: allWeather.length,
-      weatherDistribution: distribution,
-      activeEffects,
+      sectorId,
+      forecasts: [
+        {
+          weatherType: currentWeather?.type || WeatherType.CALM,
+          intensity: currentWeather?.intensity || 1.0,
+          startTime: new Date(),
+          endTime: new Date(Date.now() + 6 * 60 * 60 * 1000),
+          probability: 0.7,
+        },
+        {
+          weatherType: this.getRandomWeatherType(),
+          intensity: Math.random() * 0.5 + 0.5,
+          startTime: new Date(Date.now() + 6 * 60 * 60 * 1000),
+          endTime: new Date(Date.now() + 12 * 60 * 60 * 1000),
+          probability: 0.5,
+        },
+      ],
     };
   }
-}
+
+  private getRandomWeatherType(): WeatherType {
+    const types = Object.values(WeatherType);
+    return types[Math.floor(Math.random() * types.length)];
+  }
+
+  async getAllWeather(): Promise<Weather[]> {
+    return

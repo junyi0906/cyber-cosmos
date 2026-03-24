@@ -1,0 +1,389 @@
+import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { OnEvent } from '@nestjs/event-emitter';
+import { WeatherService } from './weather.service';
+import { CivilizationService } from '../civilization/civilization.service';
+import { WeatherType, WeatherEffect } from './weather.types';
+
+export interface CivilizationAttributeModifiers {
+  resourceMultiplier: number;
+  energyConsumptionMultiplier: number;
+  sensorRangeModifier: number;
+  researchSpeedMultiplier: number;
+  tradeEfficiencyMultiplier: number;
+  mutationRisk: number;
+  diplomaticVisibilityModifier: number;
+}
+
+export interface ActiveWeatherEffect {
+  civId: string;
+  sectorId: string;
+  weatherType: WeatherType;
+  appliedAt: Date;
+  modifiers: CivilizationAttributeModifiers;
+}
+
+@Injectable()
+export class WeatherEffectsHandler implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(WeatherEffectsHandler.name);
+  private activeEffects: Map<string, ActiveWeatherEffect> = new Map();
+
+  // 天气效果配置
+  private readonly weatherEffectConfigs: Record<WeatherType, CivilizationAttributeModifiers> = {
+    [WeatherType.RESOURCE_STORM]: {
+      resourceMultiplier: 2.0,
+      energyConsumptionMultiplier: 1.5,
+      sensorRangeModifier: 0,
+      researchSpeedMultiplier: 1.0,
+      tradeEfficiencyMultiplier: 0.8,
+      mutationRisk: 0,
+      diplomaticVisibilityModifier: 0,
+    },
+    [WeatherType.DARK_FLUCTUATION]: {
+      resourceMultiplier: 1.0,
+      energyConsumptionMultiplier: 1.0,
+      sensorRangeModifier: -2,
+      researchSpeedMultiplier: 0.9,
+      tradeEfficiencyMultiplier: 0.7,
+      mutationRisk: 0,
+      diplomaticVisibilityModifier: -1,
+    },
+    [WeatherType.DARK_MATTER_WAVE]: {
+      resourceMultiplier: 1.0,
+      energyConsumptionMultiplier: 1.2,
+      sensorRangeModifier: 1,
+      researchSpeedMultiplier: 1.5,
+      tradeEfficiencyMultiplier: 1.0,
+      mutationRisk: 0.15,
+      diplomaticVisibilityModifier: 0,
+    },
+    [WeatherType.CALM]: {
+      resourceMultiplier: 1.0,
+      energyConsumptionMultiplier: 1.0,
+      sensorRangeModifier: 0,
+      researchSpeedMultiplier: 1.0,
+      tradeEfficiencyMultiplier: 1.0,
+      mutationRisk: 0,
+      diplomaticVisibilityModifier: 0,
+    },
+    [WeatherType.ION_STORM]: {
+      resourceMultiplier: 0.8,
+      energyConsumptionMultiplier: 1.3,
+      sensorRangeModifier: -1,
+      researchSpeedMultiplier: 0.7,
+      tradeEfficiencyMultiplier: 0.5,
+      mutationRisk: 0.05,
+      diplomaticVisibilityModifier: -1,
+    },
+    [WeatherType.NEBULA_FOG]: {
+      resourceMultiplier: 0.9,
+      energyConsumptionMultiplier: 1.1,
+      sensorRangeModifier: -3,
+      researchSpeedMultiplier: 1.1,
+      tradeEfficiencyMultiplier: 0.6,
+      mutationRisk: 0,
+      diplomaticVisibilityModifier: -2,
+    },
+  };
+
+  constructor(
+    private readonly weatherService: WeatherService,
+    private readonly civilizationService: CivilizationService,
+  ) {}
+
+  onModuleInit() {
+    this.logger.log('WeatherEffectsHandler initialized');
+  }
+
+  onModuleDestroy() {
+    this.logger.log('WeatherEffectsHandler destroyed');
+    // 清理所有活跃效果
+    this.activeEffects.clear();
+  }
+
+  /**
+   * 应用天气效果到文明
+   */
+  async applyWeatherEffects(civId: string, sectorId: string): Promise<ActiveWeatherEffect | null> {
+    this.logger.log(`Applying weather effects for civilization ${civId} in sector ${sectorId}`);
+
+    try {
+      // 获取当前区域的天气
+      const currentWeather = await this.weatherService.getWeatherBySector(sectorId);
+      if (!currentWeather) {
+        this.logger.warn(`No weather data found for sector ${sectorId}`);
+        return null;
+      }
+
+      // 获取文明当前属性
+      const civilization = await this.civilizationService.findById(civId);
+      if (!civilization) {
+        this.logger.warn(`Civilization ${civId} not found`);
+        return null;
+      }
+
+      // 获取天气效果配置
+      const effectConfig = this.weatherEffectConfigs[currentWeather.type];
+      if (!effectConfig) {
+        this.logger.warn(`No effect config found for weather type ${currentWeather.type}`);
+        return null;
+      }
+
+      // 计算修正后的属性值
+      const modifiers = this.calculateModifiers(civilization, effectConfig, currentWeather.intensity);
+
+      // 创建活跃效果记录
+      const activeEffect: ActiveWeatherEffect = {
+        civId,
+        sectorId,
+        weatherType: currentWeather.type,
+        appliedAt: new Date(),
+        modifiers,
+      };
+
+      // 存储活跃效果
+      this.activeEffects.set(civId, activeEffect);
+
+      // 应用效果到文明属性
+      await this.applyModifiersToCivilization(civId, modifiers);
+
+      this.logger.log(`Weather effects applied: ${JSON.stringify(modifiers)}`);
+
+      // 发出事件通知
+      this.emitEffectAppliedEvent(activeEffect);
+
+      return activeEffect;
+    } catch (error) {
+      this.logger.error(`Failed to apply weather effects: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * 移除天气效果
+   */
+  async removeWeatherEffects(civId: string): Promise<boolean> {
+    this.logger.log(`Removing weather effects for civilization ${civId}`);
+
+    const activeEffect = this.activeEffects.get(civId);
+    if (!activeEffect) {
+      this.logger.warn(`No active weather effect found for civilization ${civId}`);
+      return false;
+    }
+
+    try {
+      // 恢复文明原始属性（应用反向修正）
+      await this.revertModifiersFromCivilization(civId, activeEffect.modifiers);
+
+      // 移除活跃效果记录
+      this.activeEffects.delete(civId);
+
+      this.logger.log(`Weather effects removed for civilization ${civId}`);
+
+      // 发出事件通知
+      this.emitEffectRemovedEvent(activeEffect);
+
+      return true;
+    } catch (error) {
+      this.logger.error(`Failed to remove weather effects: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * 监听区域天气变化事件
+   */
+  @OnEvent('SECTOR_WEATHER_CHANGED')
+  async handleSectorWeatherChanged(payload: {
+    sectorId: string;
+    previousWeather: WeatherType;
+    newWeather: WeatherType;
+    intensity: number;
+  }): Promise<void> {
+    this.logger.log(
+      `Weather changed in sector ${payload.sectorId}: ${payload.previousWeather} -> ${payload.newWeather}`,
+    );
+
+    try {
+      // 查找该区域内所有受影响的文明
+      const affectedCivs = await this.findCivilizationsInSector(payload.sectorId);
+
+      for (const civId of affectedCivs) {
+        // 移除旧效果
+        await this.removeWeatherEffects(civId);
+
+        // 应用新效果
+        await this.applyWeatherEffects(civId, payload.sectorId);
+      }
+
+      this.logger.log(
+        `Updated weather effects for ${affectedCivs.length} civilizations in sector ${payload.sectorId}`,
+      );
+    } catch (error) {
+      this.logger.error(`Failed to handle weather change: ${error.message}`);
+    }
+  }
+
+  /**
+   * 获取文明的当前天气效果
+   */
+  getActiveEffect(civId: string): ActiveWeatherEffect | undefined {
+    return this.activeEffects.get(civId);
+  }
+
+  /**
+   * 获取所有活跃的天气效果
+   */
+  getAllActiveEffects(): ActiveWeatherEffect[] {
+    return Array.from(this.activeEffects.values());
+  }
+
+  /**
+   * 计算修正值
+   */
+  private calculateModifiers(
+    civilization: any,
+    baseConfig: CivilizationAttributeModifiers,
+    intensity: number,
+  ): CivilizationAttributeModifiers {
+    // 根据天气强度和文明特性计算最终修正值
+    const intensityFactor = Math.max(0.5, Math.min(2.0, intensity));
+
+    // 考虑文明的科技等级对天气影响的减免
+    const techResistance = civilization.techLevel ? Math.min(0.5, civilization.techLevel * 0.05) : 0;
+
+    return {
+      resourceMultiplier: this.applyIntensityAndResistance(
+        baseConfig.resourceMultiplier,
+        intensityFactor,
+        techResistance,
+      ),
+      energyConsumptionMultiplier: this.applyIntensityAndResistance(
+        baseConfig.energyConsumptionMultiplier,
+        intensityFactor,
+        techResistance,
+        true,
+      ),
+      sensorRangeModifier: Math.round(
+        baseConfig.sensorRangeModifier * intensityFactor * (1 - techResistance),
+      ),
+      researchSpeedMultiplier: this.applyIntensityAndResistance(
+        baseConfig.researchSpeedMultiplier,
+        intensityFactor,
+        techResistance,
+      ),
+      tradeEfficiencyMultiplier: this.applyIntensityAndResistance(
+        baseConfig.tradeEfficiencyMultiplier,
+        intensityFactor,
+        techResistance,
+      ),
+      mutationRisk: baseConfig.mutationRisk * intensityFactor * (1 - techResistance),
+      diplomaticVisibilityModifier: Math.round(
+        baseConfig.diplomaticVisibilityModifier * intensityFactor,
+      ),
+    };
+  }
+
+  /**
+   * 应用强度和抗性修正
+   */
+  private applyIntensityAndResistance(
+    baseValue: number,
+    intensity: number,
+    resistance: number,
+    isNegative: boolean = false,
+  ): number {
+    const modifiedValue = baseValue * intensity;
+    const direction = isNegative ? 1 : -1;
+    const resistanceEffect = (modifiedValue - 1) * resistance * direction;
+    return Math.max(0.1, modifiedValue + resistanceEffect);
+  }
+
+  /**
+   * 应用修正值到文明
+   */
+  private async applyModifiersToCivilization(
+    civId: string,
+    modifiers: CivilizationAttributeModifiers,
+  ): Promise<void> {
+    try {
+      await this.civilizationService.updateAttributes(civId, {
+        resourceMultiplier: modifiers.resourceMultiplier,
+        energyConsumptionMultiplier: modifiers.energyConsumptionMultiplier,
+        sensorRangeModifier: modifiers.sensorRangeModifier,
+        researchSpeedMultiplier: modifiers.researchSpeedMultiplier,
+        tradeEfficiencyMultiplier: modifiers.tradeEfficiencyMultiplier,
+        mutationRisk: modifiers.mutationRisk,
+        diplomaticVisibilityModifier: modifiers.diplomaticVisibilityModifier,
+        weatherEffectActive: true,
+      });
+    } catch (error) {
+      this.logger.error(`Failed to apply modifiers to civilization: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * 恢复文明原始属性
+   */
+  private async revertModifiersFromCivilization(
+    civId: string,
+    modifiers: CivilizationAttributeModifiers,
+  ): Promise<void> {
+    try {
+      await this.civilizationService.updateAttributes(civId, {
+        resourceMultiplier: 1.0,
+        energyConsumptionMultiplier: 1.0,
+        sensorRangeModifier: 0,
+        researchSpeedMultiplier: 1.0,
+        tradeEfficiencyMultiplier: 1.0,
+        mutationRisk: 0,
+        diplomaticVisibilityModifier: 0,
+        weatherEffectActive: false,
+      });
+    } catch (error) {
+      this.logger.error(`Failed to revert modifiers from civilization: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * 查找区域内的文明
+   */
+  private async findCivilizationsInSector(sectorId: string): Promise<string[]> {
+    try {
+      const civilizations = await this.civilizationService.findBySector(sectorId);
+      return civilizations.map((civ: any) => civ.id);
+    } catch (error) {
+      this.logger.error(`Failed to find civilizations in sector: ${error.message}`);
+      return [];
+    }
+  }
+
+  /**
+   * 发出效果应用事件
+   */
+  private emitEffectAppliedEvent(effect: ActiveWeatherEffect): void {
+    // 使用 EventEmitter 发出事件
+    const EventEmitter = require('events');
+    const eventEmitter = new EventEmitter();
+    eventEmitter.emit('WEATHER_EFFECT_APPLIED', {
+      civId: effect.civId,
+      weatherType: effect.weatherType,
+      modifiers: effect.modifiers,
+      timestamp: effect.appliedAt,
+    });
+  }
+
+  /**
+   * 发出效果移除事件
+   */
+  private emitEffectRemovedEvent(effect: ActiveWeatherEffect): void {
+    const EventEmitter = require('events');
+    const eventEmitter = new EventEmitter();
+    eventEmitter.emit('WEATHER_EFFECT_REMOVED', {
+      civId: effect.civId,
+      weatherType: effect.weatherType,
+      timestamp: new Date(),
+    });
+  }
+}
