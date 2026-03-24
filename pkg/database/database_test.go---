@@ -1,0 +1,91 @@
+package database
+
+import (
+	"context"
+	"testing"
+	"time"
+)
+
+func TestDefaultConfig(t *testing.T) {
+	cfg := DefaultConfig()
+	
+	if cfg.Host != "localhost" {
+		t.Errorf("expected host localhost, got %s", cfg.Host)
+	}
+	if cfg.Port != 5432 {
+		t.Errorf("expected port 5432, got %d", cfg.Port)
+	}
+	if cfg.Database != "cyber_cosmos" {
+		t.Errorf("expected database cyber_cosmos, got %s", cfg.Database)
+	}
+	if cfg.MaxConns != 25 {
+		t.Errorf("expected max conns 25, got %d", cfg.MaxConns)
+	}
+	if cfg.MinConns != 5 {
+		t.Errorf("expected min conns 5, got %d", cfg.MinConns)
+	}
+}
+
+func TestGetPostgresDB_Singleton(t *testing.T) {
+	ResetPool()
+	defer ResetPool()
+
+	cfg := &Config{
+		Host:     "localhost",
+		Port:     5432,
+		User:     "test",
+		Password: "test",
+		Database: "test_db",
+		SSLMode:  "disable",
+		MaxConns: 5,
+		MinConns: 1,
+	}
+
+	// First call should create the pool
+	pool1, err := GetPostgresDBWithConfig(cfg)
+	// We expect an error since we don't have a real database
+	if err == nil {
+		// If we have a real database, verify singleton
+		pool2, err2 := GetPostgresDBWithConfig(cfg)
+		if err2 == nil && pool1 != pool2 {
+			t.Error("expected same pool instance from singleton")
+		}
+		if pool2 != nil {
+			pool2.Close()
+		}
+	}
+	if pool1 != nil {
+		pool1.Close()
+	}
+}
+
+func TestClosePostgresDB(t *testing.T) {
+	ResetPool()
+	defer ResetPool()
+
+	// Close on nil pool should not panic
+	ClosePostgresDB()
+}
+
+func TestHealthCheck_NoPool(t *testing.T) {
+	ResetPool()
+	defer ResetPool()
+
+	ctx := context.Background()
+	err := HealthCheck(ctx)
+	if err == nil {
+		t.Error("expected error when pool is not initialized")
+	}
+}
+
+func TestGetPoolStats_NoPool(t *testing.T) {
+	ResetPool()
+	defer ResetPool()
+
+	_, err := GetPoolStats()
+	if err == nil {
+		t.Error("expected error when pool is not initialized")
+	}
+}
+
+func TestExecuteInTransaction_NoPool(t *testing.T

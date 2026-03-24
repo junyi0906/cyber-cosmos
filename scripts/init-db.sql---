@@ -1,10 +1,9 @@
 -- Cyber-Cosmos Database Schema Initialization
 -- Version: 1.0.0
--- Description: Initialize PostgreSQL database schema for evolution tracking
+-- Description: Initialize PostgreSQL database schema for evolution system
 
 -- Enable required extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- ============================================
 -- Table: evolution_records
@@ -19,62 +18,46 @@ CREATE TABLE IF NOT EXISTS evolution_records (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Create index on status for faster queries
+CREATE INDEX IF NOT EXISTS idx_evolution_records_status ON evolution_records(status);
+CREATE INDEX IF NOT EXISTS idx_evolution_records_created_at ON evolution_records(created_at DESC);
+
 -- Add check constraint for status
+ALTER TABLE evolution_records DROP CONSTRAINT IF EXISTS chk_evolution_status;
 ALTER TABLE evolution_records ADD CONSTRAINT chk_evolution_status 
     CHECK (status IN ('pending', 'running', 'completed', 'failed', 'cancelled'));
 
--- Create index for status queries
-CREATE INDEX idx_evolution_records_status ON evolution_records(status);
-CREATE INDEX idx_evolution_records_created_at ON evolution_records(created_at DESC);
-
--- Add comments
-COMMENT ON TABLE evolution_records IS 'Stores records of system evolution cycles';
-COMMENT ON COLUMN evolution_records.id IS 'Unique identifier for the evolution record';
-COMMENT ON COLUMN evolution_records.status IS 'Current status: pending, running, completed, failed, cancelled';
-COMMENT ON COLUMN evolution_records.diff_url IS 'URL to the diff/patch file for this evolution';
-COMMENT ON COLUMN evolution_records.score IS 'Quality score of the evolution result';
-COMMENT ON COLUMN evolution_records.created_at IS 'Timestamp when the record was created';
-COMMENT ON COLUMN evolution_records.updated_at IS 'Timestamp when the record was last updated';
-
 -- ============================================
 -- Table: agents_state
--- Description: Stores state snapshots of AI agents
+-- Description: Stores the current state of AI agents
 -- ============================================
 CREATE TABLE IF NOT EXISTS agents_state (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    agent_name VARCHAR(100) NOT NULL,
+    agent_name VARCHAR(100) NOT NULL UNIQUE,
     state VARCHAR(50) NOT NULL DEFAULT 'idle',
-    snapshot JSONB,
+    snapshot JSONB DEFAULT '{}',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Add check constraint for agent state
+-- Create index on agent_name for faster lookups
+CREATE INDEX IF NOT EXISTS idx_agents_state_name ON agents_state(agent_name);
+CREATE INDEX IF NOT EXISTS idx_agents_state_status ON agents_state(state);
+
+-- Add check constraint for state
+ALTER TABLE agents_state DROP CONSTRAINT IF EXISTS chk_agent_state;
 ALTER TABLE agents_state ADD CONSTRAINT chk_agent_state 
-    CHECK (state IN ('idle', 'thinking', 'acting', 'waiting', 'error', 'terminated'));
-
--- Create indexes
-CREATE INDEX idx_agents_state_name ON agents_state(agent_name);
-CREATE INDEX idx_agents_state_created_at ON agents_state(created_at DESC);
-CREATE INDEX idx_agents_state_snapshot ON agents_state USING GIN(snapshot);
-
--- Add comments
-COMMENT ON TABLE agents_state IS 'Stores state snapshots of AI agents in the system';
-COMMENT ON COLUMN agents_state.id IS 'Unique identifier for the state record';
-COMMENT ON COLUMN agents_state.agent_name IS 'Name of the agent';
-COMMENT ON COLUMN agents_state.state IS 'Current state: idle, thinking, acting, waiting, error, terminated';
-COMMENT ON COLUMN agents_state.snapshot IS 'JSON snapshot of agent state data';
-COMMENT ON COLUMN agents_state.created_at IS 'Timestamp when the snapshot was created';
+    CHECK (state IN ('idle', 'thinking', 'acting', 'waiting', 'error'));
 
 -- ============================================
 -- Table: evolution_steps
--- Description: Stores individual steps within an evolution process
+-- Description: Stores individual steps within an evolution cycle
 -- ============================================
 CREATE TABLE IF NOT EXISTS evolution_steps (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     evolution_id UUID NOT NULL,
     step_name VARCHAR(200) NOT NULL,
     status VARCHAR(50) NOT NULL DEFAULT 'pending',
-    details JSONB,
+    details JSONB DEFAULT '{}',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_evolution_steps_evolution 
         FOREIGN KEY (evolution_id) 
@@ -82,23 +65,14 @@ CREATE TABLE IF NOT EXISTS evolution_steps (
         ON DELETE CASCADE
 );
 
+-- Create indexes for evolution_steps
+CREATE INDEX IF NOT EXISTS idx_evolution_steps_evolution_id ON evolution_steps(evolution_id);
+CREATE INDEX IF NOT EXISTS idx_evolution_steps_status ON evolution_steps(status);
+
 -- Add check constraint for step status
+ALTER TABLE evolution_steps DROP CONSTRAINT IF EXISTS chk_step_status;
 ALTER TABLE evolution_steps ADD CONSTRAINT chk_step_status 
     CHECK (status IN ('pending', 'running', 'completed', 'failed', 'skipped'));
-
--- Create indexes
-CREATE INDEX idx_evolution_steps_evolution_id ON evolution_steps(evolution_id);
-CREATE INDEX idx_evolution_steps_status ON evolution_steps(status);
-CREATE INDEX idx_evolution_steps_details ON evolution_steps USING GIN(details);
-
--- Add comments
-COMMENT ON TABLE evolution_steps IS 'Stores individual steps within an evolution process';
-COMMENT ON COLUMN evolution_steps.id IS 'Unique identifier for the step';
-COMMENT ON COLUMN evolution_steps.evolution_id IS 'Reference to the parent evolution record';
-COMMENT ON COLUMN evolution_steps.step_name IS 'Name/description of the step';
-COMMENT ON COLUMN evolution_steps.status IS 'Current status: pending, running, completed, failed, skipped';
-COMMENT ON COLUMN evolution_steps.details IS 'JSON details about the step execution';
-COMMENT ON COLUMN evolution_steps.created_at IS 'Timestamp when the step was created';
 
 -- ============================================
 -- Trigger: Auto-update updated_at timestamp
@@ -119,13 +93,24 @@ CREATE TRIGGER update_evolution_records_updated_at
     EXECUTE FUNCTION update_updated_at_column();
 
 -- ============================================
--- Initial Data (Optional seed data)
+-- Initial Data: Insert default agent states
 -- ============================================
--- Insert a test evolution record for verification
--- INSERT INTO evolution_records (status, score) VALUES ('pending', 0.00);
+INSERT INTO agents_state (agent_name, state, snapshot) 
+VALUES 
+    ('architect', 'idle', '{"role": "system_designer"}'),
+    ('developer', 'idle', '{"role": "code_implementer"}'),
+    ('reviewer', 'idle', '{"role": "quality_checker"}')
+ON CONFLICT (agent_name) DO NOTHING;
 
 -- ============================================
--- Grant Permissions (adjust as needed)
+-- Comments for documentation
 -- ============================================
--- GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO cyber_cosmos_user;
--- GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO cyber_cosmos_user;
+COMMENT ON TABLE evolution_records IS 'Stores records of each evolution cycle in the Cyber-Cosmos system';
+COMMENT ON TABLE agents_state IS 'Stores the current state and snapshot of AI agents participating in evolution';
+COMMENT ON TABLE evolution_steps IS 'Stores individual steps executed within each evolution cycle';
+
+COMMENT ON COLUMN evolution_records.diff_url IS 'URL to the diff/patch generated during this evolution';
+COMMENT ON COLUMN evolution_records.score IS 'Quality score assigned to this evolution (0-100)';
+
+COMMENT ON COLUMN agents_state.snapshot IS 'JSON snapshot of agent memory and context';
+COMMENT ON COLUMN evolution_steps.details IS 'JSON details about step execution including logs and metrics';
