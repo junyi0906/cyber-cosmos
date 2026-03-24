@@ -1,0 +1,186 @@
+import { IsNumber, IsString, IsArray, ValidateNested, IsEnum, IsBoolean, Min, Max } from 'class-validator';
+import { Type } from 'class-transformer';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+/**
+ * 规则类型枚举 - 定义10种规则类型
+ */
+export enum RuleType {
+  RESOURCE_ABUNDANCE = 'resource_abundance',      // 资源丰度
+  DIPLOMACY_LIMIT = 'diplomacy_limit',            // 外交限制
+  EVENT_INTENSITY = 'event_intensity',            // 事件强度
+  TECH_DEVELOPMENT = 'tech_development',          // 科技发展速度
+  MILITARY_POWER = 'military_power',              // 军事力量
+  POPULATION_GROWTH = 'population_growth',        // 人口增长
+  TRADE_EFFICIENCY = 'trade_efficiency',          // 贸易效率
+  EXPLORATION_RANGE = 'exploration_range',        // 探索范围
+  CIVILIZATION_STABILITY = 'civilization_stability', // 文明稳定性
+  ENERGY_PRODUCTION = 'energy_production',        // 能源产出
+}
+
+/**
+ * 规则影响目标
+ */
+export enum RuleTarget {
+  RESOURCE_PRODUCTION = 'resource_production',
+  EVENT_FREQUENCY = 'event_frequency',
+  DIPLOMACY_TRUST = 'diplomacy_trust',
+  RESEARCH_SPEED = 'research_speed',
+  COMBAT_EFFECTIVENESS = 'combat_effectiveness',
+  POPULATION_RATE = 'population_rate',
+  TRADE_BONUS = 'trade_bonus',
+  SCAN_RANGE = 'scan_range',
+  STABILITY_MODIFIER = 'stability_modifier',
+  ENERGY_OUTPUT = 'energy_output',
+}
+
+/**
+ * 单个规则修正项
+ */
+export class RuleModifierDto {
+  @ApiProperty({ description: '规则类型', enum: RuleType })
+  @IsEnum(RuleType)
+  type: RuleType;
+
+  @ApiProperty({ description: '修正值百分比', minimum: -30, maximum: 30 })
+  @IsNumber()
+  @Min(-30)
+  @Max(30)
+  modifier: number;
+
+  @ApiProperty({ description: '规则显示名称' })
+  @IsString()
+  displayName: string;
+
+  @ApiProperty({ description: '规则描述' })
+  @IsString()
+  description: string;
+
+  @ApiProperty({ description: '影响目标', enum: RuleTarget })
+  @IsEnum(RuleTarget)
+  target: RuleTarget;
+
+  @ApiPropertyOptional({ description: '是否为负面效果' })
+  @IsBoolean()
+  isNegative?: boolean;
+}
+
+/**
+ * 赛季规则配置
+ */
+export class SeasonRulesDto {
+  @ApiProperty({ description: '赛季ID' })
+  @IsString()
+  seasonId: string;
+
+  @ApiProperty({ description: '赛季名称' })
+  @IsString()
+  seasonName: string;
+
+  @ApiProperty({ description: '规则修正列表', type: [RuleModifierDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => RuleModifierDto)
+  rules: RuleModifierDto[];
+
+  @ApiProperty({ description: '规则生成时间戳' })
+  @IsNumber()
+  generatedAt: number;
+
+  @ApiPropertyOptional({ description: '规则有效期（模拟年）' })
+  @IsNumber()
+  validForYears?: number;
+
+  @ApiPropertyOptional({ description: '规则是否有效' })
+  @IsBoolean()
+  isValid?: boolean;
+}
+
+/**
+ * 规则应用结果
+ */
+export class AppliedRuleResultDto {
+  @ApiProperty({ description: '原始值' })
+  @IsNumber()
+  originalValue: number;
+
+  @ApiProperty({ description: '修正后值' })
+  @IsNumber()
+  modifiedValue: number;
+
+  @ApiProperty({ description: '应用的修正百分比' })
+  @IsNumber()
+  appliedModifier: number;
+
+  @ApiProperty({ description: '生效的规则类型' })
+  @IsString()
+  ruleType: string;
+}
+
+/**
+ * 规则验证结果
+ */
+export class RuleValidationResultDto {
+  @ApiProperty({ description: '是否有效' })
+  @IsBoolean()
+  isValid: boolean;
+
+  @ApiProperty({ description: '验证消息列表' })
+  @IsArray()
+  @IsString({ each: true })
+  messages: string[];
+
+  @ApiProperty({ description: '警告消息列表' })
+  @IsArray()
+  @IsString({ each: true })
+  warnings: string[];
+
+  @ApiPropertyOptional({ description: '极端情况风险等级', minimum: 0, maximum: 100 })
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  riskLevel?: number;
+}
+
+/**
+ * 生成规则请求
+ */
+export class GenerateRulesRequestDto {
+  @ApiPropertyOptional({ description: '赛季ID，不提供则自动生成' })
+  @IsString()
+  seasonId?: string;
+
+  @ApiPropertyOptional({ description: '赛季名称' })
+  @IsString()
+  seasonName?: string;
+
+  @ApiPropertyOptional({ description: '自定义种子值' })
+  @IsNumber()
+  seed?: number;
+
+  @ApiPropertyOptional({ description: '是否启用极端规则', default: false })
+  @IsBoolean()
+  allowExtreme?: boolean;
+}
+
+/**
+ * 应用规则请求
+ */
+export class ApplyRulesRequestDto {
+  @ApiProperty({ description: '赛季规则配置' })
+  @ValidateNested()
+  @Type(() => SeasonRulesDto)
+  rules: SeasonRulesDto;
+
+  @ApiProperty({ description: '目标类型', enum: RuleTarget })
+  @IsEnum(RuleTarget)
+  target: RuleTarget;
+
+  @ApiProperty({ description: '基础值' })
+  @IsNumber()
+  baseValue: number;
+
+  @ApiPropertyOptional({ description: '额外修正因子' })
+  @IsNumber()
+  additionalFactor?: number;
+}

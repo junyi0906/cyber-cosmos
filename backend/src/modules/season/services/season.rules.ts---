@@ -1,0 +1,336 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { 
+  SeasonRulesDto, 
+  RuleModifierDto, 
+  RuleType, 
+  RuleTarget,
+  RuleValidationResultDto,
+  AppliedRuleResultDto,
+  GenerateRulesRequestDto,
+  ApplyRulesRequestDto,
+} from '../dto/season-rules.dto';
+
+/**
+ * 规则模板定义
+ */
+interface RuleTemplate {
+  type: RuleType;
+  displayName: string;
+  description: string;
+  target: RuleTarget;
+  defaultModifier: number;
+  weight: number; // 生成权重
+}
+
+/**
+ * 赛季管理器接口（用于依赖注入）
+ */
+export interface SeasonManager {
+  getCurrentSeason(): Promise<{ id: string; name: string; year: number } | null>;
+  getSeasonById(id: string): Promise<{ id: string; name: string; year: number } | null>;
+}
+
+/**
+ * 赛季规则服务
+ * 负责生成、验证和应用赛季规则修正
+ */
+@Injectable()
+export class SeasonRulesService {
+  private readonly logger = new Logger(SeasonRulesService.name);
+  
+  // 当前活跃的规则缓存
+  private currentRules: SeasonRulesDto | null = null;
+  
+  // 规则历史记录
+  private rulesHistory: SeasonRulesDto[] = [];
+  
+  // 最大历史记录数
+  private readonly MAX_HISTORY = 10;
+
+  /**
+   * 规则模板数组 - 定义10种规则类型
+   */
+  private readonly ruleTemplates: RuleTemplate[] = [
+    {
+      type: RuleType.RESOURCE_ABUNDANCE,
+      displayName: '资源丰度',
+      description: '影响所有资源的产出效率',
+      target: RuleTarget.RESOURCE_PRODUCTION,
+      defaultModifier: 0,
+      weight: 1.0,
+    },
+    {
+      type: RuleType.DIPLOMACY_LIMIT,
+      displayName: '外交限制',
+      description: '影响外交信任度的建立与恢复速度',
+      target: RuleTarget.DIPLOMACY_TRUST,
+      defaultModifier: 0,
+      weight: 0.8,
+    },
+    {
+      type: RuleType.EVENT_INTENSITY,
+      displayName: '事件强度',
+      description: '影响随机事件的发生频率和影响程度',
+      target: RuleTarget.EVENT_FREQUENCY,
+      defaultModifier: 0,
+      weight: 1.0,
+    },
+    {
+      type: RuleType.TECH_DEVELOPMENT,
+      displayName: '科技发展',
+      description: '影响科技研究速度',
+      target: RuleTarget.RESEARCH_SPEED,
+      defaultModifier: 0,
+      weight: 0.9,
+    },
+    {
+      type: RuleType.MILITARY_POWER,
+      displayName: '军事力量',
+      description: '影响军事单位的战斗效能',
+      target: RuleTarget.COMBAT_EFFECTIVENESS,
+      defaultModifier: 0,
+      weight: 0.7,
+    },
+    {
+      type: RuleType.POPULATION_GROWTH,
+      displayName: '人口增长',
+      description: '影响文明人口的增长速率',
+      target: RuleTarget.POPULATION_RATE,
+      defaultModifier: 0,
+      weight: 0.85,
+    },
+    {
+      type: RuleType.TRADE_EFFICIENCY,
+      displayName: '贸易效率',
+      description: '影响贸易路线的收益',
+      target: RuleTarget.TRADE_BONUS,
+      defaultModifier: 0,
+      weight: 0.9,
+    },
+    {
+      type: RuleType.EXPLORATION_RANGE,
+      displayName: '探索范围',
+      description: '影响舰队的探索和扫描范围',
+      target: RuleTarget.SCAN_RANGE,
+      defaultModifier: 0,
+      weight: 0.6,
+    },
+    {
+      type: RuleType.CIVILIZATION_STABILITY,
+      displayName: '文明稳定性',
+      description: '影响文明内部的稳定程度',
+      target: RuleTarget.STABILITY_MODIFIER,
+      defaultModifier: 0,
+      weight: 0.75,
+    },
+    {
+      type: RuleType.ENERGY_PRODUCTION,
+      displayName: '能源产出',
+      description: '影响能源的生产效率',
+      target: RuleTarget.ENERGY_OUTPUT,
+      defaultModifier: 0,
+      weight: 0.95,
+    },
+  ];
+
+  // 注入的赛季管理器
+  private seasonManager: SeasonManager | null = null;
+
+  /**
+   * 注入赛季管理器
+   */
+  setSeasonManager(manager: SeasonManager): void {
+    this.seasonManager = manager;
+    this.logger.log('SeasonManager injected successfully');
+  }
+
+  /**
+   * 获取赛季管理器
+   */
+  getSeasonManager(): SeasonManager | null {
+    return this.seasonManager;
+  }
+
+  /**
+   * 生成赛季规则
+   * 随机生成规则修正，范围 ±30%
+   * @param request 生成请求参数
+   */
+  async generateSeasonRules(request: GenerateRulesRequestDto = {}): Promise<SeasonRulesDto> {
+    const { seasonId, seasonName, seed, allowExtreme = false } = request;
+    
+    // 使用种子值初始化随机数生成器
+    const randomSeed = seed ?? Date.now();
+    const seededRandom = this.createSeededRandom(randomSeed);
+    
+    // 生成赛季ID和名称
+    const generatedSeasonId = seasonId ?? `season-${Date.now()}`;
+    const generatedSeasonName = seasonName ?? this.generateSeasonName(seededRandom);
+    
+    // 为每个规则模板生成修正值
+    const rules: RuleModifierDto[] = this.ruleTemplates.map(template => {
+      // 生成 -30% 到 +30% 的随机修正值
+      let modifier = this.generateModifier(seededRandom, allowExtreme);
+      
+      // 应用权重影响
+      modifier = Math.round(modifier * template.weight * 100) / 100;
+      
+      return {
+        type: template.type,
+        modifier,
+        displayName: template.displayName,
+        description: template.description,
+        target: template.target,
+        isNegative: modifier < 0,
+      };
+    });
+    
+    // 创建规则配置
+    const seasonRules: SeasonRulesDto = {
+      seasonId: generatedSeasonId,
+      seasonName: generatedSeasonName,
+      rules,
+      generatedAt: Date.now(),
+      validForYears: 1000, // 默认1000模拟年
+      isValid: true,
+    };
+    
+    // 验证规则
+    const validation = this.validateRules(seasonRules);
+    if (!validation.isValid) {
+      this.logger.warn(`Generated rules have validation issues: ${validation.messages.join(', ')}`);
+      // 尝试修正规则
+      seasonRules.rules = this.correctRules(rules, validation);
+    }
+    
+    // 缓存当前规则
+    this.currentRules = seasonRules;
+    
+    // 添加到历史记录
+    this.addToHistory(seasonRules);
+    
+    this.logger.log(`Generated season rules for ${generatedSeasonName} (${generatedSeasonId})`);
+    
+    return seasonRules;
+  }
+
+  /**
+   * 应用规则修正
+   * 将规则应用到资源产出、事件频率等
+   * @param request 应用请求
+   */
+  applyRuleModifiers(request: ApplyRulesRequestDto): AppliedRuleResultDto {
+    const { rules, target, baseValue, additionalFactor = 0 } = request;
+    
+    // 查找匹配目标的所有规则
+    const matchingRules = rules.rules.filter(rule => rule.target === target);
+    
+    if (matchingRules.length === 0) {
+      return {
+        originalValue: baseValue,
+        modifiedValue: baseValue,
+        appliedModifier: 0,
+        ruleType: 'none',
+      };
+    }
+    
+    // 计算总修正值（多个规则叠加）
+    let totalModifier = 0;
+    let primaryRuleType = 'multiple';
+    
+    if (matchingRules.length === 1) {
+      totalModifier = matchingRules[0].modifier;
+      primaryRuleType = matchingRules[0].type;
+    } else {
+      // 多规则时取加权平均
+      const weights = matchingRules.map(r => Math.abs(r.modifier));
+      const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+      
+      matchingRules.forEach(rule => {
+        const weight = Math.abs(rule.modifier);
+        totalModifier += rule.modifier * (weight / totalWeight);
+      });
+      
+      // 选择影响最大的规则作为主规则
+      const sortedRules = [...matchingRules].sort((a, b) => 
+        Math.abs(b.modifier) - Math.abs(a.modifier)
+      );
+      primaryRuleType = sortedRules[0].type;
+    }
+    
+    // 添加额外修正因子
+    totalModifier += additionalFactor;
+    
+    // 计算修正后的值
+    const modifiedValue = Math.max(0, baseValue * (1 + totalModifier / 100));
+    
+    return {
+      originalValue: baseValue,
+      modifiedValue: Math.round(modifiedValue * 1000) / 1000,
+      appliedModifier: Math.round(totalModifier * 100) / 100,
+      ruleType: primaryRuleType,
+    };
+  }
+
+  /**
+   * 批量应用规则到多个目标
+   * @param rules 规则配置
+   * @param targets 目标值映射
+   */
+  applyRulesToTargets(
+    rules: SeasonRulesDto, 
+    targets: Map<RuleTarget, number>
+  ): Map<RuleTarget, AppliedRuleResultDto> {
+    const results = new Map<RuleTarget, AppliedRuleResultDto>();
+    
+    targets.forEach((baseValue, target) => {
+      const result = this.applyRuleModifiers({
+        rules,
+        target,
+        baseValue,
+      });
+      results.set(target, result);
+    });
+    
+    return results;
+  }
+
+  /**
+   * 验证规则
+   * 确保规则组合不会导致极端情况
+   * @param rules 规则配置
+   */
+  validateRules(rules: SeasonRulesDto): RuleValidationResultDto {
+    const messages: string[] = [];
+    const warnings: string[] = [];
+    let riskLevel = 0;
+    
+    // 检查规则数量
+    if (rules.rules.length < 5) {
+      messages.push('规则数量过少，建议至少5条规则');
+      riskLevel += 10;
+    }
+    
+    // 检查极端修正值
+    const extremeRules = rules.rules.filter(r => Math.abs(r.modifier) >= 25);
+    if (extremeRules.length > 3) {
+      messages.push(`存在${extremeRules.length}条极端修正规则（≥25%），可能导致游戏失衡`);
+      riskLevel += 20;
+    }
+    
+    // 检查全负面或全正面
+    const negativeCount = rules.rules.filter(r => r.modifier < 0).length;
+    const positiveCount = rules.rules.filter(r => r.modifier > 0).length;
+    
+    if (negativeCount === rules.rules.length) {
+      messages.push('所有规则均为负面效果，将导致极度困难的游戏体验');
+      riskLevel += 30;
+    } else if (positiveCount === rules.rules.length) {
+      messages.push('所有规则均为正面效果，将降低游戏挑战性');
+      riskLevel += 15;
+    }
+    
+    // 检查关键资源规则
+    const resourceRule = rules.rules.find(r => r.type === RuleType.RESOURCE_ABUNDANCE);
+    if (resourceRule && resourceRule.modifier < -20) {
+      warnings.push('资源丰度严重不足（<-20%），
