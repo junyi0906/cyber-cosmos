@@ -1,0 +1,57 @@
+import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, Index } from 'typeorm';
+
+@Entity('relics')
+export class Relic {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ length: 100 })
+  name: string;
+
+  @Column({ type: 'text' })
+  description: string;
+
+  @Column({ type: 'decimal', precision: 10, scale: 4 })
+  @Index()
+  x: number;
+
+  @Column({ type: 'decimal', precision: 10, scale: 4 })
+  @Index()
+  y: number;
+
+  @Column({ type: 'decimal', precision: 10, scale: 4 })
+  @Index()
+  z: number;
+
+  @Column({ name: 'origin_event_id', length: 36 })
+  @Index()
+  originEventId: string;
+
+  @Column({ name: 'event_type', length: 50 })
+  eventType: string;
+
+  @Column({ type: 'jsonb', nullable: true })
+  resources: {
+    ore?: number;
+    energy?: number;
+    techPoints?: number;
+  };
+
+  @Column({ type: 'jsonb', nullable: true })
+  techFragments: {
+    techId: string;
+    progress: number;
+  }[];
+
+  @Column({ default: 'active' })
+  status: 'active' | 'explored' | 'depleted';
+
+  @Column({ name: 'explored_by', nullable: true })
+  exploredBy: string;
+
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt: Date;
+
+  @Column({ name: 'expires_at', type: 'timestamp', nullable: true })
+  expiresAt: Date;
+}

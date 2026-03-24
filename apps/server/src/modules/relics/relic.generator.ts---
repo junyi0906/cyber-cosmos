@@ -1,103 +1,148 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
-import { RelicsService } from './relics.service';
-import { EventEmitter2 } from '@nestjs/event-emitter';
+import { Injectable } from '@nestjs/common';
+import { Relic } from './relic.entity';
 
-export interface HistoricalEvent {
-  type: 'civilization_destroyed' | 'supernova' | 'tech_breakthrough' | 'war_end' | 'golden_age_end';
-  civilizationId?: string;
-  location: { x: number; y: number };
-  description: string;
-  timestamp: Date;
+export interface RelicGenerationContext {
+  eventId: string;
+  eventType: string;
+  impactLevel: number;
+  x: number;
+  y: number;
+  z: number;
+  description?: string;
 }
 
+const RELIC_NAME_TEMPLATES: Record<string, string[]> = {
+  'civilization.destroyed': [
+    'Fallen Colony Ruins',
+    'Derelict Space Station',
+    'Crystallized Remnants',
+    'Echo Chamber of the Lost',
+  ],
+  'supernova.occurred': [
+    'Stellar Core Fragment',
+    'Radiation-Saturated Debris',
+    'Quantum Anomaly Site',
+    'Plasma Condensation Field',
+  ],
+  'tech.breakthrough': [
+    'Research Archive Cache',
+    'Prototype Laboratory Wreckage',
+    'Data Crystal Cluster',
+    'Experimental Residue',
+  ],
+  'war.major': [
+    'Battlefield Memorial',
+    'Weapon Cache Site',
+    'Flagship Debris Field',
+    'Tactical Command Ruins',
+  ],
+  default: [
+    'Ancient Artifact Site',
+    'Mysterious Debris',
+    'Anomalous Structure',
+    'Unknown Origin Remains',
+  ],
+};
+
+const RELIC_DESCRIPTION_TEMPLATES: Record<string, string[]> = {
+  'civilization.destroyed': [
+    'The silent remains of a once-thriving civilization. Resources may still be salvageable.',
+    'A haunting testament to the fragility of galactic empires.',
+    'Scattered technology and resources await those brave enough to explore.',
+  ],
+  'supernova.occurred': [
+    'Intense stellar phenomena have left behind rare and valuable materials.',
+    'The aftermath of cosmic destruction holds untold secrets.',
+    'Radiation levels are high, but so is the potential reward.',
+  ],
+  'tech.breakthrough': [
+    'Cutting-edge research data fragments scattered across the site.',
+    'Revolutionary technology prototypes await discovery.',
+    'Scientific breakthroughs preserved in quantum storage.',
+  ],
+  'war.major': [
+    'The scars of conflict have left valuable military technology behind.',
+    'A battlefield frozen in time, rich with salvageable resources.',
+    'Strategic assets abandoned in the chaos of war.',
+  ],
+  default: [
+    'An enigmatic site of unknown origin and purpose.',
+    'Mysterious remnants that defy conventional analysis.',
+    'Ancient secrets waiting to be uncovered.',
+  ],
+};
+
 @Injectable()
-export class RelicGenerator implements OnModuleInit {
-  private eventQueue: HistoricalEvent[] = [];
+export class RelicGenerator {
+  generateRelic(context: RelicGenerationContext): Partial<Relic> {
+    const name = this.generateName(context.eventType);
+    const description = this.generateDescription(context.eventType, context.description);
+    const resources = this.generateResources(context.impactLevel);
+    const techFragments = this.generateTechFragments(context.eventType, context.impactLevel);
 
-  constructor(
-    private readonly relicsService: RelicsService,
-    private readonly eventEmitter: EventEmitter2,
-  ) {}
-
-  async onModuleInit() {
-    // Subscribe to historical events
-    this.eventEmitter.on('civilization.destroyed', this.handleCivilizationDestroyed.bind(this));
-    this.eventEmitter.on('supernova.occurred', this.handleSupernova.bind(this));
-    this.eventEmitter.on('tech.breakthrough', this.handleTechBreakthrough.bind(this));
-  }
-
-  private async handleCivilizationDestroyed(event: HistoricalEvent) {
-    await this.generateRelicFromEvent({
-      ...event,
-      type: 'civilization_destroyed',
-    });
-  }
-
-  private async handleSupernova(event: HistoricalEvent) {
-    await this.generateRelicFromEvent({
-      ...event,
-      type: 'supernova',
-    });
-  }
-
-  private async handleTechBreakthrough(event: HistoricalEvent) {
-    await this.generateRelicFromEvent({
-      ...event,
-      type: 'tech_breakthrough',
-    });
-  }
-
-  async generateRelicFromEvent(event: HistoricalEvent): Promise<void> {
-    const relicTypes = {
-      civilization_destroyed: 'cultural',
-      supernova: 'resource',
-      tech_breakthrough: 'technology',
-      war_end: 'military',
-      golden_age_end: 'cultural',
-    } as const;
-
-    const relicNames = {
-      civilization_destroyed: '失落文明的遗物',
-      supernova: '超新星残骸',
-      tech_breakthrough: '科技突破遗迹',
-      war_end: '战争纪念碑',
-      golden_age_end: '黄金时代遗迹',
-    };
-
-    const resourceMultipliers = {
-      civilization_destroyed: { technologyPoints: 300, minerals: 200 },
-      supernova: { energy: 500, minerals: 300 },
-      tech_breakthrough: { technologyPoints: 500 },
-      war_end: { minerals: 400 },
-      golden_age_end: { technologyPoints: 200, energy: 200 },
-    };
-
-    const type = relicTypes[event.type] || 'technology';
-    const resources = resourceMultipliers[event.type] || { technologyPoints: 100 };
-
-    await this.relicsService.createRelic({
-      name: `${relicNames[event.type]} ${Date.now().toString(36)}`,
-      description: `由事件 "${event.description}" 产生的遗迹`,
-      type,
-      location: event.location,
-      historicalEvent: event.description,
-      status: 'undiscovered',
+    return {
+      name,
+      description,
+      x: context.x,
+      y: context.y,
+      z: context.z,
+      originEventId: context.eventId,
+      eventType: context.eventType,
       resources,
-      researchRequired: Math.floor(Math.random() * 500) + 300,
-    });
+      techFragments,
+      status: 'active',
+      expiresAt: this.calculateExpiry(),
+    };
   }
 
-  queueEvent(event: HistoricalEvent): void {
-    this.eventQueue.push(event);
-    this.processQueue();
+  private generateName(eventType: string): string {
+    const templates = RELIC_NAME_TEMPLATES[eventType] || RELIC_NAME_TEMPLATES.default;
+    return templates[Math.floor(Math.random() * templates.length)];
   }
 
-  private async processQueue(): Promise<void> {
-    while (this.eventQueue.length > 0) {
-      const event = this.eventQueue.shift();
-      if (event) {
-        await this.generateRelicFromEvent(event);
-      }
+  private generateDescription(eventType: string, originalDescription?: string): string {
+    const templates = RELIC_DESCRIPTION_TEMPLATES[eventType] || RELIC_DESCRIPTION_TEMPLATES.default;
+    const baseDescription = templates[Math.floor(Math.random() * templates.length)];
+    
+    if (originalDescription) {
+      return `${baseDescription} Original event: "${originalDescription}"`;
     }
+    return baseDescription;
+  }
+
+  private generateResources(impactLevel: number): Relic['resources'] {
+    const multiplier = impactLevel / 10;
+    const baseResources = {
+      ore: Math.floor((Math.random() * 500 + 100) * multiplier),
+      energy: Math.floor((Math.random() * 300 + 50) * multiplier),
+      techPoints: Math.floor((Math.random() * 100 + 20) * multiplier),
+    };
+
+    return baseResources;
+  }
+
+  private generateTechFragments(eventType: string, impactLevel: number): Relic['techFragments'] {
+    if (eventType !== 'tech.breakthrough' && impactLevel < 9) {
+      return [];
+    }
+
+    const fragmentCount = Math.min(Math.floor(impactLevel / 3), 3);
+    const fragments: Relic['techFragments'] = [];
+
+    for (let i = 0; i < fragmentCount; i++) {
+      fragments.push({
+        techId: `tech-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        progress: Math.floor(Math.random() * 30 + 10),
+      });
+    }
+
+    return fragments;
+  }
+
+  private calculateExpiry(): Date {
+    const now = new Date();
+    const daysUntilExpiry = Math.floor(Math.random() * 30 + 30);
+    now.setDate(now.getDate() + daysUntilExpiry);
+    return now;
   }
 }

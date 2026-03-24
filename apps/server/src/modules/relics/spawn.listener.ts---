@@ -1,184 +1,59 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import { OnEvent } from '@nestjs/event-emitter';
-import { Relic, RelicType, RelicStatus } from './entities/relic.entity';
-import { MajorEventPayload } from './dto/major-event.payload';
-import { RelicSpawnedEvent } from './dto/relic-spawned.event';
-import { EventSubscriber } from '../../events/interfaces/event-subscriber.interface';
+import { RelicService } from './relic.service';
 
-const RELIC_TYPE_NAMES: Record<RelicType, string[]> = {
-  [RelicType.RUINS]: ['Fallen City', 'Ancient Settlement', 'Crumbled Citadel', 'Lost Metropolis'],
-  [RelicType.ARTIFACT]: ['Mysterious Artifact', 'Ancient Relic', 'Ethereal Object', 'Cosmic Curio'],
-  [RelicType.DATA_CACHE]: ['Data Archive', 'Memory Core', 'Knowledge Vault', 'Historical Database'],
-  [RelicType.WRECKAGE]: ['Ship Debris', 'Fleet Graveyard', 'Shattered Vessel', 'Broken Armada'],
-  [RelicType.MONOLITH]: ['Silent Monolith', 'Ethereal Pillar', 'Ancient Spire', 'Cosmic Obelisk'],
-  [RelicType.BEACON]: ['Distress Beacon', 'Signal Tower', 'Warning Station', 'Ancient Transmitter'],
-};
+export interface MajorEventPayload {
+  eventId: string;
+  eventType: string;
+  impactLevel: number;
+  x: number;
+  y: number;
+  z: number;
+  description?: string;
+  timestamp: Date;
+}
 
-const RELIC_DESCRIPTION_TEMPLATES: Record<RelicType, string[]> = {
-  [RelicType.RUINS]: [
-    'The remnants of a once-great civilization lie scattered here, silent witnesses to {eventName}.',
-    'Crumbling structures mark the site where {eventName} forever changed the fate of this region.',
-    'Ancient ruins whisper tales of {eventName}, their stones holding memories of a bygone era.',
-  ],
-  [RelicType.ARTIFACT]: [
-    'A mysterious artifact pulsates with residual energy from {eventName}.',
-    'This enigmatic object seems to have been created during {eventName}, its purpose unknown.',
-    'Scholars would pay dearly to study this relic from the time of {eventName}.',
-  ],
-  [RelicType.DATA_CACHE]: [
-    'A data cache containing records of {eventName} awaits discovery.',
-    'Historical data about {eventName} is preserved within this ancient storage device.',
-    'The memory banks hold crucial information about {eventName} and its aftermath.',
-  ],
-  [RelicType.WRECKAGE]: [
-    'Debris from vessels destroyed during {eventName} drifts silently through space.',
-    'The wreckage field tells the story of a great battle during {eventName}.',
-    'Shattered hulls and twisted metal serve as monuments to {eventName}.',
-  ],
-  [RelicType.MONOLITH]: [
-    'An imposing monolith stands as testament to {eventName}, its surface covered in unknown glyphs.',
-    'This ancient spire appeared after {eventName}, its origins shrouded in mystery.',
-    'The monolith resonates with the echoes of {eventName}, drawing explorers seeking its secrets.',
-  ],
-  [RelicType.BEACON]: [
-    'A beacon activated during {eventName} continues to transmit its eternal signal.',
-    'The warning station was activated during {eventName} and never silenced.',
-    'A distress signal from {eventName} still echoes through the void.',
-  ],
-};
+export const MAJOR_EVENT_OCCURRED = 'MAJOR_EVENT_OCCURRED';
 
 @Injectable()
-export class RelicSpawnListener implements EventSubscriber {
+export class RelicSpawnListener {
   private readonly logger = new Logger(RelicSpawnListener.name);
+  private static readonly MIN_IMPACT_LEVEL = 8;
 
-  constructor(
-    @InjectRepository(Relic)
-    private readonly relicRepository: Repository<Relic>,
-    private readonly eventEmitter: any,
-  ) {}
+  constructor(private readonly relicService: RelicService) {}
 
-  @OnEvent('MAJOR_EVENT_OCCURRED')
-  async handleMajorEvent(event: MajorEventPayload): Promise<void> {
-    this.logger.log(`Received major event: ${event.name} (impact: ${event.impactLevel})`);
+  @OnEvent(MAJOR_EVENT_OCCURRED)
+  async handleMajorEvent(payload: MajorEventPayload): Promise<void> {
+    this.logger.log(`Received major event: ${payload.eventId} with impact level ${payload.impactLevel}`);
 
-    if (event.impactLevel <= 8) {
-      this.logger.debug(`Event impact level ${event.impactLevel} is not high enough for relic spawn`);
+    if (payload.impactLevel < RelicSpawnListener.MIN_IMPACT_LEVEL) {
+      this.logger.debug(
+        `Event ${payload.eventId} impact level ${payload.impactLevel} below threshold ${RelicSpawnListener.MIN_IMPACT_LEVEL}, skipping relic generation`
+      );
       return;
     }
 
     try {
-      const relic = await this.createRelicFromEvent(event);
-      const savedRelic = await this.relicRepository.save(relic);
+      const relic = await this.relicService.createRelic({
+        eventId: payload.eventId,
+        eventType: payload.eventType,
+        impactLevel: payload.impactLevel,
+        x: payload.x,
+        y: payload.y,
+        z: payload.z,
+        description: payload.description,
+      });
 
-      this.logger.log(`Relic spawned: ${savedRelic.name} at coordinates (${event.coordinates.x}, ${event.coordinates.y}, ${event.coordinates.z})`);
-
-      await this.publishRelicSpawnedEvent(savedRelic, event);
+      this.logger.log(
+        `Relic ${relic.id} spawned at (${relic.x}, ${relic.y}, ${relic.z}) from event ${payload.eventId}`
+      );
     } catch (error) {
-      this.logger.error(`Failed to spawn relic for event ${event.id}: ${error.message}`);
+      this.logger.error(`Failed to create relic from event ${payload.eventId}: ${error}`);
       throw error;
     }
   }
 
-  private async createRelicFromEvent(event: MajorEventPayload): Promise<Relic> {
-    const relicType = this.getRandomRelicType();
-    const name = this.generateRelicName(relicType);
-    const description = this.generateRelicDescription(relicType, event);
-    const resources = this.generateResources(event.impactLevel);
-    const techFragments = this.generateTechFragments(event);
-
-    const relic = this.relicRepository.create({
-      coordinates: {
-        type: 'Point',
-        coordinates: [event.coordinates.x, event.coordinates.y],
-      } as any,
-      type: relicType,
-      name,
-      description,
-      originEventId: event.id,
-      status: RelicStatus.UNDISCOVERED,
-      resources,
-      techFragments,
-    });
-
-    return relic;
-  }
-
-  private getRandomRelicType(): RelicType {
-    const types = Object.values(RelicType);
-    return types[Math.floor(Math.random() * types.length)];
-  }
-
-  private generateRelicName(type: RelicType): string {
-    const names = RELIC_TYPE_NAMES[type];
-    return names[Math.floor(Math.random() * names.length)];
-  }
-
-  private generateRelicDescription(type: RelicType, event: MajorEventPayload): string {
-    const templates = RELIC_DESCRIPTION_TEMPLATES[type];
-    const template = templates[Math.floor(Math.random() * templates.length)];
-    
-    let description = template.replace('{eventName}', event.name);
-    
-    if (event.description) {
-      description += ` ${event.description}`;
-    }
-
-    if (event.involvedCivilizations && event.involvedCivilizations.length > 0) {
-      description += ` Civilizations involved: ${event.involvedCivilizations.join(', ')}.`;
-    }
-
-    return description;
-  }
-
-  private generateResources(impactLevel: number): { ore?: number; energy?: number; techPoints?: number } {
-    const baseMultiplier = impactLevel * 10;
-    const resources: { ore?: number; energy?: number; techPoints?: number } = {};
-
-    if (Math.random() > 0.3) {
-      resources.ore = Math.floor(baseMultiplier * (0.5 + Math.random()));
-    }
-    if (Math.random() > 0.3) {
-      resources.energy = Math.floor(baseMultiplier * (0.5 + Math.random()));
-    }
-    if (Math.random() > 0.5) {
-      resources.techPoints = Math.floor(baseMultiplier * (0.3 + Math.random() * 0.7));
-    }
-
-    return Object.keys(resources).length > 0 ? resources : { ore: baseMultiplier };
-  }
-
-  private generateTechFragments(event: MajorEventPayload): { techId: string; progress: number }[] | null {
-    if (event.type === 'TECH_BREAKTHROUGH' || event.type === 'CIVILIZATION_DESTROYED') {
-      return [
-        {
-          techId: `tech_${event.id.substring(0, 8)}`,
-          progress: Math.floor(20 + Math.random() * 40),
-        },
-      ];
-    }
-    return null;
-  }
-
-  private async publishRelicSpawnedEvent(relic: Relic, originalEvent: MajorEventPayload): Promise<void> {
-    const relicSpawnedEvent: RelicSpawnedEvent = {
-      relicId: relic.id,
-      type: relic.type,
-      name: relic.name,
-      coordinates: {
-        x: originalEvent.coordinates.x,
-        y: originalEvent.coordinates.y,
-        z: originalEvent.coordinates.z,
-      },
-      originEventId: relic.originEventId,
-      description: relic.description,
-      timestamp: new Date(),
-    };
-
-    if (this.eventEmitter && typeof this.eventEmitter.emit === 'function') {
-      this.eventEmitter.emit('relic_spawned', relicSpawnedEvent);
-      this.logger.debug(`Published relic_spawned event for relic ${relic.id}`);
-    }
+  getMinImpactLevel(): number {
+    return RelicSpawnListener.MIN_IMPACT_LEVEL;
   }
 }

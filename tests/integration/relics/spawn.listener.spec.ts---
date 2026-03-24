@@ -1,0 +1,81 @@
+import { Test, TestingModule } from '@nestjs/testing';
+import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
+import { Repository, Connection } from 'typeorm';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { Relic } from '../../../apps/server/src/modules/relics/relic.entity';
+import { RelicService } from '../../../apps/server/src/modules/relics/relic.service';
+import { RelicGenerator } from '../../../apps/server/src/modules/relics/relic.generator';
+import { RelicSpawnListener, MAJOR_EVENT_OCCURRED, MajorEventPayload } from '../../../apps/server/src/modules/relics/spawn.listener';
+
+describe('RelicSpawnListener', () => {
+  let module: TestingModule;
+  let relicRepository: Repository<Relic>;
+  let eventEmitter: EventEmitter2;
+  let listener: RelicSpawnListener;
+  let connection: Connection;
+
+  const testDbConfig = {
+    type: 'sqlite' as const,
+    database: ':memory:',
+    entities: [Relic],
+    synchronize: true,
+    dropSchema: true,
+  };
+
+  beforeAll(async () => {
+    module = await Test.createTestingModule({
+      imports: [
+        TypeOrmModule.forRoot(testDbConfig),
+        TypeOrmModule.forFeature([Relic]),
+      ],
+      providers: [
+        RelicService,
+        RelicGenerator,
+        RelicSpawnListener,
+        EventEmitter2,
+      ],
+    }).compile();
+
+    relicRepository = module.get(getRepositoryToken(Relic));
+    eventEmitter = module.get(EventEmitter2);
+    listener = module.get(RelicSpawnListener);
+    connection = module.get(Connection);
+  });
+
+  afterAll(async () => {
+    if (connection && connection.isConnected) {
+      await connection.close();
+    }
+    await module.close();
+  });
+
+  beforeEach(async () => {
+    await relicRepository.clear();
+  });
+
+  describe('handleMajorEvent', () => {
+    it('should create a relic when impactLevel >= 8', async () => {
+      const eventPayload: MajorEventPayload = {
+        eventId: 'event-001',
+        eventType: 'civilization.destroyed',
+        impactLevel: 9,
+        x: 123.456,
+        y: -78.901,
+        z: 45.678,
+        description: 'A major civilization has fallen',
+        timestamp: new Date(),
+      };
+
+      eventEmitter.emit(MAJOR_EVENT_OCCURRED, eventPayload);
+
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      const relics = await relicRepository.find();
+      expect(relics.length).toBe(1);
+
+      const relic = relics[0];
+      expect(relic).toBeDefined();
+      expect(relic.originEventId).toBe('event-001');
+      expect(Number(relic.x)).toBeCloseTo(123.456, 3);
+      expect(Number(relic.y)).toBeCloseTo(-78.901, 3);
+      expect(Number(relic.z)).toBeCloseTo(45.678

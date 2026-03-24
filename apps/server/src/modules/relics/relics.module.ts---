@@ -1,10 +1,13 @@
 import { Module } from '@nestjs/common';
-import { RelicsController } from './relics.controller';
-import { RelicsService } from './relics.service';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { Relic } from './relic.entity';
+import { RelicService } from './relic.service';
+import { RelicGenerator } from './relic.generator';
+import { RelicSpawnListener } from './spawn.listener';
 
 @Module({
-  controllers: [RelicsController],
-  providers: [RelicsService],
-  exports: [RelicsService],
+  imports: [TypeOrmModule.forFeature([Relic])],
+  providers: [RelicService, RelicGenerator, RelicSpawnListener],
+  exports: [RelicService, RelicSpawnListener],
 })
 export class RelicsModule {}
