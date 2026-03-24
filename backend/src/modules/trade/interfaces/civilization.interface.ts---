@@ -1,0 +1,26 @@
+export interface Civilization {
+  id: string;
+  name: string;
+  coordinates: { x: number; y: number };
+  resources: {
+    ore: number;
+    energy: number;
+    tech_points: number;
+  };
+  status: 'active' | 'destroyed' | 'dormant';
+}
+
+export interface DiplomaticRelation {
+  civId1: string;
+  civId2: string;
+  status: 'allied' | 'friendly' | 'neutral' | 'hostile' | 'at_war';
+  trust: number;
+}
+
+export interface TradeEvent {
+  id: string;
+  type: 'pirate_attack' | 'trade_boom' | 'route_blockade' | 'customs_dispute';
+  affectedRouteIds: string[];
+  modifier: number;
+  duration: number;
+}

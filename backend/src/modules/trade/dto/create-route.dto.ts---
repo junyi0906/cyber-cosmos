@@ -1,0 +1,56 @@
+import { IsString, IsNotEmpty, IsArray, ValidateNested, IsEnum, IsNumber, Min, Max, IsOptional, Validate } from 'class-validator';
+import { Type } from 'class-transformer';
+import { ResourceType } from '../entities/trade-route.entity';
+
+export class TradeResourceDto {
+  @IsEnum(ResourceType)
+  type: ResourceType;
+
+  @IsNumber()
+  @Min(1)
+  amount: number;
+
+  @IsEnum(['export', 'import'])
+  direction: 'export' | 'import';
+}
+
+export class CreateRouteDto {
+  @IsString()
+  @IsNotEmpty()
+  fromCivId: string;
+
+  @IsString()
+  @IsNotEmpty()
+  toCivId: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => TradeResourceDto)
+  resources: TradeResourceDto[];
+
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  @IsOptional()
+  stabilityThreshold?: number;
+}
+
+export class UpdateRouteStatusDto {
+  @IsString()
+  @IsNotEmpty()
+  routeId: string;
+
+  @IsEnum(['active', 'paused', 'suspended', 'closed'])
+  status: 'active' | 'paused' | 'suspended' | 'closed';
+}
+
+export class ProcessTradeDto {
+  @IsString()
+  @IsNotEmpty()
+  routeId: string;
+
+  @IsNumber()
+  @Min(1)
+  @IsOptional()
+  multiplier?: number;
+}
