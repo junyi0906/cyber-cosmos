@@ -1,0 +1,85 @@
+import { Server, Socket } from 'socket.io';
+import Redis from 'ioredis';
+
+export interface TickData {
+  tick: number;
+  timestamp: number;
+  universe_age: number;
+  active_agents: number;
+  total_population: number;
+}
+
+export class TickHandler {
+  private io: Server;
+  private redisSubscriber: Redis;
+  private redisPublisher: Redis;
+
+  constructor(io: Server, redisUrl: string = 'redis://localhost:6379') {
+    this.io = io;
+    this.redisSubscriber = new Redis(redisUrl);
+    this.redisPublisher = new Redis(redisUrl);
+    this.setupRedisSubscription();
+  }
+
+  private setupRedisSubscription(): void {
+    this.redisSubscriber.subscribe('universe:tick', (err, count) => {
+      if (err) {
+        console.error('[TickHandler] Failed to subscribe to universe:tick:', err);
+        return;
+      }
+      console.log(`[TickHandler] Subscribed to universe:tick channel`);
+    });
+
+    this.redisSubscriber.on('message', (channel, message) => {
+      if (channel === 'universe:tick') {
+        try {
+          const tickData: TickData = JSON.parse(message);
+          this.broadcastTick(tickData);
+        } catch (error) {
+          console.error('[TickHandler] Failed to parse tick data:', error);
+        }
+      }
+    });
+  }
+
+  public broadcastTick(data: TickData): void {
+    this.io.emit('tick', data);
+    console.log(`[TickHandler] Broadcasted tick #${data.tick}`);
+  }
+
+  public handleConnection(socket: Socket): void {
+    console.log(`[TickHandler] Client connected: ${socket.id}`);
+
+    socket.on('tick:subscribe', () => {
+      socket.join('tick:updates');
+      console.log(`[TickHandler] Client ${socket.id} subscribed to tick updates`);
+    });
+
+    socket.on('tick:unsubscribe', () => {
+      socket.leave('tick:updates');
+      console.log(`[TickHandler] Client ${socket.id} unsubscribed from tick updates`);
+    });
+
+    socket.on('tick:get_current', async () => {
+      try {
+        const currentTick = await this.redisPublisher.get('universe:current_tick');
+        if (currentTick) {
+          socket.emit('tick:current', JSON.parse(currentTick));
+        }
+      } catch (error) {
+        console.error('[TickHandler] Failed to get current tick:', error);
+      }
+    });
+  }
+
+  public async publishTick(data: TickData): Promise<void> {
+    await this.redisPublisher.publish('universe:tick', JSON.stringify(data));
+  }
+
+  public cleanup(): void {
+    this.redisSubscriber.disconnect();
+    this.redisPublisher.disconnect();
+  }
+}
+
+export default TickHandler;
