@@ -1,0 +1,65 @@
+// 干预系统类型定义
+
+export interface Agent {
+  id: string;
+  name: string;
+  type: 'civilization' | 'leader' | 'fleet' | 'planet';
+  status: 'active' | 'inactive' | 'destroyed';
+  attributes: Record<string, number>;
+  position?: { x: number; y: number; z: number };
+}
+
+export interface DecisionParameter {
+  key: string;
+  label: string;
+  type: 'number' | 'range' | 'select' | 'boolean';
+  value: number | string | boolean;
+  min?: number;
+  max?: number;
+  step?: number;
+  options?: { value: string; label: string }[];
+  description?: string;
+}
+
+export interface Intervention {
+  id: string;
+  type: 'oracle' | 'scenario' | 'parameter';
+  agentId?: string;
+  agentName?: string;
+  scenarioType?: string;
+  parameters?: DecisionParameter[];
+  description: string;
+  timestamp: Date;
+  status: 'pending' | 'executed' | 'failed';
+  result?: string;
+}
+
+export interface Scenario {
+  id: string;
+  name: string;
+  description: string;
+  category: 'resource' | 'conflict' | 'discovery' | 'disaster' | 'diplomacy';
+  icon: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  parameters: DecisionParameter[];
+  cooldown: number; // 秒
+  lastTriggered?: Date;
+}
+
+export interface InterventionHistory {
+  interventions: Intervention[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+}
+
+export type InterventionTab = 'oracle' | 'scenario' | 'history';
+
+export interface GodPanelState {
+  activeTab: InterventionTab;
+  selectedAgent: Agent | null;
+  selectedScenario: Scenario | null;
+  parameters: DecisionParameter[];
+  isExecuting: boolean;
+  history: Intervention[];
+}
