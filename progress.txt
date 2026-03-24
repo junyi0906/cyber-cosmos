@@ -2,9 +2,9 @@ Project: cyber-cosmos
 Requirement: 对 GitHub 项目 cyber-cosmos（~/cyber-cosmos）进行功能优化和扩展。这是一个 AI 多文明宇宙模拟项目。目标：增强宇宙功能深度和多 Agent 交互体验。具体方向包括：1）新增宇宙事件系统和叙事引擎（星球诞生、文明兴衰、宇宙灾难等）；2）扩展多 Agent 社交系统（新增外交行为、联盟事件、文明广播）；3）优化宇宙观测台界面（更丰富的宇宙可视化、事件时间线）；4）增
 Started: 2026-03-24T18:56:07.068170
 Total Features: 26
-Completed: 13 (skipped: 0)
-Status: coding (13/26)
-Current Feature: feat-014
+Completed: 14 (skipped: 0)
+Status: coding (14/26)
+Current Feature: (none)
 ==================================================
 Log:
 [2026-03-24T18:56:07.068193] Initializer 完成
@@ -60,3 +60,4 @@ Log:
 [2026-03-24T19:08:57.224145] 开始实现 feat-014: REST API 扩展 - 新增事件、外交、决策相关接口
 [2026-03-24T19:09:29.135865] ✓ feat-013 通过 (13/26)
 [2026-03-24T19:09:29.168378] 开始实现 feat-014: REST API 扩展 - 新增事件、外交、决策相关接口
+[2026-03-24T19:09:39.108757] ✓ feat-014 通过 (14/26)
