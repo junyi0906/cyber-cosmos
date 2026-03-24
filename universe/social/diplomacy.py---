@@ -1,0 +1,243 @@
+"""
+外交关系管理模块 - 文明间外交状态维护
+
+该模块实现了文明间的外交关系管理，包括：
+- 外交关系类型（和平、中立、敌对）
+- 条约类型（互不侵犯、科技共享、贸易）
+- 外交关系对Agent决策的影响计算
+"""
+
+from enum import Enum
+from typing import Dict, List, Tuple, Set, Optional, Any
+from dataclasses import dataclass, field
+from datetime import datetime
+import uuid
+
+
+class RelationType(Enum):
+    """外交关系类型枚举"""
+    PEACE = "peace"          # 和平 - 友好关系，可进行合作
+    NEUTRAL = "neutral"      # 中立 - 默认关系，无特殊互动
+    HOSTILE = "hostile"      # 敌对 - 敌对关系，可能发生冲突
+
+
+class TreatyType(Enum):
+    """条约类型枚举"""
+    NON_AGGRESSION = "non_aggression"  # 互不侵犯条约 - 禁止军事攻击
+    TECH_SHARE = "tech_share"          # 科技共享条约 - 共享科技研究成果
+    TRADE = "trade"                    # 贸易条约 - 建立贸易关系
+
+
+@dataclass
+class Treaty:
+    """
+    条约数据类
+    
+    Attributes:
+        treaty_id: 条约唯一标识符
+        treaty_type: 条约类型
+        parties: 签约双方文明ID元组
+        signed_at: 签订时间
+        duration: 持续时间（宇宙周期），None表示永久有效
+        is_active: 条约是否有效
+        terms: 条约附加条款
+    """
+    treaty_id: str
+    treaty_type: TreatyType
+    parties: Tuple[str, str]
+    signed_at: datetime = field(default_factory=datetime.now)
+    duration: Optional[int] = None
+    is_active: bool = True
+    terms: Dict[str, Any] = field(default_factory=dict)
+    
+    def is_expired(self, current_cycle: int, signed_cycle: int) -> bool:
+        """
+        检查条约是否已过期
+        
+        Args:
+            current_cycle: 当前宇宙周期
+            signed_cycle: 签订时的宇宙周期
+            
+        Returns:
+            bool: 条约是否已过期
+        """
+        if self.duration is None:
+            return False
+        return (current_cycle - signed_cycle) >= self.duration
+
+
+class DiplomacyManager:
+    """
+    外交关系管理器
+    
+    负责管理文明间的外交关系和条约，提供关系查询、设置、
+    条约签订/撕毁等功能，并计算外交关系对Agent决策的影响。
+    
+    Attributes:
+        _relations: 存储文明间关系的字典
+        _treaties: 存储所有条约的字典
+        _civilization_treaties: 文明ID到条约ID集合的映射
+        _relation_history: 关系变更历史记录
+    """
+    
+    def __init__(self):
+        """初始化外交管理器"""
+        # 存储文明间关系，key为排序后的文明ID元组
+        self._relations: Dict[Tuple[str, str], RelationType] = {}
+        # 存储所有条约
+        self._treaties: Dict[str, Treaty] = {}
+        # 文明ID到条约ID的映射
+        self._civilization_treaties: Dict[str, Set[str]] = {}
+        # 关系变更历史
+        self._relation_history: List[Dict[str, Any]] = []
+        # 条约签订周期记录
+        self._treaty_cycles: Dict[str, int] = {}
+    
+    def _make_key(self, civ_id1: str, civ_id2: str) -> Tuple[str, str]:
+        """
+        创建排序后的文明ID元组作为字典key
+        
+        Args:
+            civ_id1: 文明1 ID
+            civ_id2: 文明2 ID
+            
+        Returns:
+            Tuple[str, str]: 排序后的文明ID元组
+        """
+        return tuple(sorted([civ_id1, civ_id2]))
+    
+    def get_relation(self, civ_id1: str, civ_id2: str) -> RelationType:
+        """
+        查询两文明外交关系
+        
+        Args:
+            civ_id1: 文明1 ID
+            civ_id2: 文明2 ID
+            
+        Returns:
+            RelationType: 外交关系类型，默认为NEUTRAL
+                          同一文明返回PEACE
+        """
+        if civ_id1 == civ_id2:
+            return RelationType.PEACE
+        
+        key = self._make_key(civ_id1, civ_id2)
+        return self._relations.get(key, RelationType.NEUTRAL)
+    
+    def set_relation(self, civ_id1: str, civ_id2: str, 
+                     relation: RelationType, 
+                     reason: Optional[str] = None) -> None:
+        """
+        设置外交关系
+        
+        Args:
+            civ_id1: 文明1 ID
+            civ_id2: 文明2 ID
+            relation: 外交关系类型
+            reason: 关系变更原因（可选）
+        """
+        if civ_id1 == civ_id2:
+            return
+        
+        key = self._make_key(civ_id1, civ_id2)
+        old_relation = self._relations.get(key, RelationType.NEUTRAL)
+        self._relations[key] = relation
+        
+        # 记录关系变更历史
+        self._relation_history.append({
+            "civ_id1": civ_id1,
+            "civ_id2": civ_id2,
+            "old_relation": old_relation.value if old_relation else None,
+            "new_relation": relation.value,
+            "reason": reason,
+            "timestamp": datetime.now().isoformat()
+        })
+    
+    def sign_treaty(self, treaty_type: TreatyType, 
+                    civ_id1: str, civ_id2: str, 
+                    duration: Optional[int] = None,
+                    terms: Optional[Dict[str, Any]] = None,
+                    treaty_id: Optional[str] = None,
+                    current_cycle: int = 0) -> Treaty:
+        """
+        签订条约
+        
+        Args:
+            treaty_type: 条约类型
+            civ_id1: 文明1 ID
+            civ_id2: 文明2 ID
+            duration: 持续时间（宇宙周期），None表示永久
+            terms: 条约附加条款
+            treaty_id: 条约ID（可选，不提供则自动生成）
+            current_cycle: 当前宇宙周期
+            
+        Returns:
+            Treaty: 创建的条约对象
+            
+        Raises:
+            ValueError: 如果文明ID相同
+        """
+        if civ_id1 == civ_id2:
+            raise ValueError("Cannot sign treaty with self")
+        
+        if treaty_id is None:
+            treaty_id = str(uuid.uuid4())
+        
+        treaty = Treaty(
+            treaty_id=treaty_id,
+            treaty_type=treaty_type,
+            parties=(civ_id1, civ_id2),
+            duration=duration,
+            terms=terms or {}
+        )
+        
+        self._treaties[treaty_id] = treaty
+        self._treaty_cycles[treaty_id] = current_cycle
+        
+        # 更新文明到条约的映射
+        for civ_id in [civ_id1, civ_id2]:
+            if civ_id not in self._civilization_treaties:
+                self._civilization_treaties[civ_id] = set()
+            self._civilization_treaties[civ_id].add(treaty_id)
+        
+        return treaty
+    
+    def break_treaty(self, treaty_id: str, 
+                     reason: Optional[str] = None) -> bool:
+        """
+        撕毁条约
+        
+        Args:
+            treaty_id: 条约ID
+            reason: 撕毁原因（可选）
+            
+        Returns:
+            bool: 是否成功撕毁
+        """
+        if treaty_id not in self._treaties:
+            return False
+        
+        treaty = self._treaties[treaty_id]
+        treaty.is_active = False
+        
+        # 记录撕毁事件
+        self._relation_history.append({
+            "event": "treaty_broken",
+            "treaty_id": treaty_id,
+            "treaty_type": treaty.treaty_type.value,
+            "parties": list(treaty.parties),
+            "reason": reason,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+        return True
+    
+    def get_treaties(self, civ_id: str, 
+                     active_only: bool = True,
+                     current_cycle: Optional[int] = None) -> List[Treaty]:
+        """
+        获取文明所有条约
+        
+        Args:
+            civ_id: 文明ID
+            active_only
