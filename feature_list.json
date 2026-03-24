@@ -284,9 +284,10 @@
       "depends_on": [
         "feat-012"
       ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "天气转换概率：CALM 40%, RESOURCE_STORM 25%, DARK_FLUX 20%, WARP_BLOCK 15%"
+      "passes": true,
+      "last_attempt": "2026-03-24T23:35:14.546559",
+      "notes": "天气转换概率：CALM 40%, RESOURCE_STORM 25%, DARK_FLUX 20%, WARP_BLOCK 15%",
+      "retry_count": 0
     },
     {
       "id": "feat-014",
