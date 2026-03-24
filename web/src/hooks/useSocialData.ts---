@@ -1,0 +1,260 @@
+import { useState, useEffect, useCallback } from 'react';
+import type { SocialState, Civilization, DiplomacyRelation, Alliance, Treaty, Broadcast, Vote } from '../components/Social/types';
+
+interface UseSocialDataReturn {
+  data: SocialState | null;
+  loading: boolean;
+  error: string | null;
+  refresh: () => Promise<void>;
+  updateRelation: (sourceId: string, targetId: string, type: DiplomacyRelation['type']) => Promise<void>;
+  createAlliance: (name: string, leaderId: string, description: string) => Promise<void>;
+  joinAlliance: (allianceId: string, civilizationId: string) => Promise<void>;
+  leaveAlliance: (allianceId: string, civilizationId: string) => Promise<void>;
+  proposeTreaty: (treaty: Omit<Treaty, 'id' | 'signedAt' | 'status'>) => Promise<void>;
+  sendBroadcast: (broadcast: Omit<Broadcast, 'id' | 'timestamp'>) => Promise<void>;
+  castVote: (voteId: string, civilizationId: string, optionId: string) => Promise<void>;
+  createVote: (allianceId: string, title: string, description: string, options: { id: string; text: string }[]) => Promise<void>;
+}
+
+const API_BASE = '/api/social';
+
+export function useSocialData(): UseSocialDataReturn {
+  const [data, setData] = useState<SocialState | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const response = await fetch(`${API_BASE}/state`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const result = await response.json();
+      setData(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch social data');
+      setData(getMockData());
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+    
+    const ws = new WebSocket(`ws://${window.location.host}/ws/social`);
+    ws.onmessage = (event) => {
+      const update = JSON.parse(event.data);
+      setData(prev => prev ? { ...prev, ...update } : prev);
+    };
+    
+    return () => ws.close();
+  }, [fetchData]);
+
+  const updateRelation = useCallback(async (sourceId: string, targetId: string, type: DiplomacyRelation['type']) => {
+    try {
+      await fetch(`${API_BASE}/relation`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourceId, targetId, type })
+      });
+      setData(prev => {
+        if (!prev) return prev;
+        const relations = prev.relations.map(r => 
+          r.sourceId === sourceId && r.targetId === targetId ? { ...r, type } : r
+        );
+        return { ...prev, relations };
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update relation');
+    }
+  }, []);
+
+  const createAlliance = useCallback(async (name: string, leaderId: string, description: string) => {
+    try {
+      const response = await fetch(`${API_BASE}/alliance`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, leaderId, description })
+      });
+      const newAlliance = await response.json();
+      setData(prev => prev ? { ...prev, alliances: [...prev.alliances, newAlliance] } : prev);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create alliance');
+    }
+  }, []);
+
+  const joinAlliance = useCallback(async (allianceId: string, civilizationId: string) => {
+    try {
+      await fetch(`${API_BASE}/alliance/${allianceId}/join`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ civilizationId })
+      });
+      setData(prev => {
+        if (!prev) return prev;
+        const alliances = prev.alliances.map(a => {
+          if (a.id === allianceId) {
+            return {
+              ...a,
+              members: [...a.members, {
+                civilizationId,
+                joinedAt: Date.now(),
+                role: 'member' as const,
+                contribution: 0
+              }]
+            };
+          }
+          return a;
+        });
+        return { ...prev, alliances };
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to join alliance');
+    }
+  }, []);
+
+  const leaveAlliance = useCallback(async (allianceId: string, civilizationId: string) => {
+    try {
+      await fetch(`${API_BASE}/alliance/${allianceId}/leave`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ civilizationId })
+      });
+      setData(prev => {
+        if (!prev) return prev;
+        const alliances = prev.alliances.map(a => {
+          if (a.id === allianceId) {
+            return {
+              ...a,
+              members: a.members.filter(m => m.civilizationId !== civilizationId)
+            };
+          }
+          return a;
+        });
+        return { ...prev, alliances };
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to leave alliance');
+    }
+  }, []);
+
+  const proposeTreaty = useCallback(async (treaty: Omit<Treaty, 'id' | 'signedAt' | 'status'>) => {
+    try {
+      const response = await fetch(`${API_BASE}/treaty`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(treaty)
+      });
+      const newTreaty = await response.json();
+      setData(prev => prev ? { ...prev, treaties: [...prev.treaties, newTreaty] } : prev);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to propose treaty');
+    }
+  }, []);
+
+  const sendBroadcast = useCallback(async (broadcast: Omit<Broadcast, 'id' | 'timestamp'>) => {
+    try {
+      const response = await fetch(`${API_BASE}/broadcast`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(broadcast)
+      });
+      const newBroadcast = await response.json();
+      setData(prev => prev ? { ...prev, broadcasts: [newBroadcast, ...prev.broadcasts] } : prev);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to send broadcast');
+    }
+  }, []);
+
+  const castVote = useCallback(async (voteId: string, civilizationId: string, optionId: string) => {
+    try {
+      await fetch(`${API_BASE}/vote/${voteId}/cast`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ civilizationId, optionId })
+      });
+      setData(prev => {
+        if (!prev) return prev;
+        const votes = prev.votes.map(v => {
+          if (v.id === voteId) {
+            return {
+              ...v,
+              votes: [...v.votes, { civilizationId, optionId, timestamp: Date.now() }]
+            };
+          }
+          return v;
+        });
+        return { ...prev, votes };
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to cast vote');
+    }
+  }, []);
+
+  const createVote = useCallback(async (allianceId: string, title: string, description: string, options: { id: string; text: string }[]) => {
+    try {
+      const response = await fetch(`${API_BASE}/vote`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ allianceId, title, description, options })
+      });
+      const newVote = await response.json();
+      setData(prev => prev ? { ...prev, votes: [...prev.votes, newVote] } : prev);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create vote');
+    }
+  }, []);
+
+  return {
+    data,
+    loading,
+    error,
+    refresh: fetchData,
+    updateRelation,
+    createAlliance,
+    joinAlliance,
+    leaveAlliance,
+    proposeTreaty,
+    sendBroadcast,
+    castVote,
+    createVote
+  };
+}
+
+function getMockData(): SocialState {
+  const civilizations: Civilization[] = [
+    { id: 'civ-1', name: '星际联邦', type: 'technological', power: 8500, techLevel: 8, population: 12000000000, resources: 7500, color: '#4FC3F7', position: { x: 100, y: 150 }, status: 'active' },
+    { id: 'civ-2', name: '虫群意识', type: 'biological', power: 7200, techLevel: 6, population: 50000000000, resources: 4200, color: '#81C784', position: { x: 250, y: 100 }, status: 'active' },
+    { id: 'civ-3', name: '机械帝国', type: 'mechanical', power: 9100, techLevel: 9, population: 500000000, resources: 9800, color: '#FFD54F', position: { x: 180, y: 280 }, status: 'active' },
+    { id: 'civ-4', name: '虚空行者', type: 'ethereal', power: 6800, techLevel: 10, population: 10000000, resources: 3000, color: '#BA68C8', position: { x: 320, y: 200 }, status: 'active' },
+    { id: 'civ-5', name: '贸易联盟', type: 'commercial', power: 5500, techLevel: 7, population: 8000000000, resources: 12000, color: '#FF8A65', position: { x: 400, y: 120 }, status: 'active' },
+    { id: 'civ-6', name: '远古守护者', type: 'ancient', power: 15000, techLevel: 12, population: 1000000, resources: 20000, color: '#90A4AE', position: { x: 50, y: 300 }, status: 'dormant' },
+  ];
+
+  const relations: DiplomacyRelation[] = [
+    { sourceId: 'civ-1', targetId: 'civ-2', type: 'neutral', trust: 45, tradeVolume: 1200, conflicts: 2, treaties: [], lastInteraction: Date.now() - 86400000 },
+    { sourceId: 'civ-1', targetId: 'civ-3', type: 'hostile', trust: 15, tradeVolume: 0, conflicts: 8, treaties: [], lastInteraction: Date.now() - 3600000 },
+    { sourceId: 'civ-1', targetId: 'civ-5', type: 'ally', trust: 85, tradeVolume: 5600, conflicts: 0, treaties: ['treaty-1', 'treaty-2'], lastInteraction: Date.now() - 7200000 },
+    { sourceId: 'civ-2', targetId: 'civ-3', type: 'war', trust: 5, tradeVolume: 0, conflicts: 15, treaties: [], lastInteraction: Date.now() - 1800000 },
+    { sourceId: 'civ-2', targetId: 'civ-4', type: 'friendly', trust: 70, tradeVolume: 800, conflicts: 1, treaties: ['treaty-3'], lastInteraction: Date.now() - 172800000 },
+    { sourceId: 'civ-3', targetId: 'civ-4', type: 'neutral', trust: 50, tradeVolume: 300, conflicts: 3, treaties: [], lastInteraction: Date.now() - 259200000 },
+    { sourceId: 'civ-4', targetId: 'civ-5', type: 'friendly', trust: 65, tradeVolume: 2100, conflicts: 0, treaties: [], lastInteraction: Date.now() - 86400000 },
+    { sourceId: 'civ-5', targetId: 'civ-6', type: 'neutral', trust: 30, tradeVolume: 100, conflicts: 0, treaties: [], lastInteraction: Date.now() - 604800000 },
+  ];
+
+  const alliances: Alliance[] = [
+    {
+      id: 'alliance-1',
+      name: '银河防御协定',
+      leaderId: 'civ-1',
+      members: [
+        { civilizationId: 'civ-1', joinedAt: Date.now() - 2592000000, role: 'leader', contribution: 5000 },
+        { civilizationId: 'civ-5', joinedAt: Date.now() - 1728000000, role: 'member', contribution: 3200 },
+      ],
+      foundedAt: Date.now() - 2592000000,
+      description: '维护银河系和平与贸易自由',
+      color:

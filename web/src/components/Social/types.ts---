@@ -1,0 +1,101 @@
+export interface Civilization {
+  id: string;
+  name: string;
+  type: string;
+  power: number;
+  techLevel: number;
+  population: number;
+  resources: number;
+  color: string;
+  position: { x: number; y: number };
+  status: 'active' | 'dormant' | 'extinct';
+}
+
+export type RelationType = 'ally' | 'friendly' | 'neutral' | 'hostile' | 'war';
+
+export interface DiplomacyRelation {
+  sourceId: string;
+  targetId: string;
+  type: RelationType;
+  trust: number;
+  tradeVolume: number;
+  conflicts: number;
+  treaties: string[];
+  lastInteraction: number;
+}
+
+export type TreatyType = 'non_aggression' | 'trade' | 'tech_share' | 'defense_pact' | 'alliance';
+
+export interface Treaty {
+  id: string;
+  name: string;
+  type: TreatyType;
+  parties: string[];
+  signedAt: number;
+  expiresAt?: number;
+  status: 'active' | 'broken' | 'expired';
+  terms: string[];
+}
+
+export interface Alliance {
+  id: string;
+  name: string;
+  leaderId: string;
+  members: AllianceMember[];
+  foundedAt: number;
+  description: string;
+  color: string;
+  status: 'active' | 'dissolved';
+}
+
+export interface AllianceMember {
+  civilizationId: string;
+  joinedAt: number;
+  role: 'leader' | 'member' | 'applicant';
+  contribution: number;
+}
+
+export interface Broadcast {
+  id: string;
+  senderId: string;
+  senderName: string;
+  type: 'tech' | 'warning' | 'distress' | 'diplomatic' | 'cultural';
+  content: string;
+  timestamp: number;
+  range: number;
+  encrypted: boolean;
+  recipients?: string[];
+}
+
+export interface Vote {
+  id: string;
+  allianceId: string;
+  title: string;
+  description: string;
+  proposerId: string;
+  options: VoteOption[];
+  votes: VoteRecord[];
+  status: 'pending' | 'passed' | 'rejected';
+  createdAt: number;
+  endsAt: number;
+}
+
+export interface VoteOption {
+  id: string;
+  text: string;
+}
+
+export interface VoteRecord {
+  civilizationId: string;
+  optionId: string;
+  timestamp: number;
+}
+
+export interface SocialState {
+  civilizations: Civilization[];
+  relations: DiplomacyRelation[];
+  alliances: Alliance[];
+  treaties: Treaty[];
+  broadcasts: Broadcast[];
+  votes: Vote[];
+}
