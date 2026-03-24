@@ -100,9 +100,10 @@
       "depends_on": [
         "feat-004"
       ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "需配置 Redis 作为 Bull 队列后端"
+      "passes": true,
+      "last_attempt": "2026-03-24T22:11:49.528931",
+      "notes": "需配置 Redis 作为 Bull 队列后端",
+      "retry_count": 0
     },
     {
       "id": "feat-006",
