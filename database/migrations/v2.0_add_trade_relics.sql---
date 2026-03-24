@@ -1,0 +1,243 @@
+-- Cyber-Cosmos v2.0 数据库架构升级
+-- Feature ID: feat-001
+-- 描述: 添加贸易、遗迹、天气相关表结构
+
+-- ============================================
+-- 1. 贸易路线表 (trade_routes)
+-- ============================================
+CREATE TABLE IF NOT EXISTS trade_routes (
+    id SERIAL PRIMARY KEY,
+    source_civ_id INTEGER NOT NULL,
+    target_civ_id INTEGER NOT NULL,
+    resource_type VARCHAR(50) NOT NULL,
+    volume DECIMAL(15, 2) NOT NULL DEFAULT 0,
+    status VARCHAR(20) NOT NULL DEFAULT 'active',
+    efficiency DECIMAL(3, 2) DEFAULT 1.0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    
+    CONSTRAINT valid_trade_parties CHECK (source_civ_id != target_civ_id),
+    CONSTRAINT valid_status CHECK (status IN ('active', 'suspended', 'closed', 'pending')),
+    CONSTRAINT valid_efficiency CHECK (efficiency >= 0 AND efficiency <= 2),
+    CONSTRAINT valid_volume CHECK (volume >= 0)
+);
+
+-- 贸易路线索引
+CREATE INDEX IF NOT EXISTS idx_trade_routes_source ON trade_routes(source_civ_id);
+CREATE INDEX IF NOT EXISTS idx_trade_routes_target ON trade_routes(target_civ_id);
+CREATE INDEX IF NOT EXISTS idx_trade_routes_status ON trade_routes(status);
+CREATE INDEX IF NOT EXISTS idx_trade_routes_resource ON trade_routes(resource_type);
+CREATE INDEX IF NOT EXISTS idx_trade_routes_created ON trade_routes(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_trade_routes_parties ON trade_routes(source_civ_id, target_civ_id);
+
+-- ============================================
+-- 2. 市场历史超级表 (market_history) - TimescaleDB
+-- ============================================
+CREATE TABLE IF NOT EXISTS market_history (
+    time TIMESTAMP WITH TIME ZONE NOT NULL,
+    resource_type VARCHAR(50) NOT NULL,
+    price DECIMAL(10, 4) NOT NULL,
+    volume DECIMAL(15, 2) NOT NULL DEFAULT 0,
+    civ_id INTEGER,
+    region_id INTEGER,
+    transaction_type VARCHAR(20),
+    PRIMARY KEY (time, resource_type)
+);
+
+-- 创建 TimescaleDB 超级表 (如果 TimescaleDB 扩展可用)
+-- 注意: 需要 CREATE EXTENSION IF NOT EXISTS timescaledb; 已安装
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'timescaledb') THEN
+        PERFORM create_hypertable('market_history', 'time', if_not_exists => TRUE);
+    END IF;
+END $$;
+
+-- 市场历史索引
+CREATE INDEX IF NOT EXISTS idx_market_history_resource ON market_history(resource_type, time DESC);
+CREATE INDEX IF NOT EXISTS idx_market_history_civ ON market_history(civ_id, time DESC) WHERE civ_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_market_history_region ON market_history(region_id, time DESC) WHERE region_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_market_history_price ON market_history(resource_type, price);
+
+-- ============================================
+-- 3. 文明遗迹表
+-- ============================================
+CREATE TABLE IF NOT EXISTS relics (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    location_x DECIMAL(10, 4) NOT NULL,
+    location_y DECIMAL(10, 4) NOT NULL,
+    type VARCHAR(50) NOT NULL,
+    bonus_data JSONB DEFAULT '{}',
+    discovered_by INTEGER,
+    discovered_at TIMESTAMP WITH TIME ZONE,
+    status VARCHAR(20) NOT NULL DEFAULT 'undiscovered',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    
+    CONSTRAINT valid_relic_type CHECK (type IN ('ruins', 'artifact', 'wreckage', 'monument', 'anomaly', 'cache')),
+    CONSTRAINT valid_relic_status CHECK (status IN ('undiscovered', 'discovered', 'explored', 'depleted', 'contested'))
+);
+
+-- 遗迹索引
+CREATE INDEX IF NOT EXISTS idx_relics_type ON relics(type);
+CREATE INDEX IF NOT EXISTS idx_relics_status ON relics(status);
+CREATE INDEX IF NOT EXISTS idx_relics_discovered_by ON relics(discovered_by) WHERE discovered_by IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_relics_location ON relics(location_x, location_y);
+CREATE INDEX IF NOT EXISTS idx_relics_bonus ON relics USING GIN(bonus_data);
+CREATE INDEX IF NOT EXISTS idx_relics_created ON relics(created_at DESC);
+
+-- ============================================
+-- 4. 宇宙天气表 (cosmic_weather)
+-- ============================================
+CREATE TABLE IF NOT EXISTS cosmic_weather (
+    id SERIAL PRIMARY KEY,
+    type VARCHAR(50) NOT NULL,
+    intensity DECIMAL(3, 2) NOT NULL DEFAULT 1.0,
+    start_time TIMESTAMP WITH TIME ZONE NOT NULL,
+    end_time TIMESTAMP WITH TIME ZONE,
+    affected_regions JSONB DEFAULT '[]',
+    effects JSONB DEFAULT '{}',
+    status VARCHAR(20) NOT NULL DEFAULT 'forecast',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    
+    CONSTRAINT valid_weather_type CHECK (type IN (
+        'resource_storm',      -- 资源风暴: 矿石产出翻倍，能源消耗增加
+        'dark_fluctuation',    -- 黑暗波动: 传感器范围降低，外交视野受限
+        'dark_matter_wave',    -- 暗物质浪潮: 科研速度提升，可能引发变异
+        'nebula_surge',        -- 星云涌动: 能源产出增加，贸易效率降低
+        'void_rift',           -- 虚空裂隙: 随机传送，未知风险
+        'cosmic_calm'          -- 宇宙平静: 无特殊效果
+    )),
+    CONSTRAINT valid_weather_status CHECK (status IN ('forecast', 'active', 'ended', 'cancelled')),
+    CONSTRAINT valid_intensity CHECK (intensity >= 0 AND intensity <= 10),
+    CONSTRAINT valid_time_range CHECK (end_time IS NULL OR end_time > start_time)
+);
+
+-- 宇宙天气索引
+CREATE INDEX IF NOT EXISTS idx_cosmic_weather_type ON cosmic_weather(type);
+CREATE INDEX IF NOT EXISTS idx_cosmic_weather_status ON cosmic_weather(status);
+CREATE INDEX IF NOT EXISTS idx_cosmic_weather_time ON cosmic_weather(start_time, end_time);
+CREATE INDEX IF NOT EXISTS idx_cosmic_weather_active ON cosmic_weather(start_time, end_time) WHERE status = 'active';
+CREATE INDEX IF NOT EXISTS idx_cosmic_weather_regions ON cosmic_weather USING GIN(affected_regions);
+CREATE INDEX IF NOT EXISTS idx_cosmic_weather_effects ON cosmic_weather USING GIN(effects);
+
+-- ============================================
+-- 5. 外键约束 (如果 civilizations 表存在)
+-- ============================================
+DO $$
+BEGIN
+    -- 检查 civilizations 表是否存在
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'civilizations') THEN
+        -- 贸易路线外键
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.table_constraints 
+            WHERE constraint_name = 'fk_trade_routes_source_civ'
+        ) THEN
+            ALTER TABLE trade_routes 
+            ADD CONSTRAINT fk_trade_routes_source_civ 
+            FOREIGN KEY (source_civ_id) REFERENCES civilizations(id) 
+            ON DELETE CASCADE;
+        END IF;
+        
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.table_constraints 
+            WHERE constraint_name = 'fk_trade_routes_target_civ'
+        ) THEN
+            ALTER TABLE trade_routes 
+            ADD CONSTRAINT fk_trade_routes_target_civ 
+            FOREIGN KEY (target_civ_id) REFERENCES civilizations(id) 
+            ON DELETE CASCADE;
+        END IF;
+        
+        -- 遗迹发现者外键
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.table_constraints 
+            WHERE constraint_name = 'fk_relics_discovered_by'
+        ) THEN
+            ALTER TABLE relics 
+            ADD CONSTRAINT fk_relics_discovered_by 
+            FOREIGN KEY (discovered_by) REFERENCES civilizations(id) 
+            ON DELETE SET NULL;
+        END IF;
+        
+        -- 市场历史文明外键
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.table_constraints 
+            WHERE constraint_name = 'fk_market_history_civ'
+        ) THEN
+            ALTER TABLE market_history 
+            ADD CONSTRAINT fk_market_history_civ 
+            FOREIGN KEY (civ_id) REFERENCES civilizations(id) 
+            ON DELETE SET NULL;
+        END IF;
+    END IF;
+END $$;
+
+-- ============================================
+-- 6. 触发器: 自动更新 updated_at
+-- ============================================
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 为各表添加更新时间触发器
+DROP TRIGGER IF EXISTS update_trade_routes_updated_at ON trade_routes;
+CREATE TRIGGER update_trade_routes_updated_at
+    BEFORE UPDATE ON trade_routes
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_relics_updated_at ON relics;
+CREATE TRIGGER update_relics_updated_at
+    BEFORE UPDATE ON relics
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_cosmic_weather_updated_at ON cosmic_weather;
+CREATE TRIGGER update_cosmic_weather_updated_at
+    BEFORE UPDATE ON cosmic_weather
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================================
+-- 7. 初始数据: 插入默认宇宙天气
+-- ============================================
+INSERT INTO cosmic_weather (type, intensity, start_time, end_time, status, effects)
+VALUES 
+    ('cosmic_calm', 1.0, CURRENT_TIMESTAMP, NULL, 'active', '{"description": "宇宙平静期，无特殊天气效果"}')
+ON CONFLICT DO NOTHING;
+
+-- ============================================
+-- 8. 验证迁移
+-- ============================================
+DO $$
+DECLARE
+    table_count INTEGER;
+BEGIN
+    SELECT COUNT(*) INTO table_count
+    FROM information_schema.tables 
+    WHERE table_name IN ('trade_routes', 'market_history', 'relics', 'cosmic_weather')
+    AND table_schema = 'public';
+    
+    IF table_count = 4 THEN
+        RAISE NOTICE 'Migration v2.0 completed successfully. All 4 tables created.';
+    ELSE
+        RAISE EXCEPTION 'Migration v2.0 failed. Expected 4 tables, found %', table_count;
+    END IF;
+END $$;
+
+-- 输出表结构摘要
+SELECT 
+    table_name,
+    (SELECT COUNT(*) FROM information_schema.columns WHERE table_name = t.table_name) as column_count
+FROM information_schema.tables t
+WHERE table_name IN ('trade_routes', 'market_history', 'relics', 'cosmic_weather')
+AND table_schema = 'public'
+ORDER BY table_name;

@@ -1,0 +1,145 @@
+#!/usr/bin/env python3
+"""
+迁移验证脚本
+验证 v2.0 数据库架构升级是否成功
+"""
+
+import os
+import sys
+import json
+from datetime import datetime
+
+# 添加项目根目录到路径
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+try:
+    import psycopg2
+    POSTGRES_AVAILABLE = True
+except ImportError:
+    POSTGRES_AVAILABLE = False
+
+
+def verify_migration():
+    """验证迁移是否成功"""
+    results = {
+        "timestamp": datetime.now().isoformat(),
+        "tables": {},
+        "indexes": {},
+        "constraints": {},
+        "status": "pending"
+    }
+    
+    # 从环境变量或配置文件获取数据库连接信息
+    db_config = {
+        "host": os.getenv("DB_HOST", "localhost"),
+        "port": int(os.getenv("DB_PORT", "5432")),
+        "database": os.getenv("DB_NAME", "cyber_cosmos"),
+        "user": os.getenv("DB_USER", "postgres"),
+        "password": os.getenv("DB_PASSWORD", "postgres")
+    }
+    
+    if not POSTGRES_AVAILABLE:
+        print("⚠️  psycopg2 not available, skipping database verification")
+        results["status"] = "skipped"
+        results["message"] = "psycopg2 not installed"
+        return results
+    
+    try:
+        conn = psycopg2.connect(**db_config)
+        cur = conn.cursor()
+        
+        # 验证表是否存在
+        expected_tables = ['trade_routes', 'market_history', 'relics', 'cosmic_weather']
+        
+        cur.execute("""
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_schema = 'public' 
+            AND table_name IN %s
+        """, (tuple(expected_tables),))
+        
+        existing_tables = [row[0] for row in cur.fetchall()]
+        
+        for table in expected_tables:
+            results["tables"][table] = table in existing_tables
+        
+        # 验证索引
+        cur.execute("""
+            SELECT tablename, indexname 
+            FROM pg_indexes 
+            WHERE schemaname = 'public' 
+            AND tablename IN %s
+        """, (tuple(expected_tables),))
+        
+        for row in cur.fetchall():
+            table_name = row[0]
+            if table_name not in results["indexes"]:
+                results["indexes"][table_name] = []
+            results["indexes"][table_name].append(row[1])
+        
+        # 验证约束
+        cur.execute("""
+            SELECT tc.table_name, tc.constraint_name, tc.constraint_type
+            FROM information_schema.table_constraints tc
+            WHERE tc.table_schema = 'public'
+            AND tc.table_name IN %s
+        """, (tuple(expected_tables),))
+        
+        for row in cur.fetchall():
+            table_name = row[0]
+            if table_name not in results["constraints"]:
+                results["constraints"][table_name] = []
+            results["constraints"][table_name].append({
+                "name": row[1],
+                "type": row[2]
+            })
+        
+        # 验证表结构详情
+        for table in expected_tables:
+            if results["tables"].get(table, False):
+                cur.execute("""
+                    SELECT column_name, data_type, is_nullable
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public' AND table_name = %s
+                    ORDER BY ordinal_position
+                """, (table,))
+                
+                columns = []
+                for row in cur.fetchall():
+                    columns.append({
+                        "name": row[0],
+                        "type": row[1],
+                        "nullable": row[2] == "YES"
+                    })
+                
+                results["tables"][table] = {
+                    "exists": True,
+                    "columns": columns
+                }
+        
+        # 检查 TimescaleDB 超级表
+        try:
+            cur.execute("""
+                SELECT hypertable_name 
+                FROM timescaledb_information.hypertables 
+                WHERE hypertable_name = 'market_history'
+            """)
+            hypertable = cur.fetchone()
+            results["timescaledb"] = {
+                "market_history_is_hypertable": hypertable is not None
+            }
+        except Exception:
+            results["timescaledb"] = {
+                "market_history_is_hypertable": False,
+                "note": "TimescaleDB extension not available"
+            }
+        
+        # 判断整体状态
+        all_tables_exist = all(
+            results["tables"].get(t, {}).get("exists", False) 
+            if isinstance(results["tables"].get(t), dict) 
+            else results["tables"].get(t, False)
+            for t in expected_tables
+        )
+        
+        results["status
