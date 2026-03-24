@@ -1,15 +1,274 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Relic } from './relic.entity';
-import { Civilization } from '../civilization/civilization.entity';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Relic,
+  RelicType,
+  RelicStatus,
+  ExploreResult,
+  RelicListQuery,
+  ExploreDto,
+} from './relic.dto';
 
 @Injectable()
 export class RelicService {
-  private readonly logger = new Logger(RelicService.name);
+  private relics: Map<string, Relic> = new Map();
+  private explorationHistory: ExploreResult[] = [];
 
-  constructor(
-    @InjectRepository(Relic)
-    private relicRepository: Repository<Relic>,
-    @InjectRepository(Civilization)
-    private civilizationRepository: Repository<Civilization>,
+  constructor() {
+    this.initializeMockRelics();
+  }
+
+  private initializeMockRelics(): void {
+    const mockRelics: Relic[] = [
+      {
+        id: 'relic-001',
+        name: '先驱者工厂 Alpha',
+        type: RelicType.PRECURSOR_FACTORY,
+        status: RelicStatus.ACTIVE,
+        coordinates: { x: 120, y: 45, z: -30 },
+        ownerId: 'civ-001',
+        ownerName: '星际联邦',
+        bonus: { type: 'production', value: 25 },
+        discoveredAt: Date.now() - 86400000 * 30,
+        lastExploredAt: Date.now() - 3600000,
+        explorationCount: 15,
+        description: '一座古老的自动化工厂，据说是先驱者文明留下的遗产。仍在运作的生产线可以大幅提升资源产出效率。',
+      },
+      {
+        id: 'relic-002',
+        name: '战争坟场 Beta',
+        type: RelicType.WAR_GRAVEYARD,
+        status: RelicStatus.DORMANT,
+        coordinates: { x: -200, y: 80, z: 50 },
+        ownerId: null,
+        ownerName: null,
+        bonus: { type: 'military', value: 30 },
+        discoveredAt: Date.now() - 86400000 * 60,
+        lastExploredAt: null,
+        explorationCount: 0,
+        description: '一场远古星际战争的遗址，散落着大量可回收的军事装备和残骸。研究这些遗物可以提升军事科技。',
+      },
+      {
+        id: 'relic-003',
+        name: '知识库 Gamma',
+        type: RelicType.KNOWLEDGE_VAULT,
+        status: RelicStatus.CONTESTED,
+        coordinates: { x: 50, y: -120, z: 100 },
+        ownerId: 'civ-002',
+        ownerName: '机械帝国',
+        bonus: { type: 'technology', value: 40 },
+        discoveredAt: Date.now() - 86400000 * 15,
+        lastExploredAt: Date.now() - 7200000,
+        explorationCount: 8,
+        description: '一个巨大的数据存储设施，保存着先驱者文明的知识结晶。其中的科技数据对研究工作有巨大帮助。',
+      },
+      {
+        id: 'relic-004',
+        name: '先驱者工厂 Delta',
+        type: RelicType.PRECURSOR_FACTORY,
+        status: RelicStatus.ACTIVE,
+        coordinates: { x: -80, y: -60, z: -150 },
+        ownerId: 'civ-003',
+        ownerName: '贸易联盟',
+        bonus: { type: 'production', value: 20 },
+        discoveredAt: Date.now() - 86400000 * 45,
+        lastExploredAt: Date.now() - 86400000,
+        explorationCount: 12,
+        description: '另一座先驱者工厂，虽然规模较小，但保存完好。适合用于提升工业产能。',
+      },
+      {
+        id: 'relic-005',
+        name: '战争坟场 Epsilon',
+        type: RelicType.WAR_GRAVEYARD,
+        status: RelicStatus.ACTIVE,
+        coordinates: { x: 300, y: 20, z: -80 },
+        ownerId: 'civ-001',
+        ownerName: '星际联邦',
+        bonus: { type: 'military', value: 35 },
+        discoveredAt: Date.now() - 86400000 * 20,
+        lastExploredAt: Date.now() - 1800000,
+        explorationCount: 20,
+        description: '一处大规模战争遗址，包含多艘战舰残骸。是研究军事战术和装备的绝佳场所。',
+      },
+    ];
+
+    mockRelics.forEach((relic) => {
+      this.relics.set(relic.id, relic);
+    });
+  }
+
+  async findAll(query: RelicListQuery): Promise<{ relics: Relic[]; total: number }> {
+    let filteredRelics = Array.from(this.relics.values());
+
+    if (query.status) {
+      filteredRelics = filteredRelics.filter((r) => r.status === query.status);
+    }
+
+    if (query.type) {
+      filteredRelics = filteredRelics.filter((r) => r.type === query.type);
+    }
+
+    if (query.ownerId) {
+      filteredRelics = filteredRelics.filter((r) => r.ownerId === query.ownerId);
+    }
+
+    const total = filteredRelics.length;
+    const offset = query.offset || 0;
+    const limit = query.limit || 50;
+
+    filteredRelics = filteredRelics.slice(offset, offset + limit);
+
+    return { relics: filteredRelics, total };
+  }
+
+  async findOne(id: string): Promise<Relic> {
+    const relic = this.relics.get(id);
+    if (!relic) {
+      throw new NotFoundException(`遗迹 ${id} 不存在`);
+    }
+    return relic;
+  }
+
+  async explore(id: string, exploreDto: ExploreDto): Promise<ExploreResult> {
+    const relic = await this.findOne(id);
+
+    if (relic.status === RelicStatus.CONTESTED && relic.ownerId !== exploreDto.civilizationId) {
+      throw new BadRequestException('该遗迹正处于争夺状态，无法探索');
+    }
+
+    const success = Math.random() > 0.3;
+    const result: ExploreResult = {
+      success,
+      relicId: id,
+      fleetId: exploreDto.fleetId,
+      civilizationId: exploreDto.civilizationId,
+      timestamp: Date.now(),
+      message: '',
+    };
+
+    if (success) {
+      const rewards = this.calculateRewards(relic);
+      result.rewards = rewards;
+      result.message = this.generateSuccessMessage(relic, rewards);
+
+      if (!relic.ownerId) {
+        relic.ownerId = exploreDto.civilizationId;
+        relic.status = RelicStatus.ACTIVE;
+      }
+
+      relic.lastExploredAt = Date.now();
+      relic.explorationCount++;
+    } else {
+      result.message = this.generateFailMessage(relic);
+    }
+
+    this.explorationHistory.push(result);
+    return result;
+  }
+
+  private calculateRewards(relic: Relic): ExploreResult['rewards'] {
+    const baseRewards = {
+      resources: {
+        minerals: 0,
+        energy: 0,
+        technology: 0,
+      },
+    };
+
+    switch (relic.type) {
+      case RelicType.PRECURSOR_FACTORY:
+        baseRewards.resources!.minerals = Math.floor(Math.random() * 500) + 200;
+        baseRewards.resources!.energy = Math.floor(Math.random() * 300) + 100;
+        baseRewards.productionBoost = relic.bonus.value;
+        break;
+      case RelicType.WAR_GRAVEYARD:
+        baseRewards.resources!.minerals = Math.floor(Math.random() * 800) + 300;
+        baseRewards.militaryBoost = relic.bonus.value;
+        break;
+      case RelicType.KNOWLEDGE_VAULT:
+        baseRewards.resources!.technology = Math.floor(Math.random() * 200) + 100;
+        baseRewards.technologyBoost = relic.bonus.value;
+        break;
+    }
+
+    return baseRewards;
+  }
+
+  private generateSuccessMessage(relic: Relic, rewards: ExploreResult['rewards']): string {
+    const messages: Record<RelicType, string[]> = {
+      [RelicType.PRECURSOR_FACTORY]: [
+        `舰队成功探索了${relic.name}，发现了大量可用的生产设备！`,
+        `在${relic.name}中，舰队找到了仍在运作的生产线，获得了宝贵的资源。`,
+      ],
+      [RelicType.WAR_GRAVEYARD]: [
+        `舰队在${relic.name}中发现了大量可回收的军事装备残骸。`,
+        `探索${relic.name}成功，回收了先进的武器技术资料。`,
+      ],
+      [RelicType.KNOWLEDGE_VAULT]: [
+        `舰队成功访问了${relic.name}，下载了大量珍贵的科技数据。`,
+        `在${relic.name}中，舰队发现了先驱者文明的核心知识库。`,
+      ],
+    };
+
+    const typeMessages = messages[relic.type];
+    return typeMessages[Math.floor(Math.random() * typeMessages.length)];
+  }
+
+  private generateFailMessage(relic: Relic): string {
+    const messages = [
+      `舰队在探索${relic.name}时遭遇了未知障碍，探索失败。`,
+      `${relic.name}的防御系统被意外激活，舰队被迫撤退。`,
+      `探索${relic.name}时发生了设备故障，任务中止。`,
+      `舰队在${relic.name}附近遭遇了空间异常，无法完成探索。`,
+    ];
+    return messages[Math.floor(Math.random() * messages.length)];
+  }
+
+  async createRelic(relicData: Partial<Relic>): Promise<Relic> {
+    const id = `relic-${Date.now()}`;
+    const newRelic: Relic = {
+      id,
+      name: relicData.name || `未命名遗迹 ${id}`,
+      type: relicData.type || RelicType.PRECURSOR_FACTORY,
+      status: RelicStatus.DORMANT,
+      coordinates: relicData.coordinates || { x: 0, y: 0, z: 0 },
+      ownerId: null,
+      ownerName: null,
+      bonus: relicData.bonus || { type: 'production', value: 20 },
+      discoveredAt: Date.now(),
+      lastExploredAt: null,
+      explorationCount: 0,
+      description: relicData.description || '一个神秘的文明遗迹。',
+    };
+
+    this.relics.set(id, newRelic);
+    return newRelic;
+  }
+
+  async getExplorationHistory(relicId?: string): Promise<ExploreResult[]> {
+    if (relicId) {
+      return this.explorationHistory.filter((h) => h.relicId === relicId);
+    }
+    return this.explorationHistory;
+  }
+
+  async contestRelic(id: string, challengerId: string): Promise<{ success: boolean; message: string }> {
+    const relic = await this.findOne(id);
+    
+    if (!relic.ownerId) {
+      throw new BadRequestException('该遗迹无主，无需争夺');
+    }
+
+    relic.status = RelicStatus.CONTESTED;
+    
+    const success = Math.random() > 0.5;
+    
+    if (success) {
+      relic.ownerId = challengerId;
+      relic.status = RelicStatus.ACTIVE;
+      return { success: true, message: `成功夺取了 ${relic.name} 的控制权！` };
+    } else {
+      relic.status = RelicStatus.ACTIVE;
+      return { success: false, message: `争夺 ${relic.name} 失败，原所有者成功防守。` };
+    }
+  }
+}

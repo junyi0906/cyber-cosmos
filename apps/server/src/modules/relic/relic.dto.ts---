@@ -1,0 +1,65 @@
+export enum RelicType {
+  PRECURSOR_FACTORY = 'precursor_factory', // 先驱者工厂 - 产能加成
+  WAR_GRAVEYARD = 'war_graveyard', // 战争坟场 - 军事加成
+  KNOWLEDGE_VAULT = 'knowledge_vault', // 知识库 - 科技加成
+}
+
+export enum RelicStatus {
+  DORMANT = 'dormant', // 休眠中
+  ACTIVE = 'active', // 激活中
+  CONTESTED = 'contested', // 争夺中
+}
+
+export interface Relic {
+  id: string;
+  name: string;
+  type: RelicType;
+  status: RelicStatus;
+  coordinates: {
+    x: number;
+    y: number;
+    z: number;
+  };
+  ownerId: string | null;
+  ownerName: string | null;
+  bonus: {
+    type: 'production' | 'military' | 'technology';
+    value: number;
+  };
+  discoveredAt: number;
+  lastExploredAt: number | null;
+  explorationCount: number;
+  description: string;
+}
+
+export interface ExploreResult {
+  success: boolean;
+  relicId: string;
+  fleetId: string;
+  civilizationId: string;
+  rewards?: {
+    resources?: {
+      minerals?: number;
+      energy?: number;
+      technology?: number;
+    };
+    technologyBoost?: number;
+    militaryBoost?: number;
+    productionBoost?: number;
+  };
+  message: string;
+  timestamp: number;
+}
+
+export interface RelicListQuery {
+  status?: RelicStatus;
+  type?: RelicType;
+  ownerId?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface ExploreDto {
+  fleetId: string;
+  civilizationId: string;
+}

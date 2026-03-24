@@ -1,0 +1,44 @@
+import { Test, TestingModule } from '@nestjs/testing';
+import { RelicController } from './relic.controller';
+import { RelicService } from './relic.service';
+import { RelicType, RelicStatus } from './relic.dto';
+
+describe('RelicController', () => {
+  let controller: RelicController;
+  let service: RelicService;
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      controllers: [RelicController],
+      providers: [RelicService],
+    }).compile();
+
+    controller = module.get<RelicController>(RelicController);
+    service = module.get<RelicService>(RelicService);
+  });
+
+  it('should be defined', () => {
+    expect(controller).toBeDefined();
+  });
+
+  describe('GET /api/relics', () => {
+    it('should return list of relics', async () => {
+      const result = await controller.findAll({});
+      expect(result).toHaveProperty('relics');
+      expect(result).toHaveProperty('total');
+      expect(Array.isArray(result.relics)).toBe(true);
+      expect(result.total).toBeGreaterThan(0);
+    });
+
+    it('should filter relics by status', async () => {
+      const result = await controller.findAll({ status: RelicStatus.ACTIVE });
+      expect(result.relics.every((r) => r.status === RelicStatus.ACTIVE)).toBe(true);
+    });
+
+    it('should filter relics by type', async () => {
+      const result = await controller.findAll({ type: RelicType.PRECURSOR_FACTORY });
+      expect(result.relics.every((r) => r.type === RelicType.PRECURSOR_FACTORY)).toBe(true);
+    });
+
+    it('should support pagination', async () => {
+      const result = await controller.findAll({ limit: 2

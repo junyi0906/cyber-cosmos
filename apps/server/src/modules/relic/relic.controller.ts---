@@ -1,0 +1,57 @@
+import {
+  Controller,
+  Get,
+  Post,
+  Param,
+  Body,
+  Query,
+  HttpCode,
+  HttpStatus,
+} from '@nestjs/common';
+import { RelicService } from './relic.service';
+import {
+  Relic,
+  RelicStatus,
+  RelicType,
+  ExploreResult,
+  RelicListQuery,
+  ExploreDto,
+} from './relic.dto';
+
+@Controller('api/relics')
+export class RelicController {
+  constructor(private readonly relicService: RelicService) {}
+
+  @Get()
+  async findAll(@Query() query: RelicListQuery): Promise<{ relics: Relic[]; total: number }> {
+    return this.relicService.findAll(query);
+  }
+
+  @Get(':id')
+  async findOne(@Param('id') id: string): Promise<Relic> {
+    return this.relicService.findOne(id);
+  }
+
+  @Post(':id/explore')
+  @HttpCode(HttpStatus.OK)
+  async explore(
+    @Param('id') id: string,
+    @Body() exploreDto: ExploreDto,
+  ): Promise<ExploreResult> {
+    return this.relicService.explore(id, exploreDto);
+  }
+
+  @Post(':id/contest')
+  @HttpCode(HttpStatus.OK)
+  async contest(
+    @Param('id') id: string,
+    @Body('challengerId') challengerId: string,
+  ): Promise<{ success: boolean; message: string }> {
+    return this.relicService.contestRelic(id, challengerId);
+  }
+
+  @Get(':id/history')
+  async getHistory(@Param('id') id: string): Promise<ExploreResult[]> {
+    return this.relicService.getExplorationHistory(id);
+  }
+}
