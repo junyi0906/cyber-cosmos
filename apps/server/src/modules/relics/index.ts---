@@ -1,0 +1,5 @@
+export * from './relics.module';
+export * from './relics.controller';
+export * from './relics.service';
+export * from './relic.generator';
+export * from './dto';

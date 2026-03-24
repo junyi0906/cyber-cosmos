@@ -1,0 +1,66 @@
+import {
+  Controller,
+  Get,
+  Post,
+  Param,
+  Query,
+  Body,
+  HttpCode,
+  HttpStatus,
+} from '@nestjs/common';
+import { RelicsService } from './relics.service';
+import { ResearchRelicDto, ContestRelicDto } from './dto';
+
+@Controller('api/relics')
+export class RelicsController {
+  constructor(private readonly relicsService: RelicsService) {}
+
+  /**
+   * 获取已发现遗迹列表
+   * @param civId 可选的文明ID，用于筛选该文明可见的遗迹
+   */
+  @Get()
+  async getRelics(@Query('civId') civId?: string) {
+    if (civId) {
+      return this.relicsService.getRelicsByCivilization(civId);
+    }
+    return this.relicsService.getAllRelics();
+  }
+
+  /**
+   * 获取遗迹详情
+   * @param id 遗迹ID
+   */
+  @Get(':id')
+  async getRelicDetail(@Param('id') id: string) {
+    return this.relicsService.getRelicById(id);
+  }
+
+  /**
+   * 开始研究遗迹
+   * @param id 遗迹ID
+   * @param dto 研究参数
+   */
+  @Post(':id/research')
+  @HttpCode(HttpStatus.OK)
+  async researchRelic(
+    @Param('id') id: string,
+    @Body() dto: ResearchRelicDto,
+  ) {
+    return this.relicsService.startResearch(id, dto);
+  }
+
+  /**
+   * 争夺遗迹
+   * @param id 遗迹ID
+   * @param dto 争夺参数
+   */
+  @Post(':id/contest')
+  @HttpCode(HttpStatus.OK)
+  async contestRelic(
+    @Param('id') id: string,
+    @Body() dto: ContestRelicDto,
+  ) {
+    return this.relicsService.startContest(id, dto);
+  }
+}

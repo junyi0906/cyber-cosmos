@@ -1,70 +1,11 @@
-import { IsUUID, IsInt, IsOptional, Min, Max } from 'class-validator';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsString, IsNotEmpty, IsOptional, IsNumber } from 'class-validator';
 
 export class ResearchRelicDto {
-  @ApiProperty({
-    description: 'The unique identifier of the relic to research',
-    example: '123e4567-e89b-12d3-a456-426614174000',
-  })
-  @IsUUID()
-  relicId: string;
-
-  @ApiProperty({
-    description: 'The ID of the civilization researching the relic',
-    example: '123e4567-e89b-12d3-a456-426614174001',
-  })
-  @IsUUID()
+  @IsString()
+  @IsNotEmpty()
   civilizationId: string;
 
-  @ApiPropertyOptional({
-    description: 'The amount of research points to invest',
-    default: 10,
-    minimum: 1,
-    maximum: 100,
-  })
+  @IsNumber()
   @IsOptional()
-  @IsInt()
-  @Min(1)
-  @Max(100)
   researchPoints?: number;
-
-  @ApiPropertyOptional({
-    description: 'Fleet ID assigned to the research mission',
-    example: '123e4567-e89b-12d3-a456-426614174002',
-  })
-  @IsOptional()
-  @IsUUID()
-  fleetId?: string;
-}
-
-export class ResearchRelicResponseDto {
-  @ApiProperty({
-    description: 'Whether the research was successful',
-  })
-  success: boolean;
-
-  @ApiProperty({
-    description: 'Current research progress',
-  })
-  progress: number;
-
-  @ApiProperty({
-    description: 'Required research points to complete',
-  })
-  required: number;
-
-  @ApiPropertyOptional({
-    description: 'Whether the relic research is complete',
-  })
-  completed?: boolean;
-
-  @ApiPropertyOptional({
-    description: 'Bonus data unlocked upon completion',
-  })
-  unlockedBonus?: Record<string, unknown>;
-
-  @ApiProperty({
-    description: 'Message describing the result',
-  })
-  message: string;
 }

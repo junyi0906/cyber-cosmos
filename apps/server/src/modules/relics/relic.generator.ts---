@@ -1,0 +1,103 @@
+import { Injectable, OnModuleInit } from '@nestjs/common';
+import { RelicsService } from './relics.service';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+
+export interface HistoricalEvent {
+  type: 'civilization_destroyed' | 'supernova' | 'tech_breakthrough' | 'war_end' | 'golden_age_end';
+  civilizationId?: string;
+  location: { x: number; y: number };
+  description: string;
+  timestamp: Date;
+}
+
+@Injectable()
+export class RelicGenerator implements OnModuleInit {
+  private eventQueue: HistoricalEvent[] = [];
+
+  constructor(
+    private readonly relicsService: RelicsService,
+    private readonly eventEmitter: EventEmitter2,
+  ) {}
+
+  async onModuleInit() {
+    // Subscribe to historical events
+    this.eventEmitter.on('civilization.destroyed', this.handleCivilizationDestroyed.bind(this));
+    this.eventEmitter.on('supernova.occurred', this.handleSupernova.bind(this));
+    this.eventEmitter.on('tech.breakthrough', this.handleTechBreakthrough.bind(this));
+  }
+
+  private async handleCivilizationDestroyed(event: HistoricalEvent) {
+    await this.generateRelicFromEvent({
+      ...event,
+      type: 'civilization_destroyed',
+    });
+  }
+
+  private async handleSupernova(event: HistoricalEvent) {
+    await this.generateRelicFromEvent({
+      ...event,
+      type: 'supernova',
+    });
+  }
+
+  private async handleTechBreakthrough(event: HistoricalEvent) {
+    await this.generateRelicFromEvent({
+      ...event,
+      type: 'tech_breakthrough',
+    });
+  }
+
+  async generateRelicFromEvent(event: HistoricalEvent): Promise<void> {
+    const relicTypes = {
+      civilization_destroyed: 'cultural',
+      supernova: 'resource',
+      tech_breakthrough: 'technology',
+      war_end: 'military',
+      golden_age_end: 'cultural',
+    } as const;
+
+    const relicNames = {
+      civilization_destroyed: '失落文明的遗物',
+      supernova: '超新星残骸',
+      tech_breakthrough: '科技突破遗迹',
+      war_end: '战争纪念碑',
+      golden_age_end: '黄金时代遗迹',
+    };
+
+    const resourceMultipliers = {
+      civilization_destroyed: { technologyPoints: 300, minerals: 200 },
+      supernova: { energy: 500, minerals: 300 },
+      tech_breakthrough: { technologyPoints: 500 },
+      war_end: { minerals: 400 },
+      golden_age_end: { technologyPoints: 200, energy: 200 },
+    };
+
+    const type = relicTypes[event.type] || 'technology';
+    const resources = resourceMultipliers[event.type] || { technologyPoints: 100 };
+
+    await this.relicsService.createRelic({
+      name: `${relicNames[event.type]} ${Date.now().toString(36)}`,
+      description: `由事件 "${event.description}" 产生的遗迹`,
+      type,
+      location: event.location,
+      historicalEvent: event.description,
+      status: 'undiscovered',
+      resources,
+      researchRequired: Math.floor(Math.random() * 500) + 300,
+    });
+  }
+
+  queueEvent(event: HistoricalEvent): void {
+    this.eventQueue.push(event);
+    this.processQueue();
+  }
+
+  private async processQueue(): Promise<void> {
+    while (this.eventQueue.length > 0) {
+      const event = this.eventQueue.shift();
+      if (event) {
+        await this.generateRelicFromEvent(event);
+      }
+    }
+  }
+}

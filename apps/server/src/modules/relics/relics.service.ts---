@@ -1,336 +1,247 @@
-import { Injectable, Logger, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, In } from 'typeorm';
-import { Relic, RelicStatus, Coordinate } from './entities/relic.entity';
-import { CivilizationService } from '../civilization/civilization.service';
-import { EventsService } from '../events/events.service';
+import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import { ResearchRelicDto, ContestRelicDto } from './dto';
 
-export interface DiscoverResult {
-  discovered: Relic[];
-  scannedArea: {
-    center: Coordinate;
-    radius: number;
+export interface Relic {
+  id: string;
+  name: string;
+  description: string;
+  type: 'technology' | 'resource' | 'cultural' | 'military';
+  location: {
+    x: number;
+    y: number;
+    region?: string;
   };
-}
-
-export interface ResearchResult {
-  relic: Relic;
-  rewards: {
-    resources?: { ore?: number; energy?: number; techPoints?: number };
-    techFragments?: { techId: string; progress: number }[];
+  historicalEvent: string;
+  discoveredBy?: string;
+  discoveredAt?: Date;
+  status: 'undiscovered' | 'discovered' | 'researching' | 'contested' | 'claimed';
+  resources: {
+    minerals?: number;
+    energy?: number;
+    technologyPoints?: number;
   };
-  completed: boolean;
-  message: string;
-}
-
-export interface ContestResult {
-  relic: Relic;
-  winner: string;
-  loser: string;
-  success: boolean;
-  message: string;
+  researchProgress?: number;
+  researchRequired: number;
+  currentResearcher?: string;
+  contestingCivilizations?: string[];
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 @Injectable()
 export class RelicsService {
-  private readonly logger = new Logger(RelicsService.name);
-  private readonly SCAN_RADIUS = 50;
-  private readonly RESEARCH_COST = {
-    energy: 100,
-    ore: 50,
-  };
+  private relics: Map<string, Relic> = new Map();
+  private idCounter = 1;
 
-  constructor(
-    @InjectRepository(Relic)
-    private readonly relicRepository: Repository<Relic>,
-    private readonly civilizationService: CivilizationService,
-    private readonly eventsService: EventsService,
-  ) {}
+  constructor() {
+    this.initializeSampleRelics();
+  }
 
-  /**
-   * 扫描附近遗迹并标记为已发现
-   */
-  async discoverRelic(civId: string, coordinates: Coordinate): Promise<DiscoverResult> {
-    this.logger.log(`Civilization ${civId} scanning for relics at (${coordinates.x}, ${coordinates.y}, ${coordinates.z || 0})`);
+  private initializeSampleRelics() {
+    const sampleRelics: Partial<Relic>[] = [
+      {
+        name: '泰坦遗迹 Alpha',
+        description: '一个古老文明的废弃空间站，蕴含着失落的技术',
+        type: 'technology',
+        location: { x: 150, y: 200, region: '外环星域' },
+        historicalEvent: '泰坦文明在3000年前的一场星际战争中毁灭',
+        status: 'discovered',
+        resources: { technologyPoints: 500, minerals: 100 },
+        researchRequired: 1000,
+      },
+      {
+        name: '资源风暴残骸',
+        description: '一艘满载稀有矿石的古代货船残骸',
+        type: 'resource',
+        location: { x: -80, y: 350, region: '星云带' },
+        historicalEvent: '在一次超新星爆发中被摧毁的贸易船队',
+        status: 'undiscovered',
+        resources: { minerals: 2000, energy: 500 },
+        researchRequired: 500,
+      },
+      {
+        name: '文化纪念碑',
+        description: '一个神秘文明留下的巨型艺术装置',
+        type: 'cultural',
+        location: { x: 400, y: -100, region: '核心星域' },
+        historicalEvent: '银河联邦黄金时代的象征',
+        status: 'discovered',
+        resources: { technologyPoints: 200 },
+        researchRequired: 300,
+      },
+    ];
 
-    // 验证文明是否存在
-    const civilization = await this.civilizationService.findById(civId);
-    if (!civilization) {
-      throw new NotFoundException(`Civilization ${civId} not found`);
+    sampleRelics.forEach((relic) => {
+      const id = `relic-${this.idCounter.toString().padStart(3, '0')}`;
+      this.idCounter++;
+      const now = new Date();
+      this.relics.set(id, {
+        id,
+        ...relic,
+        status: relic.status || 'undiscovered',
+        resources: relic.resources || {},
+        researchRequired: relic.researchRequired || 500,
+        createdAt: now,
+        updatedAt: now,
+      } as Relic);
+    });
+  }
+
+  async getAllRelics(): Promise<Relic[]> {
+    return Array.from(this.relics.values());
+  }
+
+  async getRelicsByCivilization(civId: string): Promise<Relic[]> {
+    return Array.from(this.relics.values()).filter(
+      (relic) =>
+        relic.discoveredBy === civId ||
+        relic.currentResearcher === civId ||
+        relic.contestingCivilizations?.includes(civId) ||
+        relic.status === 'discovered',
+    );
+  }
+
+  async getRelicById(id: string): Promise<Relic> {
+    const relic = this.relics.get(id);
+    if (!relic) {
+      throw new NotFoundException(`Relic with ID "${id}" not found`);
+    }
+    return relic;
+  }
+
+  async startResearch(id: string, dto: ResearchRelicDto): Promise<{
+    success: boolean;
+    message: string;
+    relic: Relic;
+    estimatedCompletion?: Date;
+  }> {
+    const relic = await this.getRelicById(id);
+
+    if (relic.status === 'contested') {
+      throw new ConflictException('Cannot research a contested relic');
     }
 
-    // 计算扫描范围
-    const scanRadius = this.SCAN_RADIUS;
-    const minX = coordinates.x - scanRadius;
-    const maxX = coordinates.x + scanRadius;
-    const minY = coordinates.y - scanRadius;
-    const maxY = coordinates.y + scanRadius;
-
-    // 查找范围内的未发现遗迹
-    const undiscoveredRelics = await this.relicRepository
-      .createQueryBuilder('relic')
-      .where('relic.status = :status', { status: RelicStatus.UNDISCOVERED })
-      .andWhere('relic.coordinates->>\'x\'::float BETWEEN :minX AND :maxX', { minX, maxX })
-      .andWhere('relic.coordinates->>\'y\'::float BETWEEN :minY AND :maxY', { minY, maxY })
-      .getMany();
-
-    // 过滤出实际在圆形范围内的遗迹
-    const discoveredRelics: Relic[] = [];
-    const now = new Date();
-
-    for (const relic of undiscoveredRelics) {
-      const distance = this.calculateDistance(coordinates, relic.coordinates);
-      if (distance <= scanRadius) {
-        relic.status = RelicStatus.DISCOVERED;
-        relic.discoveredBy = civId;
-        relic.discoveredAt = now;
-        
-        await this.relicRepository.save(relic);
-        discoveredRelics.push(relic);
-
-        // 触发发现事件
-        await this.eventsService.createEvent({
-          type: 'relic_discovered',
-          sourceId: civId,
-          targetId: relic.id,
-          data: {
-            relicName: relic.name,
-            relicType: relic.type,
-            coordinates: relic.coordinates,
-          },
-        });
-      }
+    if (relic.status === 'claimed') {
+      throw new ConflictException('This relic has already been claimed');
     }
 
-    this.logger.log(`Civilization ${civId} discovered ${discoveredRelics.length} relics`);
+    if (relic.currentResearcher && relic.currentResearcher !== dto.civilizationId) {
+      throw new ConflictException('Another civilization is already researching this relic');
+    }
+
+    const researchPoints = dto.researchPoints || 100;
+    const currentProgress = relic.researchProgress || 0;
+    const newProgress = currentProgress + researchPoints;
+
+    relic.researchProgress = newProgress;
+    relic.currentResearcher = dto.civilizationId;
+    relic.status = 'researching';
+    relic.updatedAt = new Date();
+
+    if (newProgress >= relic.researchRequired) {
+      relic.status = 'claimed';
+      relic.researchProgress = relic.researchRequired;
+      return {
+        success: true,
+        message: 'Research complete! Relic has been claimed.',
+        relic,
+      };
+    }
+
+    const remainingPoints = relic.researchRequired - newProgress;
+    const estimatedDays = Math.ceil(remainingPoints / researchPoints);
+    const estimatedCompletion = new Date();
+    estimatedCompletion.setDate(estimatedCompletion.getDate() + estimatedDays);
 
     return {
-      discovered: discoveredRelics,
-      scannedArea: {
-        center: coordinates,
-        radius: scanRadius,
+      success: true,
+      message: `Research in progress. ${remainingPoints} points remaining.`,
+      relic,
+      estimatedCompletion,
+    };
+  }
+
+  async startContest(id: string, dto: ContestRelicDto): Promise<{
+    success: boolean;
+    message: string;
+    relic: Relic;
+    contestStatus?: {
+      participants: string[];
+      currentLeader?: string;
+    };
+  }> {
+    const relic = await this.getRelicById(id);
+
+    if (relic.status === 'claimed') {
+      throw new ConflictException('Cannot contest a claimed relic');
+    }
+
+    if (!relic.contestingCivilizations) {
+      relic.contestingCivilizations = [];
+    }
+
+    if (!relic.contestingCivilizations.includes(dto.civilizationId)) {
+      relic.contestingCivilizations.push(dto.civilizationId);
+    }
+
+    relic.status = 'contested';
+    relic.updatedAt = new Date();
+
+    // Simple contest logic: fleet power determines current leader
+    const fleetPower = dto.fleetPower || 100;
+    let currentLeader = relic.currentResearcher;
+
+    if (!currentLeader || fleetPower > 50) {
+      currentLeader = dto.civilizationId;
+      relic.currentResearcher = dto.civilizationId;
+    }
+
+    return {
+      success: true,
+      message: 'Contest initiated. Victory will be determined by fleet power and strategy.',
+      relic,
+      contestStatus: {
+        participants: relic.contestingCivilizations,
+        currentLeader,
       },
     };
   }
 
-  /**
-   * 研究遗迹，消耗资源并开始研究计时
-   */
-  async researchRelic(relicId: string, civId: string): Promise<ResearchResult> {
-    this.logger.log(`Civilization ${civId} attempting to research relic ${relicId}`);
-
-    // 验证文明
-    const civilization = await this.civilizationService.findById(civId);
-    if (!civilization) {
-      throw new NotFoundException(`Civilization ${civId} not found`);
-    }
-
-    // 查找遗迹
-    const relic = await this.relicRepository.findOne({ where: { id: relicId } });
-    if (!relic) {
-      throw new NotFoundException(`Relic ${relicId} not found`);
-    }
-
-    // 检查遗迹状态
-    if (relic.status === RelicStatus.UNDISCOVERED) {
-      throw new BadRequestException('Cannot research an undiscovered relic');
-    }
-
-    if (relic.status === RelicStatus.RESEARCHED) {
-      throw new BadRequestException('This relic has already been fully researched');
-    }
-
-    // 检查是否已有其他文明在研究
-    if (relic.status === RelicStatus.RESEARCHING && relic.ownerCivId !== civId) {
-      throw new ConflictException(`This relic is being researched by civilization ${relic.ownerCivId}`);
-    }
-
-    // 检查资源是否足够
-    const hasResources = await this.civilizationService.hasResources(civId, this.RESEARCH_COST);
-    if (!hasResources) {
-      throw new BadRequestException('Insufficient resources for research');
-    }
-
-    // 消耗资源
-    await this.civilizationService.consumeResources(civId, this.RESEARCH_COST);
-
-    // 开始或继续研究
+  async createRelic(relicData: Partial<Relic>): Promise<Relic> {
+    const id = `relic-${this.idCounter.toString().padStart(3, '0')}`;
+    this.idCounter++;
     const now = new Date();
-    let completed = false;
-    let rewards: ResearchResult['rewards'] = {};
 
-    if (relic.status !== RelicStatus.RESEARCHING) {
-      // 开始新的研究
-      relic.status = RelicStatus.RESEARCHING;
-      relic.ownerCivId = civId;
-      relic.researchStartTime = now;
-      relic.researchProgress = 0;
-    }
-
-    // 增加研究进度
-    relic.researchProgress += 25; // 每次研究增加25%进度
-
-    if (relic.researchProgress >= relic.researchDuration) {
-      // 研究完成
-      completed = true;
-      relic.status = RelicStatus.RESEARCHED;
-      relic.researchProgress = relic.researchDuration;
-
-      // 计算奖励
-      rewards = {
-        resources: relic.resources,
-        techFragments: relic.techFragments,
-      };
-
-      // 给予文明奖励
-      if (relic.resources) {
-        await this.civilizationService.addResources(civId, relic.resources);
-      }
-
-      if (relic.techFragments) {
-        for (const fragment of relic.techFragments) {
-          await this.civilizationService.addTechProgress(civId, fragment.techId, fragment.progress);
-        }
-      }
-
-      // 触发研究完成事件
-      await this.eventsService.createEvent({
-        type: 'relic_researched',
-        sourceId: civId,
-        targetId: relic.id,
-        data: {
-          relicName: relic.name,
-          rewards,
-        },
-      });
-    } else {
-      // 触发研究进度事件
-      await this.eventsService.createEvent({
-        type: 'relic_research_progress',
-        sourceId: civId,
-        targetId: relic.id,
-        data: {
-          relicName: relic.name,
-          progress: relic.researchProgress,
-          duration: relic.researchDuration,
-        },
-      });
-    }
-
-    await this.relicRepository.save(relic);
-
-    const message = completed
-      ? `Research complete! You have uncovered the secrets of ${relic.name}`
-      : `Research progress: ${relic.researchProgress}/${relic.researchDuration}%`;
-
-    return {
-      relic,
-      rewards,
-      completed,
-      message,
+    const newRelic: Relic = {
+      id,
+      name: relicData.name || 'Unknown Relic',
+      description: relicData.description || '',
+      type: relicData.type || 'technology',
+      location: relicData.location || { x: 0, y: 0 },
+      historicalEvent: relicData.historicalEvent || '',
+      status: relicData.status || 'undiscovered',
+      resources: relicData.resources || {},
+      researchRequired: relicData.researchRequired || 500,
+      createdAt: now,
+      updatedAt: now,
     };
+
+    this.relics.set(id, newRelic);
+    return newRelic;
   }
 
-  /**
-   * 争夺遗迹所有权
-   */
-  async contestRelic(relicId: string, attackerCivId: string): Promise<ContestResult> {
-    this.logger.log(`Civilization ${attackerCivId} contesting relic ${relicId}`);
+  async discoverRelic(id: string, civId: string): Promise<Relic> {
+    const relic = await this.getRelicById(id);
 
-    // 验证攻击方文明
-    const attacker = await this.civilizationService.findById(attackerCivId);
-    if (!attacker) {
-      throw new NotFoundException(`Attacker civilization ${attackerCivId} not found`);
+    if (relic.status !== 'undiscovered') {
+      throw new BadRequestException('Relic has already been discovered');
     }
 
-    // 查找遗迹
-    const relic = await this.relicRepository.findOne({ where: { id: relicId } });
-    if (!relic) {
-      throw new NotFoundException(`Relic ${relicId} not found`);
-    }
+    relic.status = 'discovered';
+    relic.discoveredBy = civId;
+    relic.discoveredAt = new Date();
+    relic.updatedAt = new Date();
 
-    // 检查遗迹状态
-    if (relic.status === RelicStatus.UNDISCOVERED) {
-      throw new BadRequestException('Cannot contest an undiscovered relic');
-    }
-
-    // 如果没有所有者，直接占领
-    if (!relic.ownerCivId) {
-      relic.ownerCivId = attackerCivId;
-      relic.status = RelicStatus.DISCOVERED;
-      await this.relicRepository.save(relic);
-
-      return {
-        relic,
-        winner: attackerCivId,
-        loser: '',
-        success: true,
-        message: `${attacker.name} has claimed the unowned relic ${relic.name}`,
-      };
-    }
-
-    // 不能争夺自己的遗迹
-    if (relic.ownerCivId === attackerCivId) {
-      throw new BadRequestException('Cannot contest your own relic');
-    }
-
-    // 获取防御方文明
-    const defender = await this.civilizationService.findById(relic.ownerCivId);
-    if (!defender) {
-      // 防御方文明已不存在，直接占领
-      relic.ownerCivId = attackerCivId;
-      relic.status = RelicStatus.DISCOVERED;
-      await this.relicRepository.save(relic);
-
-      return {
-        relic,
-        winner: attackerCivId,
-        loser: relic.ownerCivId,
-        success: true,
-        message: `${attacker.name} has claimed the abandoned relic ${relic.name}`,
-      };
-    }
-
-    // 计算战斗结果
-    const attackerPower = this.calculateMilitaryPower(attacker);
-    const defenderPower = this.calculateMilitaryPower(defender);
-
-    // 添加随机因素
-    const attackerRoll = Math.random() * attackerPower * 1.2; // 攻击方有20%的随机波动
-    const defenderRoll = Math.random() * defenderPower * 1.0;
-
-    const attackerWins = attackerRoll > defenderRoll;
-
-    let winner: string;
-    let loser: string;
-    let message: string;
-
-    if (attackerWins) {
-      winner = attackerCivId;
-      loser = relic.ownerCivId;
-      
-      // 更新遗迹所有权
-      relic.ownerCivId = attackerCivId;
-      relic.status = RelicStatus.CONTESTED;
-      relic.contestingCivs = [...(relic.contestingCivs || []), attackerCivId];
-      
-      message = `${attacker.name} has conquered ${relic.name} from ${defender.name}!`;
-    } else {
-      winner = relic.ownerCivId;
-      loser = attackerCivId;
-      
-      relic.status = RelicStatus.CONTESTED;
-      relic.contestingCivs = [...(relic.contestingCivs || []), attackerCivId];
-      
-      message = `${defender.name} successfully defended ${relic.name} against ${attacker.name}!`;
-    }
-
-    await this.relicRepository.save(relic);
-
-    // 触发争夺事件
-    await this.eventsService.createEvent({
-      type: 'relic_contested',
-      sourceId: attackerCivId,
-      targetId: relic.id,
-      data: {
-        relicName:
+    return relic;
+  }
+}

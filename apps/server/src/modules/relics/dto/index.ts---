@@ -1,0 +1,2 @@
+export * from './research-relic.dto';
+export * from './contest-relic.dto';
