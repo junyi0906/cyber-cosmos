@@ -204,9 +204,10 @@
       "depends_on": [
         "feat-001"
       ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "依赖 PostgreSQL Schema"
+      "passes": true,
+      "last_attempt": "2026-03-24T19:03:25.929986",
+      "notes": "依赖 PostgreSQL Schema",
+      "retry_count": 0
     },
     {
       "id": "feat-010",
