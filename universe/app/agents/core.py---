@@ -1,0 +1,280 @@
+"""
+Agent Core Module - BDI Architecture Implementation
+
+This module implements a simplified BDI (Belief-Desire-Intention) architecture
+for agent decision-making in the Cyber-Cosmos simulation.
+"""
+import json
+import logging
+import asyncio
+from typing import Dict, Any, List, Optional, Callable
+from dataclasses import dataclass, field, asdict
+from datetime import datetime
+from enum import Enum
+
+from ..core.database import insert_decision_log, get_decision_logs
+
+logger = logging.getLogger(__name__)
+
+
+class DecisionType(Enum):
+    """Types of decisions an agent can make"""
+    EXPLORATION = "exploration"
+    DIPLOMACY = "diplomacy"
+    COMBAT = "combat"
+    RESOURCE = "resource"
+    RESEARCH = "research"
+    EXPANSION = "expansion"
+    TRADE = "trade"
+    ALLIANCE = "alliance"
+    BROADCAST = "broadcast"
+    SURVIVAL = "survival"
+
+
+@dataclass
+class Belief:
+    """
+    Belief: What the agent believes about the world
+    Represents the agent's knowledge and perceptions
+    """
+    key: str
+    value: Any
+    confidence: float = 1.0
+    timestamp: datetime = field(default_factory=datetime.now)
+    source: str = "perception"
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "key": self.key,
+            "value": self.value,
+            "confidence": self.confidence,
+            "timestamp": self.timestamp.isoformat(),
+            "source": self.source
+        }
+
+
+@dataclass
+class Desire:
+    """
+    Desire: What the agent wants to achieve
+    Represents goals and motivations
+    """
+    name: str
+    priority: float
+    description: str = ""
+    target_state: Dict[str, Any] = field(default_factory=dict)
+    deadline: Optional[int] = None  # Tick deadline
+    status: str = "active"  # active, achieved, failed, abandoned
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "name": self.name,
+            "priority": self.priority,
+            "description": self.description,
+            "target_state": self.target_state,
+            "deadline": self.deadline,
+            "status": self.status
+        }
+
+
+@dataclass
+class Intention:
+    """
+    Intention: What the agent has committed to do
+    Represents chosen courses of action
+    """
+    action: str
+    parameters: Dict[str, Any] = field(default_factory=dict)
+    expected_outcome: str = ""
+    related_desire: str = ""
+    status: str = "pending"  # pending, executing, completed, failed
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "action": self.action,
+            "parameters": self.parameters,
+            "expected_outcome": self.expected_outcome,
+            "related_desire": self.related_desire,
+            "status": self.status
+        }
+
+
+@dataclass
+class DecisionLog:
+    """
+    Decision Log Entry
+    Records the complete decision-making process
+    """
+    agent_id: str
+    tick: int
+    context: Dict[str, Any]
+    reasoning: Dict[str, Any]
+    action: Dict[str, Any]
+    decision_type: Optional[str] = None
+    log_id: Optional[int] = None
+    created_at: datetime = field(default_factory=datetime.now)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.log_id,
+            "agent_id": self.agent_id,
+            "tick": self.tick,
+            "context": self.context,
+            "reasoning": self.reasoning,
+            "action": self.action,
+            "decision_type": self.decision_type,
+            "created_at": self.created_at.isoformat(),
+            "metadata": self.metadata
+        }
+
+
+class BDIAgent:
+    """
+    Simplified BDI (Belief-Desire-Intention) Architecture
+    
+    This implements a cognitive architecture where:
+    - Beliefs: Agent's knowledge about the world
+    - Desires: Agent's goals and motivations
+    - Intentions: Agent's committed actions
+    """
+    
+    def __init__(self, agent_id: str, name: str = ""):
+        self.agent_id = agent_id
+        self.name = name or agent_id
+        
+        # BDI Components
+        self.beliefs: Dict[str, Belief] = {}
+        self.desires: List[Desire] = []
+        self.intentions: List[Intention] = []
+        
+        # Decision history
+        self.decision_history: List[DecisionLog] = []
+        
+        # Current state
+        self.current_tick = 0
+        self.current_context: Dict[str, Any] = {}
+        
+        # Decision callbacks
+        self._decision_callbacks: List[Callable] = []
+    
+    def add_belief(self, key: str, value: Any, confidence: float = 1.0, source: str = "perception"):
+        """Add or update a belief"""
+        self.beliefs[key] = Belief(
+            key=key,
+            value=value,
+            confidence=confidence,
+            source=source
+        )
+    
+    def get_belief(self, key: str) -> Optional[Belief]:
+        """Get a belief by key"""
+        return self.beliefs.get(key)
+    
+    def update_beliefs(self, world_state: Dict[str, Any]):
+        """Update beliefs based on world state perception"""
+        for key, value in world_state.items():
+            self.add_belief(key, value, source="world_state")
+    
+    def add_desire(self, name: str, priority: float, description: str = "", 
+                   target_state: Dict[str, Any] = None, deadline: Optional[int] = None):
+        """Add a new desire (goal)"""
+        desire = Desire(
+            name=name,
+            priority=priority,
+            description=description,
+            target_state=target_state or {},
+            deadline=deadline
+        )
+        self.desires.append(desire)
+        self.desires.sort(key=lambda d: d.priority, reverse=True)
+    
+    def remove_desire(self, name: str):
+        """Remove a desire"""
+        self.desires = [d for d in self.desires if d.name != name]
+    
+    def get_active_desires(self) -> List[Desire]:
+        """Get all active desires"""
+        return [d for d in self.desires if d.status == "active"]
+    
+    def add_intention(self, action: str, parameters: Dict[str, Any] = None,
+                      expected_outcome: str = "", related_desire: str = ""):
+        """Add a new intention"""
+        intention = Intention(
+            action=action,
+            parameters=parameters or {},
+            expected_outcome=expected_outcome,
+            related_desire=related_desire
+        )
+        self.intentions.append(intention)
+    
+    def get_pending_intentions(self) -> List[Intention]:
+        """Get all pending intentions"""
+        return [i for i in self.intentions if i.status == "pending"]
+    
+    def deliberate(self) -> Optional[Intention]:
+        """
+        Deliberation process: Choose which intention to execute
+        Based on current beliefs and desires
+        """
+        active_desires = self.get_active_desires()
+        if not active_desires:
+            return None
+        
+        # Simple deliberation: choose highest priority desire
+        # and create intention for it
+        top_desire = active_desires[0]
+        
+        # Generate intention based on desire type
+        intention = self._generate_intention_for_desire(top_desire)
+        if intention:
+            self.add_intention(
+                action=intention["action"],
+                parameters=intention.get("parameters", {}),
+                expected_outcome=intention.get("expected_outcome", ""),
+                related_desire=top_desire.name
+            )
+            return self.intentions[-1]
+        
+        return None
+    
+    def _generate_intention_for_desire(self, desire: Desire) -> Optional[Dict[str, Any]]:
+        """Generate an intention to achieve a desire"""
+        # This can be overridden by subclasses for specific behavior
+        return {
+            "action": "pursue_goal",
+            "parameters": {"goal": desire.name},
+            "expected_outcome": f"Achieve {desire.name}"
+        }
+    
+    def register_decision_callback(self, callback: Callable):
+        """Register a callback to be called when a decision is made"""
+        self._decision_callbacks.append(callback)
+
+
+class Agent(BDIAgent):
+    """
+    Main Agent class with decision logging capabilities
+    
+    Extends BDI architecture with:
+    - Decision logging to PostgreSQL
+    - Context-aware reasoning
+    - Action execution with logging
+    """
+    
+    def __init__(self, agent_id: str, name: str = "", civilization_id: str = ""):
+        super().__init__(agent_id, name)
+        self.civilization_id = civilization_id or agent_id
+        
+        # Agent attributes
+        self.attributes = {
+            "military": 50,
+            "economic": 50,
+            "technology": 50,
+            "culture": 50,
+            "population": 1000
+        }
+        
+        # Diplomatic state
+        self.diplomatic_relations: Dict[str, str] = {}  # agent_id -> relation_type
+        self.trust_levels: Dict
