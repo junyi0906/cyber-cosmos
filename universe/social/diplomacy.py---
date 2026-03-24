@@ -1,43 +1,59 @@
 """
 Diplomacy management system for inter-civilization relations.
-Manages diplomatic states, treaties, and their effects on agent decisions.
+
+This module handles diplomatic states, treaties, and their effects
+on agent decision-making in the Cyber-Cosmos universe.
 """
 
 from enum import Enum
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple, Set
 from datetime import datetime
-import json
+import threading
 
 
 class RelationType(Enum):
-    """Diplomatic relation types between civilizations."""
-    PEACE = "peace"           # Friendly relations, trade and cooperation possible
-    NEUTRAL = "neutral"       # No formal relations, cautious interaction
-    HOSTILE = "hostile"       # Hostile relations, potential for conflict
+    """Enumeration of possible diplomatic relations between civilizations."""
+    PEACE = "peace"
+    NEUTRAL = "neutral"
+    HOSTILE = "hostile"
+    
+    def __str__(self) -> str:
+        return self.value
     
     @classmethod
     def from_string(cls, value: str) -> 'RelationType':
-        """Convert string to RelationType."""
-        try:
-            return cls(value.lower())
-        except ValueError:
-            return cls.NEUTRAL
+        """Create RelationType from string value."""
+        mapping = {
+            "peace": cls.PEACE,
+            "neutral": cls.NEUTRAL,
+            "hostile": cls.HOSTILE,
+        }
+        if value.lower() not in mapping:
+            raise ValueError(f"Unknown relation type: {value}")
+        return mapping[value.lower()]
 
 
 class TreatyType(Enum):
-    """Types of treaties that can be signed between civilizations."""
-    NON_AGGRESSION = "non_aggression"  # Mutual non-aggression pact
-    TECH_SHARE = "tech_share"          # Technology sharing agreement
-    TRADE = "trade"                    # Trade agreement
+    """Enumeration of treaty types that can be signed between civilizations."""
+    NON_AGGRESSION = "non_aggression"
+    TECH_SHARE = "tech_share"
+    TRADE = "trade"
+    
+    def __str__(self) -> str:
+        return self.value
     
     @classmethod
     def from_string(cls, value: str) -> 'TreatyType':
-        """Convert string to TreatyType."""
-        try:
-            return cls(value.lower())
-        except ValueError:
+        """Create TreatyType from string value."""
+        mapping = {
+            "non_aggression": cls.NON_AGGRESSION,
+            "tech_share": cls.TECH_SHARE,
+            "trade": cls.TRADE,
+        }
+        if value.lower() not in mapping:
             raise ValueError(f"Unknown treaty type: {value}")
+        return mapping[value.lower()]
 
 
 @dataclass
@@ -54,400 +70,410 @@ class Treaty:
     def to_dict(self) -> Dict:
         """Convert treaty to dictionary representation."""
         return {
-            'treaty_id': self.treaty_id,
-            'treaty_type': self.treaty_type.value,
-            'parties': list(self.parties),
-            'signed_at': self.signed_at.isoformat(),
-            'duration': self.duration,
-            'terms': self.terms,
-            'is_active': self.is_active,
+            "treaty_id": self.treaty_id,
+            "treaty_type": str(self.treaty_type),
+            "parties": list(self.parties),
+            "signed_at": self.signed_at.isoformat(),
+            "duration": self.duration,
+            "terms": self.terms,
+            "is_active": self.is_active,
         }
     
-    @classmethod
-    def from_dict(cls, data: Dict) -> 'Treaty':
-        """Create Treaty from dictionary."""
-        return cls(
-            treaty_id=data['treaty_id'],
-            treaty_type=TreatyType.from_string(data['treaty_type']),
-            parties=tuple(data['parties']),
-            signed_at=datetime.fromisoformat(data['signed_at']),
-            duration=data.get('duration'),
-            terms=data.get('terms', {}),
-            is_active=data.get('is_active', True),
-        )
+    def is_expired(self, current_tick: int, signed_tick: int) -> bool:
+        """Check if treaty has expired based on tick count."""
+        if self.duration is None:
+            return False
+        return (current_tick - signed_tick) >= self.duration
+
+
+@dataclass
+class DiplomaticRelation:
+    """Represents the diplomatic relation between two civilizations."""
+    civ1_id: str
+    civ2_id: str
+    relation_type: RelationType
+    trust_level: float = 0.5  # 0.0 to 1.0
+    relation_score: float = 0.0  # Can be negative
+    last_updated: datetime = field(default_factory=datetime.now)
+    history: List[Dict] = field(default_factory=list)
+    
+    def to_dict(self) -> Dict:
+        """Convert relation to dictionary representation."""
+        return {
+            "civ1_id": self.civ1_id,
+            "civ2_id": self.civ2_id,
+            "relation_type": str(self.relation_type),
+            "trust_level": self.trust_level,
+            "relation_score": self.relation_score,
+            "last_updated": self.last_updated.isoformat(),
+            "history": self.history,
+        }
 
 
 class DiplomacyManager:
     """
     Manages diplomatic relations and treaties between civilizations.
     
-    Provides functionality for:
-    - Querying and setting diplomatic relations
-    - Signing and breaking treaties
-    - Calculating diplomatic effects on agent decisions
+    This class provides a centralized system for:
+    - Tracking diplomatic states between civilizations
+    - Managing treaties (signing, breaking, querying)
+    - Computing diplomatic effects on agent decisions
     """
     
     def __init__(self):
         """Initialize the DiplomacyManager."""
-        # Relations stored as dict of dicts: relations[civ_a][civ_b] = RelationType
-        self._relations: Dict[str, Dict[str, RelationType]] = {}
-        # Treaties stored by treaty_id
+        # Store relations with sorted tuple keys for consistency
+        self._relations: Dict[Tuple[str, str], DiplomaticRelation] = {}
+        # Store treaties by treaty_id
         self._treaties: Dict[str, Treaty] = {}
-        # Index for quick treaty lookup by civilization
+        # Index treaties by civilization for quick lookup
         self._civ_treaties: Dict[str, Set[str]] = {}
-        # Trust levels between civilizations (0.0 to 1.0)
-        self._trust_levels: Dict[str, Dict[str, float]] = {}
-        # Relation history for narrative purposes
-        self._history: List[Dict] = []
+        # Track treaty signing tick
+        self._treaty_ticks: Dict[str, int] = {}
+        # Current universe tick
+        self._current_tick: int = 0
+        # Thread lock for thread-safe operations
+        self._lock = threading.RLock()
     
-    def _ensure_civ_exists(self, civ_id: str) -> None:
-        """Ensure civilization entry exists in relations dict."""
-        if civ_id not in self._relations:
-            self._relations[civ_id] = {}
-        if civ_id not in self._civ_treaties:
-            self._civ_treaties[civ_id] = set()
-        if civ_id not in self._trust_levels:
-            self._trust_levels[civ_id] = {}
+    def _make_key(self, civ1_id: str, civ2_id: str) -> Tuple[str, str]:
+        """Create a sorted tuple key for relation lookup."""
+        return tuple(sorted([civ1_id, civ2_id]))
     
-    def _normalize_civ_order(self, civ_a: str, civ_b: str) -> Tuple[str, str]:
-        """Normalize civilization order for consistent storage."""
-        return (min(civ_a, civ_b), max(civ_a, civ_b))
+    def _generate_treaty_id(self, treaty_type: TreatyType, civ1_id: str, civ2_id: str) -> str:
+        """Generate a unique treaty ID."""
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        return f"{treaty_type.value}_{civ1_id}_{civ2_id}_{timestamp}"
     
-    def get_relation(self, civ_a: str, civ_b: str) -> RelationType:
+    def set_current_tick(self, tick: int) -> None:
+        """Set the current universe tick for treaty expiration checks."""
+        with self._lock:
+            self._current_tick = tick
+    
+    def get_relation(self, civ1_id: str, civ2_id: str) -> RelationType:
         """
         Query the diplomatic relation between two civilizations.
         
         Args:
-            civ_a: First civilization ID
-            civ_b: Second civilization ID
+            civ1_id: First civilization ID
+            civ2_id: Second civilization ID
             
         Returns:
-            RelationType: The diplomatic relation status
+            RelationType enum value (PEACE, NEUTRAL, or HOSTILE)
         """
-        if civ_a == civ_b:
-            return RelationType.PEACE  # Same civilization
-        
-        self._ensure_civ_exists(civ_a)
-        self._ensure_civ_exists(civ_b)
-        
-        # Check both directions
-        if civ_b in self._relations[civ_a]:
-            return self._relations[civ_a][civ_b]
-        if civ_a in self._relations[civ_b]:
-            return self._relations[civ_b][civ_a]
-        
-        # Default to neutral if no relation established
-        return RelationType.NEUTRAL
+        with self._lock:
+            if civ1_id == civ2_id:
+                return RelationType.PEACE  # Same civilization
+            
+            key = self._make_key(civ1_id, civ2_id)
+            if key not in self._relations:
+                return RelationType.NEUTRAL  # Default relation
+            
+            return self._relations[key].relation_type
     
-    def set_relation(self, civ_a: str, civ_b: str, relation: RelationType,
-                     reason: Optional[str] = None) -> Dict:
+    def get_relation_details(self, civ1_id: str, civ2_id: str) -> Optional[DiplomaticRelation]:
+        """
+        Get detailed relation information between two civilizations.
+        
+        Args:
+            civ1_id: First civilization ID
+            civ2_id: Second civilization ID
+            
+        Returns:
+            DiplomaticRelation object or None if no relation exists
+        """
+        with self._lock:
+            key = self._make_key(civ1_id, civ2_id)
+            return self._relations.get(key)
+    
+    def set_relation(
+        self,
+        civ1_id: str,
+        civ2_id: str,
+        relation_type: RelationType,
+        trust_level: Optional[float] = None,
+        relation_score: Optional[float] = None,
+        reason: Optional[str] = None
+    ) -> DiplomaticRelation:
         """
         Set the diplomatic relation between two civilizations.
         
         Args:
-            civ_a: First civilization ID
-            civ_b: Second civilization ID
-            relation: The new relation type
+            civ1_id: First civilization ID
+            civ2_id: Second civilization ID
+            relation_type: The type of relation to set
+            trust_level: Optional trust level (0.0 to 1.0)
+            relation_score: Optional relation score
             reason: Optional reason for the relation change
             
         Returns:
-            Dict: Information about the relation change
+            The created or updated DiplomaticRelation
         """
-        if civ_a == civ_b:
-            return {'success': False, 'reason': 'Cannot set relation with self'}
-        
-        self._ensure_civ_exists(civ_a)
-        self._ensure_civ_exists(civ_b)
-        
-        old_relation = self.get_relation(civ_a, civ_b)
-        
-        # Set relation symmetrically
-        self._relations[civ_a][civ_b] = relation
-        self._relations[civ_b][civ_a] = relation
-        
-        # Update trust levels based on relation change
-        self._update_trust_on_relation_change(civ_a, civ_b, old_relation, relation)
-        
-        # Record history
-        history_entry = {
-            'timestamp': datetime.now().isoformat(),
-            'event': 'relation_change',
-            'civ_a': civ_a,
-            'civ_b': civ_b,
-            'old_relation': old_relation.value,
-            'new_relation': relation.value,
-            'reason': reason,
-        }
-        self._history.append(history_entry)
-        
-        return {
-            'success': True,
-            'old_relation': old_relation.value,
-            'new_relation': relation.value,
-            'history_recorded': True,
-        }
+        with self._lock:
+            key = self._make_key(civ1_id, civ2_id)
+            
+            if key in self._relations:
+                relation = self._relations[key]
+                old_type = relation.relation_type
+                relation.relation_type = relation_type
+                relation.last_updated = datetime.now()
+                
+                if trust_level is not None:
+                    relation.trust_level = max(0.0, min(1.0, trust_level))
+                if relation_score is not None:
+                    relation.relation_score = relation_score
+                
+                # Record history
+                relation.history.append({
+                    "timestamp": datetime.now().isoformat(),
+                    "old_type": str(old_type),
+                    "new_type": str(relation_type),
+                    "reason": reason,
+                })
+            else:
+                relation = DiplomaticRelation(
+                    civ1_id=key[0],
+                    civ2_id=key[1],
+                    relation_type=relation_type,
+                    trust_level=trust_level if trust_level is not None else 0.5,
+                    relation_score=relation_score if relation_score is not None else 0.0,
+                )
+                relation.history.append({
+                    "timestamp": datetime.now().isoformat(),
+                    "action": "initial_relation",
+                    "relation_type": str(relation_type),
+                    "reason": reason,
+                })
+                self._relations[key] = relation
+            
+            return relation
     
-    def _update_trust_on_relation_change(self, civ_a: str, civ_b: str,
-                                          old_relation: RelationType,
-                                          new_relation: RelationType) -> None:
-        """Update trust levels when relation changes."""
-        # Initialize trust if not exists
-        if civ_b not in self._trust_levels[civ_a]:
-            self._trust_levels[civ_a][civ_b] = 0.5
-        if civ_a not in self._trust_levels[civ_b]:
-            self._trust_levels[civ_b][civ_a] = 0.5
-        
-        # Trust change based on relation type
-        trust_changes = {
-            RelationType.PEACE: 0.15,
-            RelationType.NEUTRAL: 0.0,
-            RelationType.HOSTILE: -0.2,
-        }
-        
-        change = trust_changes.get(new_relation, 0.0)
-        
-        # Apply trust change
-        self._trust_levels[civ_a][civ_b] = max(0.0, min(1.0,
-            self._trust_levels[civ_a][civ_b] + change))
-        self._trust_levels[civ_b][civ_a] = max(0.0, min(1.0,
-            self._trust_levels[civ_b][civ_a] + change))
-    
-    def sign_treaty(self, civ_a: str, civ_b: str, treaty_type: TreatyType,
-                    duration: Optional[int] = None,
-                    terms: Optional[Dict] = None) -> Dict:
+    def sign_treaty(
+        self,
+        civ1_id: str,
+        civ2_id: str,
+        treaty_type: TreatyType,
+        duration: Optional[int] = None,
+        terms: Optional[Dict] = None
+    ) -> Treaty:
         """
         Sign a treaty between two civilizations.
         
         Args:
-            civ_a: First civilization ID
-            civ_b: Second civilization ID
+            civ1_id: First civilization ID
+            civ2_id: Second civilization ID
             treaty_type: Type of treaty to sign
-            duration: Optional duration in ticks
-            terms: Optional treaty terms
+            duration: Optional duration in ticks (None for permanent)
+            terms: Optional dictionary of treaty terms
             
         Returns:
-            Dict: Information about the signed treaty
+            The created Treaty object
+            
+        Raises:
+            ValueError: If a treaty of the same type already exists
         """
-        if civ_a == civ_b:
-            return {'success': False, 'reason': 'Cannot sign treaty with self'}
-        
-        # Check if relation allows treaty
-        current_relation = self.get_relation(civ_a, civ_b)
-        if current_relation == RelationType.HOSTILE:
-            # Only non-aggression can be signed during hostility
-            if treaty_type != TreatyType.NON_AGGRESSION:
-                return {
-                    'success': False,
-                    'reason': 'Cannot sign this treaty type while hostile',
-                }
-        
-        self._ensure_civ_exists(civ_a)
-        self._ensure_civ_exists(civ_b)
-        
-        # Generate treaty ID
-        civ_order = self._normalize_civ_order(civ_a, civ_b)
-        treaty_id = f"{treaty_type.value}_{civ_order[0]}_{civ_order[1]}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-        
-        # Create treaty
-        treaty = Treaty(
-            treaty_id=treaty_id,
-            treaty_type=treaty_type,
-            parties=civ_order,
-            duration=duration,
-            terms=terms or {},
-        )
-        
-        # Store treaty
-        self._treaties[treaty_id] = treaty
-        self._civ_treaties[civ_a].add(treaty_id)
-        self._civ_treaties[civ_b].add(treaty_id)
-        
-        # Record history
-        self._history.append({
-            'timestamp': datetime.now().isoformat(),
-            'event': 'treaty_signed',
-            'treaty_id': treaty_id,
-            'treaty_type': treaty_type.value,
-            'parties': list(civ_order),
-        })
-        
-        # Signing a treaty improves relations
-        if current_relation == RelationType.NEUTRAL:
-            self.set_relation(civ_a, civ_b, RelationType.PEACE, 
-                            reason=f"Treaty signed: {treaty_type.value}")
-        
-        return {
-            'success': True,
-            'treaty_id': treaty_id,
-            'treaty': treaty.to_dict(),
-        }
+        with self._lock:
+            # Check for existing treaty of same type
+            existing = self._find_treaty_by_type(civ1_id, civ2_id, treaty_type)
+            if existing and existing.is_active:
+                raise ValueError(
+                    f"Active {treaty_type} treaty already exists between "
+                    f"{civ1_id} and {civ2_id}"
+                )
+            
+            treaty_id = self._generate_treaty_id(treaty_type, civ1_id, civ2_id)
+            key = self._make_key(civ1_id, civ2_id)
+            
+            treaty = Treaty(
+                treaty_id=treaty_id,
+                treaty_type=treaty_type,
+                parties=key,
+                duration=duration,
+                terms=terms or {},
+            )
+            
+            self._treaties[treaty_id] = treaty
+            self._treaty_ticks[treaty_id] = self._current_tick
+            
+            # Index by civilization
+            for civ_id in [civ1_id, civ2_id]:
+                if civ_id not in self._civ_treaties:
+                    self._civ_treaties[civ_id] = set()
+                self._civ_treaties[civ_id].add(treaty_id)
+            
+            # Automatically improve relations for certain treaties
+            if treaty_type == TreatyType.NON_AGGRESSION:
+                self._adjust_trust(key, 0.1)
+            elif treaty_type == TreatyType.TECH_SHARE:
+                self._adjust_trust(key, 0.15)
+            elif treaty_type == TreatyType.TRADE:
+                self._adjust_trust(key, 0.05)
+            
+            return treaty
     
-    def break_treaty(self, treaty_id: str, breaker: Optional[str] = None,
-                     reason: Optional[str] = None) -> Dict:
+    def break_treaty(
+        self,
+        treaty_id: str,
+        reason: Optional[str] = None
+    ) -> Optional[Treaty]:
         """
         Break an existing treaty.
         
         Args:
             treaty_id: ID of the treaty to break
-            breaker: Optional ID of the civilization breaking the treaty
             reason: Optional reason for breaking the treaty
             
         Returns:
-            Dict: Information about the broken treaty
+            The broken Treaty object, or None if not found
         """
-        if treaty_id not in self._treaties:
-            return {'success': False, 'reason': 'Treaty not found'}
-        
-        treaty = self._treaties[treaty_id]
-        
-        if not treaty.is_active:
-            return {'success': False, 'reason': 'Treaty already inactive'}
-        
-        # Mark treaty as inactive
-        treaty.is_active = False
-        
-        # Record history
-        self._history.append({
-            'timestamp': datetime.now().isoformat(),
-            'event': 'treaty_broken',
-            'treaty_id': treaty_id,
-            'treaty_type': treaty.treaty_type.value,
-            'parties': list(treaty.parties),
-            'breaker': breaker,
-            'reason': reason,
-        })
-        
-        # Breaking a treaty damages trust and relations
-        civ_a, civ_b = treaty.parties
-        if breaker:
-            # The breaker loses trust with the other party
-            other = civ_b if breaker == civ_a else civ_a
-            if breaker in self._trust_levels and other in self._trust_levels[breaker]:
-                self._trust_levels[breaker][other] = max(0.0,
-                    self._trust_levels[breaker][other] - 0.3)
-            if other in self._trust_levels and breaker in self._trust_levels[other]:
-                self._trust_levels[other][breaker] = max(0.0,
-                    self._trust_levels[other][breaker] - 0.3)
+        with self._lock:
+            if treaty_id not in self._treaties:
+                return None
             
-            # Relations may worsen
-            current = self.get_relation(civ_a, civ_b)
-            if current == RelationType.PEACE:
-                self.set_relation(civ_a, civ_b, RelationType.NEUTRAL,
-                                reason=f"Treaty broken: {treaty.treaty_type.value}")
-        
-        return {
-            'success': True,
-            'treaty_id': treaty_id,
-            'broken_by': breaker,
-        }
+            treaty = self._treaties[treaty_id]
+            treaty.is_active = False
+            
+            # Reduce trust between parties
+            key = treaty.parties
+            trust_penalty = {
+                TreatyType.NON_AGGRESSION: -0.2,
+                TreatyType.TECH_SHARE: -0.15,
+                TreatyType.TRADE: -0.1,
+            }
+            penalty = trust_penalty.get(treaty.treaty_type, -0.1)
+            self._adjust_trust(key, penalty)
+            
+            # Update relation if necessary
+            if key in self._relations:
+                relation = self._relations[key]
+                if treaty.treaty_type == TreatyType.NON_AGGRESSION:
+                    # Breaking non-aggression may lead to hostile relations
+                    if relation.trust_level < 0.3:
+                        relation.relation_type = RelationType.HOSTILE
+                
+                relation.history.append({
+                    "timestamp": datetime.now().isoformat(),
+                    "action": "treaty_broken",
+                    "treaty_id": treaty_id,
+                    "treaty_type": str(treaty.treaty_type),
+                    "reason": reason,
+                })
+            
+            return treaty
     
-    def get_treaties(self, civ_id: str, 
-                     treaty_type: Optional[TreatyType] = None,
-                     active_only: bool = True) -> List[Treaty]:
+    def get_treaties(self, civ_id: str, active_only: bool = True) -> List[Treaty]:
         """
         Get all treaties for a civilization.
         
         Args:
             civ_id: Civilization ID
-            treaty_type: Optional filter by treaty type
-            active_only: Whether to return only active treaties
+            active_only: If True, only return active treaties
             
         Returns:
-            List[Treaty]: List of treaties
+            List of Treaty objects
         """
-        self._ensure_civ_exists(civ_id)
-        
-        treaties = []
-        for treaty_id in self._civ_treaties.get(civ_id, set()):
-            if treaty_id in self._treaties:
-                treaty = self._treaties[treaty_id]
-                
-                # Filter by active status
-                if active_only and not treaty.is_active:
-                    continue
-                
-                # Filter by type
-                if treaty_type and treaty.treaty_type != treaty_type:
-                    continue
-                
-                treaties.append(treaty)
-        
-        return treaties
+        with self._lock:
+            if civ_id not in self._civ_treaties:
+                return []
+            
+            treaties = []
+            for treaty_id in self._civ_treaties[civ_id]:
+                treaty = self._treaties.get(treaty_id)
+                if treaty:
+                    # Check expiration
+                    if treaty.duration is not None:
+                        signed_tick = self._treaty_ticks.get(treaty_id, 0)
+                        if treaty.is_expired(self._current_tick, signed_tick):
+                            treaty.is_active = False
+                    
+                    if not active_only or treaty.is_active:
+                        treaties.append(treaty)
+            
+            return treaties
     
-    def get_treaty(self, treaty_id: str) -> Optional[Treaty]:
+    def get_treaties_between(
+        self,
+        civ1_id: str,
+        civ2_id: str,
+        active_only: bool = True
+    ) -> List[Treaty]:
         """
-        Get a specific treaty by ID.
+        Get all treaties between two specific civilizations.
         
         Args:
-            treaty_id: Treaty ID
+            civ1_id: First civilization ID
+            civ2_id: Second civilization ID
+            active_only: If True, only return active treaties
             
         Returns:
-            Optional[Treaty]: The treaty if found, None otherwise
+            List of Treaty objects between the two civilizations
         """
-        return self._treaties.get(treaty_id)
+        with self._lock:
+            key = self._make_key(civ1_id, civ2_id)
+            treaties = []
+            
+            for treaty in self._treaties.values():
+                if treaty.parties == key:
+                    if not active_only or treaty.is_active:
+                        treaties.append(treaty)
+            
+            return treaties
     
-    def get_trust(self, civ_a: str, civ_b: str) -> float:
+    def has_treaty(
+        self,
+        civ1_id: str,
+        civ2_id: str,
+        treaty_type: TreatyType
+    ) -> bool:
         """
-        Get the trust level between two civilizations.
+        Check if a specific type of treaty exists between two civilizations.
         
         Args:
-            civ_a: First civilization ID
-            civ_b: Second civilization ID
+            civ1_id: First civilization ID
+            civ2_id: Second civilization ID
+            treaty_type: Type of treaty to check for
             
         Returns:
-            float: Trust level (0.0 to 1.0)
+            True if an active treaty of that type exists
         """
-        if civ_a == civ_b:
-            return 1.0
-        
-        self._ensure_civ_exists(civ_a)
-        
-        return self._trust_levels[civ_a].get(civ_b, 0.5)
+        treaties = self.get_treaties_between(civ1_id, civ2_id, active_only=True)
+        return any(t.treaty_type == treaty_type for t in treaties)
     
-    def set_trust(self, civ_a: str, civ_b: str, trust_level: float) -> None:
+    def relation_effect(
+        self,
+        civ_id: str,
+        target_civ_id: str,
+        action_type: str
+    ) -> Dict:
         """
-        Set the trust level between two civilizations.
+        Calculate the effect of diplomatic relations on agent decisions.
+        
+        This method computes modifiers and constraints that diplomatic
+        relations impose on an agent's decision-making process.
         
         Args:
-            civ_a: First civilization ID
-            civ_b: Second civilization ID
-            trust_level: Trust level (0.0 to 1.0)
-        """
-        if civ_a == civ_b:
-            return
-        
-        self._ensure_civ_exists(civ_a)
-        self._ensure_civ_exists(civ_b)
-        
-        # Clamp trust level
-        trust_level = max(0.0, min(1.0, trust_level))
-        
-        self._trust_levels[civ_a][civ_b] = trust_level
-    
-    def relation_effect(self, civ_a: str, civ_b: str) -> Dict:
-        """
-        Calculate the effect of diplomatic relations on Agent decisions.
-        
-        This method provides modifiers and factors that influence how
-        an agent should make decisions regarding another civilization.
-        
-        Args:
-            civ_a: The acting civilization ID
-            civ_b: The target civilization ID
+            civ_id: The civilization making the decision
+            target_civ_id: The target civilization of the action
+            action_type: Type of action being considered
             
         Returns:
-            Dict: Effects including decision modifiers and recommendations
+            Dictionary containing:
+            - modifier: Float modifier for action probability (-1.0 to 1.0)
+            - constraints: List of action constraints
+            - recommendations: List of recommended actions
+            - trust_level: Current trust level with target
         """
-        relation = self.get_relation(civ_a, civ_b)
-        trust = self.get_trust(civ_a, civ_b)
-        treaties = self.get_treaties(civ_a, civ_b)
-        
-        # Base effects by relation type
-        base_effects = {
-            RelationType.PEACE: {
-                'trade_bonus': 0.3,
-                'cooperation_likelihood': 0.8,
-                'aggression_penalty': 0.5,
-                'information_sharing': 0.6,
-                'military_access': 0.3,
-            },
+        with self._lock:
+            relation_type = self.get_relation(civ_id, target_civ_id)
+            relation = self.get_relation_details(civ_id, target_civ_id)
+            trust_level = relation.trust_level if relation else 0.5
+            
+            result = {
+                "relation_type": str(relation_type),
+                "modifier": 0.0,
+                "constraints": [],
+                "recommendations": [],
+                "trust_level": trust_level,
+            }
+            
+            # Check for treaties that affect the action
+            treaties = self.get_treaties_between(civ_id, target_civ_id)

@@ -1,6 +1,5 @@
 """
-Social system module for Cyber-Cosmos.
-Handles diplomacy, alliances, and inter-civilization relations.
+Social module for civilization interactions.
 """
 
 from .diplomacy import DiplomacyManager, RelationType, TreatyType, Treaty
