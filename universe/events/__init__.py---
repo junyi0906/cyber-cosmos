@@ -1,72 +1,64 @@
 """
-Universe Events Package
-定义所有宇宙事件的数据结构
+Universe Events Module
+宇宙事件系统模块
 """
 
-from .types import EventType, EventSeverity
-from .base import Event, EventData
-from .celestial_events import (
+from universe.events.types import EventType, EventCategory
+from universe.events.base import Event, EventSeverity
+from universe.events.celestial_events import (
     CelestialEvent,
     SupernovaEvent,
     BlackHoleEvent,
     NebulaCollapseEvent,
+    ResourceDepletionEvent
 )
-from .civilization_events import (
+from universe.events.civilization_events import (
     CivilizationEvent,
     TechBreakthroughEvent,
     CivilWarEvent,
     ExtinctionEvent,
+    CulturalRenaissanceEvent
 )
-from .disaster_events import (
+from universe.events.disaster_events import (
     DisasterEvent,
     GammaRayBurstEvent,
     PlagueEvent,
-    VoidInvasionEvent,
+    VoidInvasionEvent
 )
-from .schemas import (
+from universe.events.schemas import (
     EventSchema,
-    SupernovaEventSchema,
-    BlackHoleEventSchema,
-    NebulaCollapseEventSchema,
-    TechBreakthroughEventSchema,
-    CivilWarEventSchema,
-    ExtinctionEventSchema,
-    GammaRayBurstEventSchema,
-    PlagueEventSchema,
-    VoidInvasionEventSchema,
+    CelestialEventSchema,
+    CivilizationEventSchema,
+    DisasterEventSchema
 )
 
 __all__ = [
     # Types
-    "EventType",
-    "EventSeverity",
+    'EventType',
+    'EventCategory',
     # Base
-    "Event",
-    "EventData",
+    'Event',
+    'EventSeverity',
     # Celestial Events
-    "CelestialEvent",
-    "SupernovaEvent",
-    "BlackHoleEvent",
-    "NebulaCollapseEvent",
+    'CelestialEvent',
+    'SupernovaEvent',
+    'BlackHoleEvent',
+    'NebulaCollapseEvent',
+    'ResourceDepletionEvent',
     # Civilization Events
-    "CivilizationEvent",
-    "TechBreakthroughEvent",
-    "CivilWarEvent",
-    "ExtinctionEvent",
+    'CivilizationEvent',
+    'TechBreakthroughEvent',
+    'CivilWarEvent',
+    'ExtinctionEvent',
+    'CulturalRenaissanceEvent',
     # Disaster Events
-    "DisasterEvent",
-    "GammaRayBurstEvent",
-    "PlagueEvent",
-    "VoidInvasionEvent",
+    'DisasterEvent',
+    'GammaRayBurstEvent',
+    'PlagueEvent',
+    'VoidInvasionEvent',
     # Schemas
-    "EventSchema",
-    "SupernovaEventSchema",
-    "BlackHoleEventSchema",
-    "NebulaCollapseEventSchema",
-    "TechBreakthroughEventSchema",
-    "CivilWarEventSchema",
-    "ExtinctionEventSchema",
-    "GammaRayBurstEventSchema",
-    "PlagueEventSchema",
-    "VoidInvasionEventSchema",
+    'EventSchema',
+    'CelestialEventSchema',
+    'CivilizationEventSchema',
+    'DisasterEventSchema'
 ]

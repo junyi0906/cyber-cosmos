@@ -1,137 +1,217 @@
 """
-事件类型定义
-定义所有宇宙事件的枚举类型
+Event Types Definition
+事件类型定义 - 定义所有宇宙事件的类型枚举
 """
 
-from enum import Enum
-from typing import Literal
+from enum import Enum, auto
+from typing import List, Optional
+from dataclasses import dataclass
 
 
-class EventType(str, Enum):
-    """宇宙事件类型枚举"""
+class EventType(Enum):
+    """
+    宇宙事件类型枚举
     
-    CELESTIAL = "celestial"
-    """天体事件：超新星、黑洞、星云等"""
-    
-    CIVILIZATION = "civilization"
-    """文明事件：科技突破、内战、灭绝等"""
-    
-    DISASTER = "disaster"
-    """灾难事件：伽马射线暴、瘟疫、虚空入侵等"""
-    
-    def __str__(self) -> str:
-        return self.value
+    Attributes:
+        CELESTIAL: 天体事件 - 与天体物理现象相关的事件
+        CIVILIZATION: 文明事件 - 与文明发展相关的事件
+        DISASTER: 灾难事件 - 随机发生的灾难性事件
+    """
+    CELESTIAL = auto()
+    CIVILIZATION = auto()
+    DISASTER = auto()
     
     @classmethod
-    def from_string(cls, value: str) -> "EventType":
+    def from_string(cls, value: str) -> 'EventType':
         """从字符串创建枚举值"""
-        try:
-            return cls(value.lower())
-        except ValueError:
-            raise ValueError(f"Invalid EventType: {value}")
-
-
-class EventSeverity(int, Enum):
-    """事件严重程度枚举"""
-    
-    TRIVIAL = 1
-    """微不足道：几乎无影响"""
-    
-    MINOR = 2
-    """轻微：小范围影响"""
-    
-    MODERATE = 3
-    """中等：显著影响"""
-    
-    MAJOR = 4
-    """重大：大范围影响"""
-    
-    CATASTROPHIC = 5
-    """灾难性：毁灭级影响"""
-    
-    def __str__(self) -> str:
-        severity_names = {
-            1: "TRIVIAL",
-            2: "MINOR",
-            3: "MODERATE",
-            4: "MAJOR",
-            5: "CATASTROPHIC",
+        mapping = {
+            'celestial': cls.CELESTIAL,
+            'civilization': cls.CIVILIZATION,
+            'disaster': cls.DISASTER
         }
-        return severity_names[self.value]
+        if value.lower() not in mapping:
+            raise ValueError(f"Unknown event type: {value}")
+        return mapping[value.lower()]
     
-    @classmethod
-    def from_int(cls, value: int) -> "EventSeverity":
-        """从整数创建枚举值"""
-        try:
-            return cls(value)
-        except ValueError:
-            raise ValueError(f"Invalid EventSeverity: {value}")
+    def to_string(self) -> str:
+        """转换为字符串"""
+        return self.name.lower()
+
+
+class EventCategory(Enum):
+    """
+    事件分类枚举 - 更细粒度的事件分类
+    """
+    # 天体事件子类
+    SUPERNOVA = "supernova"
+    BLACK_HOLE = "black_hole"
+    NEBULA_COLLAPSE = "nebula_collapse"
+    RESOURCE_DEPLETION = "resource_depletion"
+    
+    # 文明事件子类
+    TECH_BREAKTHROUGH = "tech_breakthrough"
+    CULTURAL_RENAISSANCE = "cultural_renaissance"
+    CIVIL_WAR = "civil_war"
+    EXTINCTION = "extinction"
+    
+    # 灾难事件子类
+    GAMMA_RAY_BURST = "gamma_ray_burst"
+    PLAGUE = "plague"
+    VOID_INVASION = "void_invasion"
     
     @property
-    def label(self) -> str:
-        """获取严重程度的中文标签"""
-        labels = {
-            1: "微不足道",
-            2: "轻微",
-            3: "中等",
-            4: "重大",
-            5: "灾难性",
+    def parent_type(self) -> EventType:
+        """获取父级事件类型"""
+        celestial_categories = {
+            EventCategory.SUPERNOVA,
+            EventCategory.BLACK_HOLE,
+            EventCategory.NEBULA_COLLAPSE,
+            EventCategory.RESOURCE_DEPLETION
         }
-        return labels[self.value]
+        civilization_categories = {
+            EventCategory.TECH_BREAKTHROUGH,
+            EventCategory.CULTURAL_RENAISSANCE,
+            EventCategory.CIVIL_WAR,
+            EventCategory.EXTINCTION
+        }
+        disaster_categories = {
+            EventCategory.GAMMA_RAY_BURST,
+            EventCategory.PLAGUE,
+            EventCategory.VOID_INVASION
+        }
+        
+        if self in celestial_categories:
+            return EventType.CELESTIAL
+        elif self in civilization_categories:
+            return EventType.CIVILIZATION
+        elif self in disaster_categories:
+            return EventType.DISASTER
+        else:
+            raise ValueError(f"Unknown category: {self}")
 
 
-class CelestialEventType(str, Enum):
-    """天体事件子类型"""
+@dataclass
+class EventMetadata:
+    """
+    事件元数据
+    """
+    category: EventCategory
+    display_name: str
+    description: str
+    base_probability: float
+    cooldown_ticks: int
+    affected_entities: List[str]
     
-    SUPERNOVA = "supernova"
-    """超新星爆发"""
-    
-    BLACK_HOLE = "black_hole"
-    """黑洞形成"""
-    
-    NEBULA_COLLAPSE = "nebula_collapse"
-    """星云坍缩"""
-    
-    STAR_BIRTH = "star_birth"
-    """恒星诞生"""
-    
-    PLANETARY_FORMATION = "planetary_formation"
-    """行星形成"""
+    def to_dict(self) -> dict:
+        """转换为字典"""
+        return {
+            'category': self.category.value,
+            'display_name': self.display_name,
+            'description': self.description,
+            'base_probability': self.base_probability,
+            'cooldown_ticks': self.cooldown_ticks,
+            'affected_entities': self.affected_entities
+        }
 
 
-class CivilizationEventType(str, Enum):
-    """文明事件子类型"""
+# 事件元数据注册表
+EVENT_METADATA: dict[EventCategory, EventMetadata] = {
+    # 天体事件
+    EventCategory.SUPERNOVA: EventMetadata(
+        category=EventCategory.SUPERNOVA,
+        display_name="超新星爆发",
+        description="恒星生命末期的剧烈爆炸，释放巨大能量",
+        base_probability=0.001,
+        cooldown_ticks=1000,
+        affected_entities=["star", "nearby_civilizations"]
+    ),
+    EventCategory.BLACK_HOLE: EventMetadata(
+        category=EventCategory.BLACK_HOLE,
+        display_name="黑洞形成",
+        description="大质量恒星坍缩形成黑洞，产生强引力场",
+        base_probability=0.0005,
+        cooldown_ticks=2000,
+        affected_entities=["star", "nearby_systems"]
+    ),
+    EventCategory.NEBULA_COLLAPSE: EventMetadata(
+        category=EventCategory.NEBULA_COLLAPSE,
+        display_name="星云坍缩",
+        description="星云在引力作用下坍缩，形成新恒星",
+        base_probability=0.002,
+        cooldown_ticks=500,
+        affected_entities=["nebula", "new_stars"]
+    ),
+    EventCategory.RESOURCE_DEPLETION: EventMetadata(
+        category=EventCategory.RESOURCE_DEPLETION,
+        display_name="资源枯竭",
+        description="星球资源被过度开采而枯竭",
+        base_probability=0.01,
+        cooldown_ticks=100,
+        affected_entities=["planet", "civilization"]
+    ),
     
-    TECH_BREAKTHROUGH = "tech_breakthrough"
-    """科技突破"""
+    # 文明事件
+    EventCategory.TECH_BREAKTHROUGH: EventMetadata(
+        category=EventCategory.TECH_BREAKTHROUGH,
+        display_name="科技突破",
+        description="文明取得重大科技进展",
+        base_probability=0.005,
+        cooldown_ticks=200,
+        affected_entities=["civilization"]
+    ),
+    EventCategory.CULTURAL_RENAISSANCE: EventMetadata(
+        category=EventCategory.CULTURAL_RENAISSANCE,
+        display_name="文化复兴",
+        description="文明进入文化繁荣期",
+        base_probability=0.003,
+        cooldown_ticks=300,
+        affected_entities=["civilization"]
+    ),
+    EventCategory.CIVIL_WAR: EventMetadata(
+        category=EventCategory.CIVIL_WAR,
+        display_name="内战分裂",
+        description="文明内部爆发冲突，可能导致分裂",
+        base_probability=0.002,
+        cooldown_ticks=500,
+        affected_entities=["civilization", "factions"]
+    ),
+    EventCategory.EXTINCTION: EventMetadata(
+        category=EventCategory.EXTINCTION,
+        display_name="文明灭绝",
+        description="文明彻底消亡",
+        base_probability=0.0001,
+        cooldown_ticks=10000,
+        affected_entities=["civilization"]
+    ),
     
-    CIVIL_WAR = "civil_war"
-    """内战"""
-    
-    EXTINCTION = "extinction"
-    """灭绝"""
-    
-    FIRST_CONTACT = "first_contact"
-    """首次接触"""
-    
-    ASCENSION = "ascension"
-    """飞升"""
+    # 灾难事件
+    EventCategory.GAMMA_RAY_BURST: EventMetadata(
+        category=EventCategory.GAMMA_RAY_BURST,
+        display_name="伽马射线暴",
+        description="来自深空的高能射线暴，可毁灭生命",
+        base_probability=0.0005,
+        cooldown_ticks=5000,
+        affected_entities=["galaxy", "civilizations"]
+    ),
+    EventCategory.PLAGUE: EventMetadata(
+        category=EventCategory.PLAGUE,
+        display_name="星际瘟疫",
+        description="蔓延星际的致命瘟疫",
+        base_probability=0.001,
+        cooldown_ticks=1000,
+        affected_entities=["civilizations", "populations"]
+    ),
+    EventCategory.VOID_INVASION: EventMetadata(
+        category=EventCategory.VOID_INVASION,
+        display_name="虚空入侵",
+        description="来自未知维度的入侵",
+        base_probability=0.0001,
+        cooldown_ticks=10000,
+        affected_entities=["universe", "all_civilizations"]
+    ),
+}
 
 
-class DisasterEventType(str, Enum):
-    """灾难事件子类型"""
-    
-    GAMMA_RAY_BURST = "gamma_ray_burst"
-    """伽马射线暴"""
-    
-    PLAGUE = "plague"
-    """瘟疫"""
-    
-    VOID_INVASION = "void_invasion"
-    """虚空入侵"""
-    
-    ASTEROID_IMPACT = "asteroid_impact"
-    """小行星撞击"""
-    
-    SOLAR_FLARE = "solar_flare"
-    """太阳耀斑"""
+def get_event_metadata(category: EventCategory) -> Optional[EventMetadata]:
+    """获取事件元数据"""
+    return EVENT_METADATA.get(category)

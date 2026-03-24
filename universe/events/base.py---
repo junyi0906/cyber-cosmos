@@ -1,0 +1,219 @@
+"""
+Event Base Class
+事件基类定义 - 定义所有宇宙事件的基类
+"""
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum, auto
+from typing import Any, Dict, List, Optional
+from uuid import uuid4
+
+from universe.events.types import EventType, EventCategory
+
+
+class EventSeverity(Enum):
+    """
+    事件严重程度枚举
+    
+    Attributes:
+        TRIVIAL: 琐碎 - 几乎无影响
+        MINOR: 轻微 - 小范围影响
+        MODERATE: 中等 - 明显影响
+        MAJOR: 重大 - 大范围影响
+        CATASTROPHIC: 灾难性 - 改变宇宙格局
+    """
+    TRIVIAL = 1
+    MINOR = 2
+    MODERATE = 3
+    MAJOR = 4
+    CATASTROPHIC = 5
+    
+    @classmethod
+    def from_string(cls, value: str) -> 'EventSeverity':
+        """从字符串创建枚举值"""
+        mapping = {
+            'trivial': cls.TRIVIAL,
+            'minor': cls.MINOR,
+            'moderate': cls.MODERATE,
+            'major': cls.MAJOR,
+            'catastrophic': cls.CATASTROPHIC
+        }
+        if value.lower() not in mapping:
+            raise ValueError(f"Unknown severity: {value}")
+        return mapping[value.lower()]
+    
+    def to_string(self) -> str:
+        """转换为字符串"""
+        return self.name.lower()
+    
+    @property
+    def color_code(self) -> str:
+        """获取用于可视化的颜色代码"""
+        colors = {
+            EventSeverity.TRIVIAL: '#808080',      # 灰色
+            EventSeverity.MINOR: '#00FF00,         # 绿色
+            EventSeverity.MODERATE: '#FFFF00',     # 黄色
+            EventSeverity.MAJOR: '#FFA500',        # 橙色
+            EventSeverity.CATASTROPHIC: '#FF0000'  # 红色
+        }
+        return colors[self]
+
+
+@dataclass
+class EventLocation:
+    """
+    事件发生位置
+    """
+    galaxy_id: Optional[str] = None
+    star_system_id: Optional[str] = None
+    planet_id: Optional[str] = None
+    coordinates: Optional[tuple[float, float, float]] = None
+    
+    def to_dict(self) -> dict:
+        """转换为字典"""
+        return {
+            'galaxy_id': self.galaxy_id,
+            'star_system_id': self.star_system_id,
+            'planet_id': self.planet_id,
+            'coordinates': list(self.coordinates) if self.coordinates else None
+        }
+
+
+@dataclass
+class EventEffect:
+    """
+    事件效果
+    """
+    target_type: str  # 'civilization', 'star', 'planet', 'galaxy'
+    target_id: Optional[str] = None
+    effect_type: str = ""  # 'damage', 'boost', 'transform', 'destroy'
+    magnitude: float = 0.0
+    duration: int = 0  # 持续时间（tick数）
+    description: str = ""
+    
+    def to_dict(self) -> dict:
+        """转换为字典"""
+        return {
+            'target_type': self.target_type,
+            'target_id': self.target_id,
+            'effect_type': self.effect_type,
+            'magnitude': self.magnitude,
+            'duration': self.duration,
+            'description': self.description
+        }
+
+
+@dataclass
+class Event(ABC):
+    """
+    宇宙事件基类
+    
+    所有宇宙事件的抽象基类，定义了事件的基本属性和接口。
+    
+    Attributes:
+        id: 事件唯一标识符
+        type: 事件类型（天体/文明/灾难）
+        category: 事件分类（更细粒度）
+        timestamp: 事件发生时间戳
+        tick: 宇宙时间刻度
+        data: 事件详细数据
+        severity: 事件严重程度
+        location: 事件发生位置
+        effects: 事件产生的影响列表
+        source_id: 事件源ID（如触发事件的文明/天体）
+        description: 事件描述
+        is_processed: 是否已被处理
+    """
+    
+    id: str = field(default_factory=lambda: str(uuid4()))
+    type: EventType = EventType.CELESTIAL
+    category: EventCategory = EventCategory.SUPERNOVA
+    timestamp: datetime = field(default_factory=datetime.now)
+    tick: int = 0
+    data: Dict[str, Any] = field(default_factory=dict)
+    severity: EventSeverity = EventSeverity.MODERATE
+    location: Optional[EventLocation] = None
+    effects: List[EventEffect] = field(default_factory=list)
+    source_id: Optional[str] = None
+    description: str = ""
+    is_processed: bool = False
+    parent_event_id: Optional[str] = None  # 父事件ID，用于事件链
+    child_event_ids: List[str] = field(default_factory=list)  # 子事件ID列表
+    
+    def __post_init__(self):
+        """初始化后处理"""
+        if not self.description:
+            self.description = self._generate_description()
+    
+    @abstractmethod
+    def _generate_description(self) -> str:
+        """
+        生成事件描述
+        
+        子类必须实现此方法以生成具体的事件描述。
+        
+        Returns:
+            str: 事件描述文本
+        """
+        pass
+    
+    @abstractmethod
+    def calculate_effects(self) -> List[EventEffect]:
+        """
+        计算事件效果
+        
+        子类必须实现此方法以计算事件产生的具体效果。
+        
+        Returns:
+            List[EventEffect]: 事件效果列表
+        """
+        pass
+    
+    def add_effect(self, effect: EventEffect) -> None:
+        """添加事件效果"""
+        self.effects.append(effect)
+    
+    def add_child_event(self, event_id: str) -> None:
+        """添加子事件ID"""
+        if event_id not in self.child_event_ids:
+            self.child_event_ids.append(event_id)
+    
+    def mark_processed(self) -> None:
+        """标记事件为已处理"""
+        self.is_processed = True
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        将事件转换为字典格式
+        
+        Returns:
+            Dict[str, Any]: 事件的字典表示
+        """
+        return {
+            'id': self.id,
+            'type': self.type.to_string(),
+            'category': self.category.value,
+            'timestamp': self.timestamp.isoformat(),
+            'tick': self.tick,
+            'data': self.data,
+            'severity': self.severity.to_string(),
+            'severity_level': self.severity.value,
+            'location': self.location.to_dict() if self.location else None,
+            'effects': [e.to_dict() for e in self.effects],
+            'source_id': self.source_id,
+            'description': self.description,
+            'is_processed': self.is_processed,
+            'parent_event_id': self.parent_event_id,
+            'child_event_ids': self.child_event_ids
+        }
+    
+    def to_json(self) -> str:
+        """
+        将事件转换为JSON字符串
+        
+        Returns:
+            str: JSON格式的事件数据
+        """
+        import
