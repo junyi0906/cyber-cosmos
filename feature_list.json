@@ -396,9 +396,10 @@
       "depends_on": [
         "feat-017"
       ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "TimescaleDB 使用 time_bucket 函数进行时间聚合"
+      "passes": true,
+      "last_attempt": "2026-03-24T23:41:11.022231",
+      "notes": "TimescaleDB 使用 time_bucket 函数进行时间聚合",
+      "retry_count": 0
     },
     {
       "id": "feat-019",
