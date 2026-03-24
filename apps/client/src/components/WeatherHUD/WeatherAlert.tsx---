@@ -1,0 +1,286 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { io, Socket } from 'socket.io-client';
+
+interface WeatherAlertData {
+  id: string;
+  type: 'resource_storm' | 'dark_matter_wave' | 'dark_fluctuation' | 'calm';
+  severity: 'info' | 'warning' | 'danger';
+  title: string;
+  message: string;
+  effects: string[];
+  duration: number;
+  timestamp: number;
+}
+
+interface WeatherAlertProps {
+  serverUrl?: string;
+  autoDismiss?: number;
+}
+
+const weatherTypeConfig: Record<string, { icon: string; color: string; bgColor: string }> = {
+  resource_storm: {
+    icon: '⚡',
+    color: '#fbbf24',
+    bgColor: 'rgba(251, 191, 36, 0.15)',
+  },
+  dark_matter_wave: {
+    icon: '🌌',
+    color: '#8b5cf6',
+    bgColor: 'rgba(139, 92, 246, 0.15)',
+  },
+  dark_fluctuation: {
+    icon: '🌑',
+    color: '#6b7280',
+    bgColor: 'rgba(107, 114, 128, 0.15)',
+  },
+  calm: {
+    icon: '✨',
+    color: '#10b981',
+    bgColor: 'rgba(16, 185, 129, 0.15)',
+  },
+};
+
+const severityConfig: Record<string, { borderColor: string; glowColor: string }> = {
+  info: {
+    borderColor: '#3b82f6',
+    glowColor: 'rgba(59, 130, 246, 0.5)',
+  },
+  warning: {
+    borderColor: '#f59e0b',
+    glowColor: 'rgba(245, 158, 11, 0.5)',
+  },
+  danger: {
+    borderColor: '#ef4444',
+    glowColor: 'rgba(239, 68, 68, 0.5)',
+  },
+};
+
+const WeatherAlert: React.FC<WeatherAlertProps> = ({
+  serverUrl = 'ws://localhost:3001',
+  autoDismiss = 10000,
+}) => {
+  const [alerts, setAlerts] = useState<WeatherAlertData[]>([]);
+  const [socket, setSocket] = useState<Socket | null>(null);
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    const newSocket = io(serverUrl, {
+      transports: ['websocket'],
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+    });
+
+    newSocket.on('connect', () => {
+      console.log('[WeatherAlert] WebSocket connected');
+      newSocket.emit('subscribe', { channel: 'weather_alert' });
+    });
+
+    newSocket.on('weather_alert', (data: WeatherAlertData) => {
+      console.log('[WeatherAlert] Received alert:', data);
+      handleNewAlert(data);
+    });
+
+    newSocket.on('disconnect', () => {
+      console.log('[WeatherAlert] WebSocket disconnected');
+    });
+
+    newSocket.on('connect_error', (error) => {
+      console.error('[WeatherAlert] Connection error:', error);
+    });
+
+    setSocket(newSocket);
+
+    return () => {
+      newSocket.disconnect();
+    };
+  }, [serverUrl]);
+
+  const handleNewAlert = useCallback((alert: WeatherAlertData) => {
+    setAlerts((prev) => [...prev, alert]);
+    setIsVisible(true);
+
+    if (autoDismiss > 0) {
+      setTimeout(() => {
+        dismissAlert(alert.id);
+      }, autoDismiss);
+    }
+  }, [autoDismiss]);
+
+  const dismissAlert = useCallback((alertId: string) => {
+    setAlerts((prev) => {
+      const newAlerts = prev.filter((a) => a.id !== alertId);
+      if (newAlerts.length === 0) {
+        setIsVisible(false);
+      }
+      return newAlerts;
+    });
+  }, []);
+
+  const currentAlert = alerts[alerts.length - 1];
+
+  if (!isVisible || !currentAlert) {
+    return null;
+  }
+
+  const typeConfig = weatherTypeConfig[currentAlert.type] || weatherTypeConfig.calm;
+  const sevConfig = severityConfig[currentAlert.severity] || severityConfig.info;
+
+  const containerStyle: React.CSSProperties = {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 9999,
+    display: 'flex',
+    justifyContent: 'center',
+    padding: '12px 16px',
+    animation: 'slideDown 0.3s ease-out',
+  };
+
+  const bannerStyle: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '12px 20px',
+    background: `linear-gradient(135deg, ${typeConfig.bgColor}, rgba(15, 23, 42, 0.95))`,
+    border: `1px solid ${sevConfig.borderColor}`,
+    borderRadius: '8px',
+    boxShadow: `0 4px 20px ${sevConfig.glowColor}, inset 0 1px 0 rgba(255,255,255,0.1)`,
+    backdropFilter: 'blur(10px)',
+    maxWidth: '800px',
+    width: '100%',
+  };
+
+  const iconStyle: React.CSSProperties = {
+    fontSize: '28px',
+    lineHeight: 1,
+    animation: 'pulse 2s infinite',
+  };
+
+  const contentStyle: React.CSSProperties = {
+    flex: 1,
+  };
+
+  const titleStyle: React.CSSProperties = {
+    fontSize: '14px',
+    fontWeight: 600,
+    color: typeConfig.color,
+    marginBottom: '4px',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
+  };
+
+  const messageStyle: React.CSSProperties = {
+    fontSize: '13px',
+    color: '#e2e8f0',
+    lineHeight: 1.4,
+  };
+
+  const effectsStyle: React.CSSProperties = {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '6px',
+    marginTop: '8px',
+  };
+
+  const effectBadgeStyle: React.CSSProperties = {
+    fontSize: '11px',
+    padding: '2px 8px',
+    background: 'rgba(255,255,255,0.1)',
+    borderRadius: '4px',
+    color: '#94a3b8',
+  };
+
+  const closeButtonStyle: React.CSSProperties = {
+    background: 'transparent',
+    border: 'none',
+    color: '#94a3b8',
+    cursor: 'pointer',
+    padding: '4px',
+    fontSize: '18px',
+    lineHeight: 1,
+    transition: 'color 0.2s',
+  };
+
+  const progressStyle: React.CSSProperties = {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    height: '2px',
+    background: typeConfig.color,
+    animation: `shrink ${autoDismiss}ms linear forwards`,
+  };
+
+  return (
+    <>
+      <style>
+        {`
+          @keyframes slideDown {
+            from {
+              transform: translateY(-100%);
+              opacity: 0;
+            }
+            to {
+              transform: translateY(0);
+              opacity: 1;
+            }
+          }
+          
+          @keyframes pulse {
+            0%, 100% {
+              transform: scale(1);
+            }
+            50% {
+              transform: scale(1.1);
+            }
+          }
+          
+          @keyframes shrink {
+            from {
+              width: 100%;
+            }
+            to {
+              width: 0%;
+            }
+          }
+          
+          .weather-alert-close:hover {
+            color: #fff;
+          }
+        `}
+      </style>
+      <div style={containerStyle}>
+        <div style={{ ...bannerStyle, position: 'relative', overflow: 'hidden' }}>
+          <span style={iconStyle}>{typeConfig.icon}</span>
+          <div style={contentStyle}>
+            <div style={titleStyle}>
+              {currentAlert.title || `宇宙天气预警：${currentAlert.type}`}
+            </div>
+            <div style={messageStyle}>{currentAlert.message}</div>
+            {currentAlert.effects && currentAlert.effects.length > 0 && (
+              <div style={effectsStyle}>
+                {currentAlert.effects.map((effect, index) => (
+                  <span key={index} style={effectBadgeStyle}>
+                    {effect}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+          <button
+            className="weather-alert-close"
+            style={closeButtonStyle}
+            onClick={() => dismissAlert(currentAlert.id)}
+            aria-label="关闭预警"
+          >
+            ×
+          </button>
+          {autoDismiss > 0 && <div style={progressStyle} />}
+        </div>
+      </div>
+    </>
+  );
+};
+
+export default WeatherAlert;

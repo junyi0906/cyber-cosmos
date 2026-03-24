@@ -1,0 +1,238 @@
+import React, { useState, useEffect } from 'react';
+import { io, Socket } from 'socket.io-client';
+
+interface WeatherCycle {
+  cycle: number;
+  type: 'calm' | 'resource_storm' | 'dark_matter_wave' | 'dark_fluctuation';
+  name: string;
+  description: string;
+  effects: {
+    type: 'positive' | 'negative';
+    target: string;
+    value: number;
+    unit: string;
+  }[];
+  duration: number;
+  startTick: number;
+  endTick: number;
+}
+
+interface WeatherForecastProps {
+  serverUrl?: string;
+  currentCycle?: number;
+}
+
+const weatherTypeConfig: Record<string, {
+  icon: string;
+  name: string;
+  color: string;
+  bgColor: string;
+  borderColor: string;
+}> = {
+  calm: {
+    icon: '✨',
+    name: '平静期',
+    color: '#10b981',
+    bgColor: 'rgba(16, 185, 129, 0.1)',
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+  },
+  resource_storm: {
+    icon: '⚡',
+    name: '资源风暴',
+    color: '#fbbf24',
+    bgColor: 'rgba(251, 191, 36, 0.1)',
+    borderColor: 'rgba(251, 191, 36, 0.3)',
+  },
+  dark_matter_wave: {
+    icon: '🌌',
+    name: '暗物质浪潮',
+    color: '#8b5cf6',
+    bgColor: 'rgba(139, 92, 246, 0.1)',
+    borderColor: 'rgba(139, 92, 246, 0.3)',
+  },
+  dark_fluctuation: {
+    icon: '🌑',
+    name: '黑暗波动',
+    color: '#6b7280',
+    bgColor: 'rgba(107, 114, 128, 0.1)',
+    borderColor: 'rgba(107, 114, 128, 0.3)',
+  },
+};
+
+const WeatherForecast: React.FC<WeatherForecastProps> = ({
+  serverUrl = 'ws://localhost:3001',
+  currentCycle = 0,
+}) => {
+  const [forecasts, setForecasts] = useState<WeatherCycle[]>([]);
+  const [socket, setSocket] = useState<Socket | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const newSocket = io(serverUrl, {
+      transports: ['websocket'],
+      reconnection: true,
+    });
+
+    newSocket.on('connect', () => {
+      console.log('[WeatherForecast] WebSocket connected');
+      newSocket.emit('subscribe', { channel: 'weather_forecast' });
+      newSocket.emit('get_weather_forecast', { cycles: 3 });
+    });
+
+    newSocket.on('weather_forecast', (data: WeatherCycle[]) => {
+      console.log('[WeatherForecast] Received forecast:', data);
+      setForecasts(data);
+      setLoading(false);
+    });
+
+    newSocket.on('weather_update', (data: WeatherCycle[]) => {
+      console.log('[WeatherForecast] Weather updated:', data);
+      setForecasts(data);
+    });
+
+    setSocket(newSocket);
+
+    return () => {
+      newSocket.disconnect();
+    };
+  }, [serverUrl]);
+
+  const containerStyle: React.CSSProperties = {
+    background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(30, 41, 59, 0.9))',
+    borderRadius: '12px',
+    padding: '16px',
+    border: '1px solid rgba(148, 163, 184, 0.2)',
+    backdropFilter: 'blur(10px)',
+  };
+
+  const headerStyle: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    marginBottom: '16px',
+    paddingBottom: '12px',
+    borderBottom: '1px solid rgba(148, 163, 184, 0.1)',
+  };
+
+  const titleStyle: React.CSSProperties = {
+    fontSize: '14px',
+    fontWeight: 600,
+    color: '#e2e8f0',
+    letterSpacing: '0.5px',
+  };
+
+  const forecastListStyle: React.CSSProperties = {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+  };
+
+  const forecastItemStyle = (config: typeof weatherTypeConfig[string]): React.CSSProperties => ({
+    background: config.bgColor,
+    border: `1px solid ${config.borderColor}`,
+    borderRadius: '8px',
+    padding: '12px',
+    transition: 'transform 0.2s, box-shadow 0.2s',
+  });
+
+  const itemHeaderStyle: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: '8px',
+  };
+
+  const cycleBadgeStyle: React.CSSProperties = {
+    fontSize: '11px',
+    padding: '2px 8px',
+    background: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: '4px',
+    color: '#94a3b8',
+  };
+
+  const weatherNameStyle = (color: string): React.CSSProperties => ({
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    fontSize: '13px',
+    fontWeight: 500,
+    color,
+  });
+
+  const effectsListStyle: React.CSSProperties = {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '6px',
+    marginTop: '8px',
+  };
+
+  const effectStyle = (isPositive: boolean): React.CSSProperties => ({
+    fontSize: '11px',
+    padding: '3px 8px',
+    background: isPositive ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+    borderRadius: '4px',
+    color: isPositive ? '#34d399' : '#f87171',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+  });
+
+  const loadingStyle: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '24px',
+    color: '#94a3b8',
+    fontSize: '13px',
+  };
+
+  const formatEffectValue = (effect: WeatherCycle['effects'][0]): string => {
+    const sign = effect.value >= 0 ? '+' : '';
+    return `${sign}${effect.value}${effect.unit}`;
+  };
+
+  if (loading) {
+    return (
+      <div style={containerStyle}>
+        <div style={headerStyle}>
+          <span style={{ fontSize: '18px' }}>🌤️</span>
+          <span style={titleStyle}>宇宙天气预报</span>
+        </div>
+        <div style={loadingStyle}>
+          <span>正在获取天气预报...</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={containerStyle}>
+      <div style={headerStyle}>
+        <span style={{ fontSize: '18px' }}>🌤️</span>
+        <span style={titleStyle}>宇宙天气预报</span>
+        <span style={cycleBadgeStyle}>未来 3 周期</span>
+      </div>
+      <div style={forecastListStyle}>
+        {forecasts.map((forecast, index) => {
+          const config = weatherTypeConfig[forecast.type] || weatherTypeConfig.calm;
+          return (
+            <div
+              key={`${forecast.cycle}-${index}`}
+              style={forecastItemStyle(config)}
+            >
+              <div style={itemHeaderStyle}>
+                <div style={weatherNameStyle(config.color)}>
+                  <span>{config.icon}</span>
+                  <span>{config.name}</span>
+                </div>
+                <span style={cycleBadgeStyle}>
+                  周期 {forecast.cycle}
+                </span>
+              </div>
+              {forecast.description && (
+                <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '8px' }}>
+                  {forecast.description}
+                </div>
+              )}
+              {forecast.effects && forecast.effects.length > 0 && (
+                <div style={effectsList
