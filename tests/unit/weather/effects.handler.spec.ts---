@@ -1,0 +1,356 @@
+import { Test, TestingModule } from '@nestjs/testing';
+import {
+  WeatherEffectsHandler,
+  CivilizationServiceInterface,
+  CivilizationAttributes,
+} from '../../../apps/server/src/modules/weather/effects.handler';
+import {
+  WeatherType,
+  WeatherState,
+  WeatherModifier,
+  CivilizationBuff,
+} from '../../../apps/server/src/modules/weather/interfaces/weather.interface';
+
+describe('WeatherEffectsHandler', () => {
+  let handler: WeatherEffectsHandler;
+  let civilizationService: jest.Mocked<CivilizationServiceInterface>;
+
+  const mockCivilizationService = {
+    applyBuff: jest.fn(),
+    removeBuff: jest.fn(),
+    getCivilizationAttributes: jest.fn(),
+    updateAttributes: jest.fn(),
+  };
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        WeatherEffectsHandler,
+        {
+          provide: 'CivilizationServiceInterface',
+          useValue: mockCivilizationService,
+        },
+      ],
+    }).compile();
+
+    handler = module.get<WeatherEffectsHandler>(WeatherEffectsHandler);
+    civilizationService = mockCivilizationService as any;
+
+    jest.clearAllMocks();
+  });
+
+  describe('getWeatherModifiers', () => {
+    it('RESOURCE_STORM 应该增加资源产出 50%', () => {
+      const weather: WeatherState = {
+        type: WeatherType.RESOURCE_STORM,
+        intensity: 100,
+        affectedRegions: ['region-1'],
+        startTime: new Date(),
+        duration: 3600,
+      };
+
+      const modifiers = handler.getWeatherModifiers(weather);
+
+      expect(modifiers.resourceProductionModifier).toBe(1.5);
+    });
+
+    it('RESOURCE_STORM 应该降低护盾回复 20%', () => {
+      const weather: WeatherState = {
+        type: WeatherType.RESOURCE_STORM,
+        intensity: 100,
+        affectedRegions: ['region-1'],
+        startTime: new Date(),
+        duration: 3600,
+      };
+
+      const modifiers = handler.getWeatherModifiers(weather);
+
+      expect(modifiers.shieldRegenModifier).toBe(-0.2);
+    });
+
+    it('RESOURCE_STORM 应该根据强度调整效果', () => {
+      const weather: WeatherState = {
+        type: WeatherType.RESOURCE_STORM,
+        intensity: 50,
+        affectedRegions: ['region-1'],
+        startTime: new Date(),
+        duration: 3600,
+      };
+
+      const modifiers = handler.getWeatherModifiers(weather);
+
+      expect(modifiers.resourceProductionModifier).toBe(0.75);
+      expect(modifiers.shieldRegenModifier).toBe(-0.1);
+    });
+
+    it('DARK_FLUX 应该使所有单位显形', () => {
+      const weather: WeatherState = {
+        type: WeatherType.DARK_FLUX,
+        intensity: 100,
+        affectedRegions: ['region-1'],
+        startTime: new Date(),
+        duration: 3600,
+      };
+
+      const modifiers = handler.getWeatherModifiers(weather);
+
+      expect(modifiers.visibilityModifier).toBe(true);
+      expect(modifiers.sensorRangeModifier).toBe(-0.5);
+    });
+
+    it('WARP_BLOCK 应该禁止超光速跳跃', () => {
+      const weather: WeatherState = {
+        type: WeatherType.WARP_BLOCK,
+        intensity: 100,
+        affectedRegions: ['region-1'],
+        startTime: new Date(),
+        duration: 3600,
+      };
+
+      const modifiers = handler.getWeatherModifiers(weather);
+
+      expect(modifiers.warpEnabled).toBe(false);
+    });
+
+    it('CALM 应该无任何效果', () => {
+      const weather: WeatherState = {
+        type: WeatherType.CALM,
+        intensity: 100,
+        affectedRegions: ['region-1'],
+        startTime: new Date(),
+        duration: 3600,
+      };
+
+      const modifiers = handler.getWeatherModifiers(weather);
+
+      expect(modifiers).toEqual({});
+      expect(modifiers.resourceProductionModifier).toBeUndefined();
+      expect(modifiers.shieldRegenModifier).toBeUndefined();
+      expect(modifiers.sensorRangeModifier).toBeUndefined();
+      expect(modifiers.visibilityModifier).toBeUndefined();
+      expect(modifiers.warpEnabled).toBeUndefined();
+      expect(modifiers.researchSpeedModifier).toBeUndefined();
+    });
+  });
+
+  describe('applyWeatherEffects', () => {
+    it('应该为所有文明应用天气效果', async () => {
+      const weather: WeatherState = {
+        type: WeatherType.RESOURCE_STORM,
+        intensity: 100,
+        affectedRegions: ['region-1'],
+        startTime: new Date(),
+        duration: 3600,
+      };
+      const civilizationIds = ['civ-1', 'civ-2', 'civ-3'];
+
+      await handler.applyWeatherEffects(weather, civilizationIds);
+
+      expect(civilizationService.applyBuff).toHaveBeenCalledTimes(3);
+      expect(civilizationService.applyBuff).toHaveBeenCalledWith(
+        'civ-1',
+        expect.objectContaining({
+          civilizationId: 'civ-1',
+          weatherType: WeatherType.RESOURCE_STORM,
+          modifiers: expect.objectContaining({
+            resourceProductionModifier: 1.5,
+            shieldRegenModifier: -0.2,
+          }),
+        }),
+      );
+    });
+
+    it('应该正确应用 DARK_FLUX 效果', async () => {
+      const weather: WeatherState = {
+        type: WeatherType.DARK_FLUX,
+        intensity: 100,
+        affectedRegions: ['region-1'],
+        startTime: new Date(),
+        duration: 3600,
+      };
+      const civilizationIds = ['civ-1'];
+
+      await handler.applyWeatherEffects(weather, civilizationIds);
+
+      expect(civilizationService.applyBuff).toHaveBeenCalledWith(
+        'civ-1',
+        expect.objectContaining({
+          civilizationId: 'civ-1',
+          weatherType: WeatherType.DARK_FLUX,
+          modifiers: expect.objectContaining({
+            visibilityModifier: true,
+            sensorRangeModifier: -0.5,
+          }),
+        }),
+      );
+    });
+
+    it('应该正确应用 WARP_BLOCK 效果', async () => {
+      const weather: WeatherState = {
+        type: WeatherType.WARP_BLOCK,
+        intensity: 100,
+        affectedRegions: ['region-1'],
+        startTime: new Date(),
+        duration: 3600,
+      };
+      const civilizationIds = ['civ-1'];
+
+      await handler.applyWeatherEffects(weather, civilizationIds);
+
+      expect(civilizationService.applyBuff).toHaveBeenCalledWith(
+        'civ-1',
+        expect.objectContaining({
+          civilizationId: 'civ-1',
+          weatherType: WeatherType.WARP_BLOCK,
+          modifiers: expect.objectContaining({
+            warpEnabled: false,
+          }),
+        }),
+      );
+    });
+
+    it('CALM 天气不应该调用 applyBuff', async () => {
+      const weather: WeatherState = {
+        type: WeatherType.CALM,
+        intensity: 100,
+        affectedRegions: ['region-1'],
+        startTime: new Date(),
+        duration: 3600,
+      };
+      const civilizationIds = ['civ-1'];
+
+      await handler.applyWeatherEffects(weather, civilizationIds);
+
+      expect(civilizationService.applyBuff).toHaveBeenCalledWith(
+        'civ-1',
+        expect.objectContaining({
+          civilizationId: 'civ-1',
+          weatherType: WeatherType.CALM,
+          modifiers: {},
+        }),
+      );
+    });
+  });
+
+  describe('removeWeatherEffects', () => {
+    it('应该移除所有文明的天气效果', async () => {
+      const weather: WeatherState = {
+        type: WeatherType.RESOURCE_STORM,
+        intensity: 100,
+        affectedRegions: ['region-1'],
+        startTime: new Date(),
+        duration: 3600,
+      };
+      const civilizationIds = ['civ-1', 'civ-2'];
+
+      await handler.removeWeatherEffects(weather, civilizationIds);
+
+      expect(civilizationService.removeBuff).toHaveBeenCalledTimes(2);
+      expect(civilizationService.removeBuff).toHaveBeenCalledWith(
+        'civ-1',
+        WeatherType.RESOURCE_STORM,
+      );
+      expect(civilizationService.removeBuff).toHaveBeenCalledWith(
+        'civ-2',
+        WeatherType.RESOURCE_STORM,
+      );
+    });
+  });
+
+  describe('getActiveBuffs', () => {
+    it('应该返回文明的所有活跃 Buff', async () => {
+      const weather1: WeatherState = {
+        type: WeatherType.RESOURCE_STORM,
+        intensity: 100,
+        affectedRegions: ['region-1'],
+        startTime: new Date(),
+        duration: 3600,
+      };
+      const weather2: WeatherState = {
+        type: WeatherType.DARK_FLUX,
+        intensity: 80,
+        affectedRegions: ['region-1'],
+        startTime: new Date(),
+        duration: 3600,
+      };
+
+      await handler.applyWeatherEffects(weather1, ['civ-1']);
+      await handler.applyWeatherEffects(weather2, ['civ-1']);
+
+      const activeBuffs = handler.getActiveBuffs('civ-1');
+
+      expect(activeBuffs).toHaveLength(2);
+      expect(activeBuffs.map((b) => b.weatherType)).toContain(WeatherType.RESOURCE_STORM);
+      expect(activeBuffs.map((b) => b.weatherType)).toContain(WeatherType.DARK_FLUX);
+    });
+
+    it('未知的文明应该返回空数组', () => {
+      const activeBuffs = handler.getActiveBuffs('unknown-civ');
+
+      expect(activeBuffs).toEqual([]);
+    });
+  });
+
+  describe('calculateModifiedValue', () => {
+    it('应该正确计算正向修正值', () => {
+      const result = handler.calculateModifiedValue(100, 0.5);
+      expect(result).toBe(150);
+    });
+
+    it('应该正确计算负向修正值', () => {
+      const result = handler.calculateModifiedValue(100, -0.2);
+      expect(result).toBe(80);
+    });
+
+    it('未定义的修正值应该返回原值', () => {
+      const result = handler.calculateModifiedValue(100, undefined);
+      expect(result).toBe(100);
+    });
+
+    it('零修正值应该返回原值', () => {
+      const result = handler.calculateModifiedValue(100, 0);
+      expect(result).toBe(100);
+    });
+  });
+
+  describe('Mock CivilizationService 验证', () => {
+    it('应该验证 applyBuff 被正确调用并包含正确的属性修改', async () => {
+      const weather: WeatherState = {
+        type: WeatherType.RESOURCE_STORM,
+        intensity: 100,
+        affectedRegions: ['region-1'],
+        startTime: new Date(),
+        duration: 3600,
+      };
+
+      await handler.applyWeatherEffects(weather, ['civ-1']);
+
+      expect(civilizationService.applyBuff).toHaveBeenCalled();
+
+      const callArgs = civilizationService.applyBuff.mock.calls[0];
+      const buff: CivilizationBuff = callArgs[1];
+
+      expect(buff.civilizationId).toBe('civ-1');
+      expect(buff.weatherType).toBe(WeatherType.RESOURCE_STORM);
+      expect(buff.modifiers.resourceProductionModifier).toBe(1.5);
+      expect(buff.modifiers.shieldRegenModifier).toBe(-0.2);
+      expect(buff.appliedAt).toBeInstanceOf(Date);
+    });
+
+    it('应该验证 removeBuff 被正确调用', async () => {
+      const weather: WeatherState = {
+        type: WeatherType.WARP_BLOCK,
+        intensity: 100,
+        affectedRegions: ['region-1'],
+        startTime: new Date(),
+        duration: 3600,
+      };
+
+      await handler.removeWeatherEffects(weather, ['civ-1']);
+
+      expect(civilizationService.removeBuff).toHaveBeenCalledWith(
+        'civ-1',
+        WeatherType.WARP_BLOCK,
+      );
+    });
+  });

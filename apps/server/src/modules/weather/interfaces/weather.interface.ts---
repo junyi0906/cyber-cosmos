@@ -1,38 +1,31 @@
-/**
- * 天气状态枚举
- * 定义宇宙中可能出现的各种天气类型
- */
-export enum WeatherState {
-  /** 平静状态 - 无特殊效果 */
+export enum WeatherType {
   CALM = 'CALM',
-  /** 资源风暴 - 特定区域矿石产出翻倍，消耗能源增加 */
   RESOURCE_STORM = 'RESOURCE_STORM',
-  /** 黑暗波动 - 降低传感器范围，外交视野受限 */
   DARK_FLUX = 'DARK_FLUX',
-  /** 跃迁阻塞 - 阻止跃迁航行 */
   WARP_BLOCK = 'WARP_BLOCK',
+  DARK_MATTER_WAVE = 'DARK_MATTER_WAVE',
 }
 
-/**
- * 天气基础接口
- */
-export interface Weather {
-  /** 天气唯一标识 */
-  id: string;
-  /** 天气状态类型 */
-  state: WeatherState;
-  /** 天气名称 */
-  name: string;
-  /** 天气描述 */
-  description: string;
-  /** 影响区域 */
-  affectedRegions: string[];
-  /** 开始时间 */
-  startTime: Date;
-  /** 结束时间 */
-  endTime: Date;
-  /** 天气强度 (0.0 - 1.0) */
+export interface WeatherState {
+  type: WeatherType;
   intensity: number;
-  /** 是否为全局天气 */
-  isGlobal: boolean;
+  affectedRegions: string[];
+  startTime: Date;
+  duration: number;
+}
+
+export interface WeatherModifier {
+  resourceProductionModifier?: number;
+  shieldRegenModifier?: number;
+  sensorRangeModifier?: number;
+  visibilityModifier?: number;
+  warpEnabled?: boolean;
+  researchSpeedModifier?: number;
+}
+
+export interface CivilizationBuff {
+  civilizationId: string;
+  modifiers: WeatherModifier;
+  weatherType: WeatherType;
+  appliedAt: Date;
 }
