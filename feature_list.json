@@ -1,500 +1,394 @@
 {
   "version": "1.0",
-  "project": "project_1774360856",
-  "total_features": 22,
+  "project": "project_1774361173",
+  "total_features": 20,
   "features": [
     {
       "id": "feat-001",
       "category": "infra",
-      "description": "项目初始化与目录结构创建",
+      "description": "数据库架构升级：添加贸易、天气、遗迹相关表结构",
       "steps": [
-        "创建项目根目录 ~/cyber-cosmos",
-        "创建 cmd/server 目录",
-        "创建 cmd/evolutiond 目录",
-        "创建 internal/agent 目录",
-        "创建 internal/evolution 目录",
-        "创建 internal/sandbox 目录",
-        "创建 internal/knowledge 目录",
-        "创建 web/app 目录",
-        "创建 web/components 目录",
-        "创建 web/public 目录",
-        "创建 ai/models 目录",
-        "创建 ai/prompts 目录",
-        "创建 ai/rag 目录",
-        "创建 pkg 目录",
-        "创建 api 目录",
-        "创建 configs 目录",
-        "创建 scripts 目录",
-        "创建 deployments 目录",
-        "创建 docs 目录",
-        "初始化 go.mod 文件"
+        "创建 apps/server/src/database/migrations/002_trade_weather_relic.sql",
+        "定义 trade_routes 表结构（id, source_civ_id, target_civ_id, resource_type, rate_per_tick, status, created_at）",
+        "定义 weather_history 表结构（time, weather_type, intensity, affected_sectors），并配置 TimescaleDB hypertable",
+        "定义 relics 表结构（id, name, description, location_x, location_y, source_event_id, bonus_data, expires_at）",
+        "定义 market_orders 表结构（id, civ_id, type, resource, price, quantity, created_at）",
+        "运行数据库迁移脚本"
       ],
-      "test_command": "ls -la ~/cyber-cosmos && test -f ~/cyber-cosmos/go.mod",
+      "test_command": "docker exec -it cyber-cosmos-postgres psql -U postgres -d cyber_cosmos -c \"\\dt\"",
       "depends_on": [],
-      "passes": true,
-      "last_attempt": "2026-03-24T22:03:46.912386",
-      "notes": "所有其他 Feature 依赖此基础结构",
-      "retry_count": 0
+      "passes": false,
+      "last_attempt": null,
+      "notes": "需确保 PostgreSQL 已启用 TimescaleDB 扩展"
     },
     {
       "id": "feat-002",
-      "category": "infra",
-      "description": "Docker 基础设施配置",
+      "category": "functional",
+      "description": "星际贸易系统：核心数据模型与服务层实现",
       "steps": [
-        "创建 deployments/docker-compose.yml",
-        "在 docker-compose.yml 中定义 PostgreSQL 服务（端口5432）",
-        "在 docker-compose.yml 中定义 Redis 服务（端口6379）",
-        "在 docker-compose.yml 中定义 Neo4j 服务（端口7474, 7687）",
-        "在 docker-compose.yml 中定义 Milvus 服务（端口19530）",
-        "创建 deployments/.env.example 环境变量模板",
-        "创建 Makefile 并添加 infra-up 目标",
-        "创建 Makefile 并添加 infra-down 目标"
+        "创建 apps/server/src/modules/trade/trade.module.ts",
+        "创建 apps/server/src/entities/trade-route.entity.ts，定义 TradeRoute 实体",
+        "创建 apps/server/src/entities/market-order.entity.ts，定义 MarketOrder 实体",
+        "创建 apps/server/src/modules/trade/dto/create-trade-route.dto.ts",
+        "创建 apps/server/src/modules/trade/dto/market-order.dto.ts",
+        "在 trade.module.ts 中导入 TypeOrmModule.forFeature([TradeRoute, MarketOrder])"
       ],
-      "test_command": "cd ~/cyber-cosmos && docker-compose -f deployments/docker-compose.yml config",
+      "test_command": "npm run test -- --testPathPattern=trade.entity",
       "depends_on": [
         "feat-001"
       ],
-      "passes": true,
-      "last_attempt": "2026-03-24T22:04:43.934781",
-      "notes": "数据库服务依赖此配置",
-      "retry_count": 0
+      "passes": false,
+      "last_attempt": null,
+      "notes": ""
     },
     {
       "id": "feat-003",
-      "category": "infra",
-      "description": "PostgreSQL 数据库 Schema 初始化",
+      "category": "functional",
+      "description": "星际贸易系统：动态市场与供需算法",
       "steps": [
-        "创建 scripts/init-db.sql 文件",
-        "在 init-db.sql 中创建 evolution_records 表（id, status, diff_url, score, created_at, updated_at）",
-        "在 init-db.sql 中创建 agents_state 表（id, agent_name, state, snapshot, created_at）",
-        "在 init-db.sql 中创建 evolution_steps 表（id, evolution_id, step_name, status, details）",
-        "创建 pkg/database/postgres.go 数据库连接池封装",
-        "实现 GetPostgresDB() 单例函数"
+        "创建 apps/server/src/modules/trade/market.service.ts",
+        "实现 getMarketPrices() 方法，从 Redis 获取实时行情",
+        "实现 updateMarketPrices() 方法，根据全服资源存量计算价格波动",
+        "实现供需算法：price = basePrice * (1 + demandFactor - supplyFactor)",
+        "创建 apps/server/src/modules/trade/market.controller.ts",
+        "实现 GET /api/trade/market 接口，返回当前市场行情"
       ],
-      "test_command": "cd ~/cyber-cosmos && go build ./pkg/database/",
+      "test_command": "curl -X GET http://localhost:3000/api/trade/market",
       "depends_on": [
         "feat-002"
       ],
       "passes": false,
       "last_attempt": null,
-      "notes": "未解析到代码文件"
+      "notes": "Redis key 格式：market:prices:{resourceType}"
     },
     {
       "id": "feat-004",
-      "category": "infra",
-      "description": "Redis 缓存服务封装",
+      "category": "functional",
+      "description": "星际贸易系统：贸易路线建立与管理",
       "steps": [
-        "创建 pkg/cache/redis.go 文件",
-        "实现 RedisClient 结构体",
-        "实现 NewRedisClient(addr, password string, db int) 构造函数",
-        "实现 Set(key, value string, expiration time.Duration) 方法",
-        "实现 Get(key string) (string, error) 方法",
-        "实现 Publish(channel, message string) 方法",
-        "实现 Subscribe(channel string) *redis.PubSub 方法"
+        "创建 apps/server/src/modules/trade/trade.service.ts",
+        "实现 createTradeRoute() 方法，验证外交关系并计算运输成本",
+        "运输成本公式：cost = baseCost * distance * (1 - relationBonus)",
+        "实现 suspendTradeRoute() 和 endTradeRoute() 方法",
+        "创建 apps/server/src/modules/trade/trade.controller.ts",
+        "实现 POST /api/trade/routes 接口，创建新贸易路线",
+        "实现 GET /api/trade/routes 接口，查询文明的所有贸易路线"
       ],
-      "test_command": "cd ~/cyber-cosmos && go build ./pkg/cache/",
+      "test_command": "curl -X POST http://localhost:3000/api/trade/routes -H \"Content-Type: application/json\" -d '{\"sourceCivId\":\"uuid\",\"targetCivId\":\"uuid\",\"resourceType\":\"ORE\",\"ratePerTick\":10}'",
       "depends_on": [
         "feat-002"
       ],
       "passes": false,
       "last_attempt": null,
-      "notes": "用于消息队列和缓存"
+      "notes": "依赖现有的外交联盟模块获取文明关系"
     },
     {
       "id": "feat-005",
-      "category": "infra",
-      "description": "Neo4j 图数据库连接封装",
+      "category": "functional",
+      "description": "星际贸易系统：贸易结算与异步队列",
       "steps": [
-        "创建 pkg/graph/neo4j.go 文件",
-        "实现 Neo4jClient 结构体",
-        "实现 NewNeo4jClient(uri, username, password string) 构造函数",
-        "实现 CreateNode(label string, properties map[string]interface{}) 方法",
-        "实现 CreateRelationship(fromID, toID, relType string) 方法",
-        "实现 Query(cypher string, params map[string]interface{}) 方法",
-        "实现 Close() 方法"
+        "创建 apps/server/src/modules/trade/trade.processor.ts",
+        "使用 Bull 队列处理贸易结算任务",
+        "实现贸易结算逻辑：扣除源文明资源，增加目标文明资源",
+        "引入数据库事务锁，防止并发交易导致数据不一致",
+        "实现商队事件触发逻辑：根据概率遭遇海盗或天气影响"
       ],
-      "test_command": "cd ~/cyber-cosmos && go build ./pkg/graph/",
+      "test_command": "npm run test -- --testPathPattern=trade.processor",
       "depends_on": [
-        "feat-002"
+        "feat-004"
       ],
       "passes": false,
       "last_attempt": null,
-      "notes": "代码知识图谱存储"
+      "notes": "需配置 Redis 作为 Bull 队列后端"
     },
     {
       "id": "feat-006",
-      "category": "infra",
-      "description": "Milvus 向量数据库连接封装",
+      "category": "functional",
+      "description": "宇宙天气系统：核心数据模型与调度器",
       "steps": [
-        "创建 pkg/vector/milvus.go 文件",
-        "实现 MilvusClient 结构体",
-        "实现 NewMilvusClient(addr string) 构造函数",
-        "实现 CreateCollection(name string, dimension int64) 方法",
-        "实现 Insert(collection string, vectors [][]float32) 方法",
-        "实现 Search(collection string, vector []float32, topK int) 方法"
+        "创建 apps/server/src/modules/weather/weather.module.ts",
+        "创建 apps/server/src/entities/cosmic-weather.entity.ts",
+        "创建 apps/server/src/modules/weather/weather.scheduler.ts",
+        "使用 @nestjs/schedule 配置定时任务，每小时生成新天气",
+        "实现天气生成逻辑：随机选择类型（STORM/DARKNESS/MATTER）和强度"
       ],
-      "test_command": "cd ~/cyber-cosmos && go build ./pkg/vector/",
+      "test_command": "npm run test -- --testPathPattern=weather.scheduler",
       "depends_on": [
-        "feat-002"
+        "feat-001"
       ],
       "passes": false,
       "last_attempt": null,
-      "notes": "代码语义向量存储"
+      "notes": ""
     },
     {
       "id": "feat-007",
       "category": "functional",
-      "description": "Go 后端 API 服务框架搭建",
+      "description": "宇宙天气系统：天气效果管理器",
       "steps": [
-        "创建 cmd/server/main.go 入口文件",
-        "创建 internal/server/server.go 文件",
-        "实现 Server 结构体（包含 Router, DB, Cache 字段）",
-        "实现 NewServer() 构造函数",
-        "实现 SetupRouter() 方法配置 Gin 路由",
-        "添加 /api/health 健康检查端点",
-        "添加 CORS 中间件配置",
-        "创建 Makefile run-server 目标"
+        "创建 apps/server/src/modules/weather/effects.service.ts",
+        "实现 EffectManager 类，动态修改文明属性",
+        "定义天气效果：STORM 增产 50%，DARKNESS 视野-30%，MATTER 科技加速 20%",
+        "实现 applyWeatherEffects() 方法，将效果应用到受影响星区的文明",
+        "实现 removeWeatherEffects() 方法，天气结束时移除效果"
       ],
-      "test_command": "cd ~/cyber-cosmos && go build -o bin/server ./cmd/server/",
+      "test_command": "npm run test -- --testPathPattern=effects.service",
+      "depends_on": [
+        "feat-006"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": ""
+    },
+    {
+      "id": "feat-008",
+      "category": "functional",
+      "description": "宇宙天气系统：天气预报与 WebSocket 推送",
+      "steps": [
+        "创建 apps/server/src/modules/weather/weather.controller.ts",
+        "实现 GET /api/weather/forecast 接口，返回未来 3 个周期的天气预报",
+        "在 weather.scheduler.ts 中注入 WebSocketGateway",
+        "天气生成后，通过 WebSocket 广播 event:weather_update",
+        "前端监听 weather_alert 频道，显示天气预警横幅"
+      ],
+      "test_command": "curl -X GET http://localhost:3000/api/weather/forecast",
+      "depends_on": [
+        "feat-006"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": ""
+    },
+    {
+      "id": "feat-009",
+      "category": "functional",
+      "description": "文明遗迹系统：遗迹生成器",
+      "steps": [
+        "创建 apps/server/src/modules/relic/relic.module.ts",
+        "创建 apps/server/src/entities/relic.entity.ts",
+        "创建 apps/server/src/modules/relic/relic.generator.ts",
+        "监听现有 EventSystem，当事件严重等级 > 8 时触发遗迹生成",
+        "遗迹生成逻辑：在事件坐标创建 Relic 实体，关联历史事件 ID"
+      ],
+      "test_command": "npm run test -- --testPathPattern=relic.generator",
+      "depends_on": [
+        "feat-001"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": "依赖现有的事件系统模块"
+    },
+    {
+      "id": "feat-010",
+      "category": "functional",
+      "description": "文明遗迹系统：遗迹探索与争夺",
+      "steps": [
+        "创建 apps/server/src/modules/relic/exploration.service.ts",
+        "实现 exploreRelic() 方法，派遣舰队探索遗迹",
+        "探索成功率计算：successRate = 0.3 + (civilizationTechLevel * 0.1)",
+        "成功探索后，根据 lootTable 分配奖励（资源或失落科技）",
+        "实现遗迹争夺逻辑：多文明同时探索时触发外交冲突事件"
+      ],
+      "test_command": "npm run test -- --testPathPattern=exploration.service",
+      "depends_on": [
+        "feat-009"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": ""
+    },
+    {
+      "id": "feat-011",
+      "category": "functional",
+      "description": "文明遗迹系统：历史回响事件",
+      "steps": [
+        "在 relic.entity.ts 中添加 lastEchoTime 字段",
+        "创建 apps/server/src/modules/relic/relic.echo.scheduler.ts",
+        "定时任务检查遗迹是否触发回响事件",
+        "回响事件重演历史片段，影响周边文明的属性或资源",
+        "通过 WebSocket 广播 event:relic_echo"
+      ],
+      "test_command": "npm run test -- --testPathPattern=relic.echo",
+      "depends_on": [
+        "feat-009"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": ""
+    },
+    {
+      "id": "feat-012",
+      "category": "functional",
+      "description": "文明遗迹系统：API 接口实现",
+      "steps": [
+        "创建 apps/server/src/modules/relic/relic.controller.ts",
+        "实现 GET /api/relics 接口，返回当前可见的遗迹列表",
+        "实现 POST /api/relics/:id/explore 接口，派遣舰队探索遗迹",
+        "实现 GET /api/relics/:id 接口，返回遗迹详细信息"
+      ],
+      "test_command": "curl -X GET http://localhost:3000/api/relics",
+      "depends_on": [
+        "feat-010"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": ""
+    },
+    {
+      "id": "feat-013",
+      "category": "functional",
+      "description": "观测台增强：宇宙演化时间线",
+      "steps": [
+        "创建 apps/server/src/modules/timeline/timeline.module.ts",
+        "创建 apps/server/src/modules/timeline/timeline.service.ts",
+        "实现 getTimelineEvents() 方法，查询关键历史事件",
+        "创建 apps/server/src/modules/timeline/timeline.controller.ts",
+        "实现 GET /api/observatory/timeline 接口",
+        "前端创建 apps/client/src/components/Observatory/TimelineView.tsx",
+        "使用 vis-timeline 库渲染时间线组件"
+      ],
+      "test_command": "curl -X GET http://localhost:3000/api/observatory/timeline",
+      "depends_on": [
+        "feat-001"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": ""
+    },
+    {
+      "id": "feat-014",
+      "category": "functional",
+      "description": "观测台增强：势力范围热力图",
+      "steps": [
+        "在 timeline.service.ts 中实现 getHeatmapData() 方法",
+        "查询文明控制的星区坐标，计算势力密度",
+        "实现 GET /api/observatory/heatmap 接口",
+        "前端创建 apps/client/src/components/Observatory/HeatmapLayer.tsx",
+        "在 Three.js 场景中叠加 Canvas 图层",
+        "使用 simpleheat 库渲染热力图"
+      ],
+      "test_command": "curl -X GET http://localhost:3000/api/observatory/heatmap",
+      "depends_on": [
+        "feat-013"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": ""
+    },
+    {
+      "id": "feat-015",
+      "category": "functional",
+      "description": "观测台增强：资源流动图",
+      "steps": [
+        "在 timeline.service.ts 中实现 getResourceFlowData() 方法",
+        "聚合贸易路线数据，计算各星区间的资源流量",
+        "实现 GET /api/observatory/resource-flow 接口",
+        "前端创建 apps/client/src/components/Observatory/ResourceFlowChart.tsx",
+        "使用 ECharts 的桑基图展示资源流向"
+      ],
+      "test_command": "curl -X GET http://localhost:3000/api/observatory/resource-flow",
+      "depends_on": [
+        "feat-004",
+        "feat-013"
+      ],
+      "passes": false,
+      "last_attempt": null,
+      "notes": ""
+    },
+    {
+      "id": "feat-016",
+      "category": "functional",
+      "description": "前端：贸易界面与实时交互",
+      "steps": [
+        "创建 apps/client/src/components/TradeView/TradeDashboard.tsx",
+        "创建 apps/client/src/components/TradeView/MarketPanel.tsx，展示实时行情",
+        "创建 apps/client/src/components/TradeView/RouteManager.tsx，管理贸易路线",
+        "使用 ECharts K线图展示资源价格走势",
+        "监听 WebSocket trade_updates 频道，实时刷新交易状态"
+      ],
+      "test_command": "npm run test -- --testPathPattern=TradeDashboard --passWithNoTests",
       "depends_on": [
         "feat-003",
         "feat-004"
       ],
       "passes": false,
       "last_attempt": null,
-      "notes": "后端服务基础"
+      "notes": ""
     },
     {
-      "id": "feat-008",
+      "id": "feat-017",
       "category": "functional",
-      "description": "gRPC 服务定义与代码生成",
+      "description": "前端：天气预警 HUD 组件",
       "steps": [
-        "创建 api/proto/evolution.proto 文件",
-        "定义 EvolutionService 服务",
-        "定义 AnalyzeCode RPC 方法",
-        "定义 GenerateCode RPC 方法",
-        "定义 ExecuteTest RPC 方法",
-        "创建 scripts/gen-proto.sh 脚本",
-        "生成 Go 代码到 api/gen/go/",
-        "创建 pkg/grpc/client.go gRPC 客户端封装"
+        "创建 apps/client/src/components/WeatherHUD/WeatherAlert.tsx",
+        "监听 WebSocket weather_alert 频道",
+        "收到预警时，在屏幕顶部显示横幅通知",
+        "创建 apps/client/src/components/WeatherHUD/WeatherForecast.tsx",
+        "展示未来 3 个周期的天气预报"
       ],
-      "test_command": "cd ~/cyber-cosmos && test -d api/gen/go/",
-      "depends_on": [
-        "feat-001"
-      ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "Go 与 Python AI 服务通信基础"
-    },
-    {
-      "id": "feat-009",
-      "category": "functional",
-      "description": "Python AI 服务基础框架",
-      "steps": [
-        "创建 ai/requirements.txt（langchain, openai, grpcio, milvus-client）",
-        "创建 ai/server/main.py 入口文件",
-        "创建 ai/server/grpc_server.py 文件",
-        "实现 EvolutionServiceServicer 类",
-        "实现 AnalyzeCode 方法（占位实现）",
-        "实现 GenerateCode 方法（占位实现）",
-        "创建 ai/config.py 配置管理",
-        "创建 Dockerfile.python 容器化配置"
-      ],
-      "test_command": "cd ~/cyber-cosmos/ai && python -c \"import server.main\"",
+      "test_command": "npm run test -- --testPathPattern=WeatherAlert --passWithNoTests",
       "depends_on": [
         "feat-008"
       ],
       "passes": false,
       "last_attempt": null,
-      "notes": "AI 服务基础框架"
-    },
-    {
-      "id": "feat-010",
-      "category": "functional",
-      "description": "知识库接口实现",
-      "steps": [
-        "创建 internal/knowledge/knowledge.go 文件",
-        "定义 KnowledgeStore 接口",
-        "创建 internal/knowledge/vector_store.go 文件",
-        "实现 MilvusStore 结构体",
-        "实现 Store(code, embedding, metadata) 方法",
-        "实现 Query(queryEmbedding, topK) 方法",
-        "创建 internal/knowledge/graph_store.go 文件",
-        "实现 Neo4jStore 结构体",
-        "实现 StoreDependency(from, to, depType) 方法"
-      ],
-      "test_command": "cd ~/cyber-cosmos && go build ./internal/knowledge/",
-      "depends_on": [
-        "feat-005",
-        "feat-006"
-      ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "智能体记忆系统基础"
-    },
-    {
-      "id": "feat-011",
-      "category": "functional",
-      "description": "架构自省模块 - 代码分析器",
-      "steps": [
-        "创建 internal/evolution/analyzer.go 文件",
-        "定义 CodeAnalyzer 结构体",
-        "实现 ScanCodebase(rootPath string) 方法",
-        "使用 go/parser 解析 Go 文件 AST",
-        "提取函数定义、结构体定义、接口定义",
-        "实现 BuildDependencyGraph() 方法",
-        "实现 DetectCircularDependencies() 方法",
-        "实现 CalculateComplexity() 方法",
-        "创建 internal/evolution/types.go 定义分析结果结构"
-      ],
-      "test_command": "cd ~/cyber-cosmos && go build ./internal/evolution/",
-      "depends_on": [
-        "feat-005",
-        "feat-007"
-      ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "F01 架构自省核心"
-    },
-    {
-      "id": "feat-012",
-      "category": "functional",
-      "description": "智能体基础框架",
-      "steps": [
-        "创建 internal/agent/base.go 文件",
-        "定义 Agent 接口",
-        "定义 AgentBase 结构体（Name, Role, State, Memory 字段）",
-        "实现 SendMessage(to Agent, content string) 方法",
-        "实现 ReceiveMessage(from Agent, content string) 方法",
-        "实现 UpdateState(newState string) 方法",
-        "创建 internal/agent/registry.go 智能体注册中心",
-        "实现 RegisterAgent(agent Agent) 方法",
-        "实现 GetAgent(name string) Agent 方法"
-      ],
-      "test_command": "cd ~/cyber-cosmos && go build ./internal/agent/",
-      "depends_on": [
-        "feat-010"
-      ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "F06 智能体角色定义基础"
-    },
-    {
-      "id": "feat-013",
-      "category": "functional",
-      "description": "架构师智能体实现",
-      "steps": [
-        "创建 internal/agent/architect.go 文件",
-        "定义 ArchitectAgent 结构体，嵌入 AgentBase",
-        "实现 AnalyzeArchitecture(codebase string) 方法",
-        "实现 GenerateImprovementPlan(analysis Result) 方法",
-        "实现 ReviewChange(change Change) bool 方法",
-        "创建 ai/prompts/architect_system.txt 系统提示词",
-        "创建 ai/prompts/architect_analysis.txt 分析提示词模板"
-      ],
-      "test_command": "cd ~/cyber-cosmos && go build ./internal/agent/",
-      "depends_on": [
-        "feat-011",
-        "feat-012"
-      ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "架构决策智能体"
-    },
-    {
-      "id": "feat-014",
-      "category": "functional",
-      "description": "编码智能体实现",
-      "steps": [
-        "创建 internal/agent/coder.go 文件",
-        "定义 CoderAgent 结构体，嵌入 AgentBase",
-        "实现 GenerateCode(requirement string) 方法",
-        "实现 RefactorCode(code, instructions string) 方法",
-        "实现 OptimizeCode(code string) 方法",
-        "创建 ai/prompts/coder_system.txt 系统提示词",
-        "创建 ai/prompts/code_generation.txt 代码生成提示词模板"
-      ],
-      "test_command": "cd ~/cyber-cosmos && go build ./internal/agent/",
-      "depends_on": [
-        "feat-012",
-        "feat-009"
-      ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "F04 自主编码代理核心"
-    },
-    {
-      "id": "feat-015",
-      "category": "functional",
-      "description": "审查智能体实现",
-      "steps": [
-        "创建 internal/agent/reviewer.go 文件",
-        "定义 ReviewerAgent 结构体，嵌入 AgentBase",
-        "实现 ReviewCode(code, context string) ReviewResult 方法",
-        "实现 CheckSecurityIssues(code string) []Issue 方法",
-        "实现 CheckPerformanceIssues(code string) []Issue 方法",
-        "实现 ApproveChange(changeID string) bool 方法",
-        "创建 ai/prompts/reviewer_system.txt 系统提示词"
-      ],
-      "test_command": "cd ~/cyber-cosmos && go build ./internal/agent/",
-      "depends_on": [
-        "feat-012"
-      ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "代码审查智能体"
-    },
-    {
-      "id": "feat-016",
-      "category": "functional",
-      "description": "进化规划器实现",
-      "steps": [
-        "创建 internal/evolution/planner.go 文件",
-        "定义 EvolutionPlanner 结构体",
-        "实现 CreatePlan(analysis AnalysisResult) Plan 方法",
-        "实现 PrioritizeFeatures(features []Feature) []Feature 方法",
-        "实现 EstimateEffort(feature Feature) int 方法",
-        "实现 GenerateTasks(plan Plan) []Task 方法",
-        "创建 internal/evolution/types.go 定义 Plan, Task 结构"
-      ],
-      "test_command": "cd ~/cyber-cosmos && go build ./internal/evolution/",
-      "depends_on": [
-        "feat-011",
-        "feat-013"
-      ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "F02 需求生成器 + F03 演化策略"
-    },
-    {
-      "id": "feat-017",
-      "category": "functional",
-      "description": "进化执行器实现",
-      "steps": [
-        "创建 internal/evolution/executor.go 文件",
-        "定义 EvolutionExecutor 结构体",
-        "实现 ExecuteTask(task Task) Result 方法",
-        "实现 ApplyChange(change Change) error 方法",
-        "实现 Rollback(changeID string) error 方法",
-        "实现 RecordEvolution(record EvolutionRecord) 方法",
-        "创建 internal/evolution/sandbox.go 沙箱环境管理"
-      ],
-      "test_command": "cd ~/cyber-cosmos && go build ./internal/evolution/",
-      "depends_on": [
-        "feat-014",
-        "feat-015",
-        "feat-016"
-      ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "进化执行核心"
+      "notes": ""
     },
     {
       "id": "feat-018",
       "category": "functional",
-      "description": "进化守护进程",
+      "description": "前端：遗迹卡片与发现通知",
       "steps": [
-        "创建 cmd/evolutiond/main.go 入口文件",
-        "实现定时触发器（使用 time.Ticker）",
-        "实现 RunEvolutionCycle() 主循环方法",
-        "集成 Analyzer -> Planner -> Executor 流程",
-        "实现错误处理与重试机制",
-        "实现优雅关闭",
-        "创建 Makefile run-evolution 目标"
+        "创建 apps/client/src/components/RelicCard/RelicList.tsx",
+        "创建 apps/client/src/components/RelicCard/RelicDetail.tsx",
+        "展示遗迹信息、探索按钮和奖励预览",
+        "监听 WebSocket relic_discovered 频道",
+        "发现新遗迹时弹出通知"
       ],
-      "test_command": "cd ~/cyber-cosmos && go build -o bin/evolutiond ./cmd/evolutiond/",
+      "test_command": "npm run test -- --testPathPattern=RelicList --passWithNoTests",
       "depends_on": [
-        "feat-017"
+        "feat-012"
       ],
       "passes": false,
       "last_attempt": null,
-      "notes": "后台自主进化守护进程"
+      "notes": ""
     },
     {
       "id": "feat-019",
-      "category": "functional",
-      "description": "前端 Next.js 项目初始化",
+      "category": "test",
+      "description": "集成测试：贸易流程全链路验证",
       "steps": [
-        "在 web/ 目录初始化 Next.js 14 项目",
-        "配置 Tailwind CSS",
-        "创建 web/app/layout.tsx 根布局",
-        "创建 web/app/page.tsx 首页",
-        "创建 web/lib/api.ts API 客户端封装",
-        "创建 web/lib/websocket.ts WebSocket 客户端",
-        "创建 web/store/useEvolutionStore.ts Zustand 状态管理"
+        "创建 apps/server/test/trade-flow.e2e-spec.ts",
+        "模拟两个文明建立联盟",
+        "测试开通贸易路线 -> 资源扣除与增加 -> 天气影响路线中断的全流程",
+        "验证 WebSocket 推送的 trade_updates 消息"
       ],
-      "test_command": "cd ~/cyber-cosmos/web && npm run build",
+      "test_command": "npm run test:e2e -- --testPathPattern=trade-flow",
       "depends_on": [
-        "feat-007"
+        "feat-005",
+        "feat-008"
       ],
       "passes": false,
       "last_attempt": null,
-      "notes": "前端基础框架"
+      "notes": ""
     },
     {
       "id": "feat-020",
-      "category": "functional",
-      "description": "宇宙监控面板 - 3D 可视化",
-      "steps": [
-        "创建 web/components/Universe/Universe.tsx Three.js 场景组件",
-        "创建 web/components/Universe/ServiceNode.tsx 服务节点组件",
-        "创建 web/components/Universe/DataFlow.tsx 数据流动画组件",
-        "实现节点布局算法（力导向图）",
-        "实现节点点击交互（显示详情）",
-        "实现实时数据流粒子效果",
-        "创建 web/app/dashboard/page.tsx 监控页面"
-      ],
-      "test_command": "cd ~/cyber-cosmos/web && npm run build",
-      "depends_on": [
-        "feat-019"
-      ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "F09 宇宙监控面板"
-    },
-    {
-      "id": "feat-021",
-      "category": "functional",
-      "description": "进化日志浏览器",
-      "steps": [
-        "创建 web/components/EvolutionLog/LogList.tsx 日志列表组件",
-        "创建 web/components/EvolutionLog/LogDetail.tsx 日志详情组件",
-        "创建 web/components/EvolutionLog/DiffViewer.tsx Monaco Diff 查看器",
-        "创建 web/components/EvolutionLog/DecisionTree.tsx 决策树可视化",
-        "创建 web/app/evolution-logs/page.tsx 日志浏览页面",
-        "实现分页与过滤功能",
-        "实现 WebSocket 实时日志推送"
-      ],
-      "test_command": "cd ~/cyber-cosmos/web && npm run build",
-      "depends_on": [
-        "feat-019"
-      ],
-      "passes": false,
-      "last_attempt": null,
-      "notes": "F10 进化日志浏览器"
-    },
-    {
-      "id": "feat-022",
       "category": "test",
-      "description": "自动化测试框架搭建",
+      "description": "压力测试：贸易系统并发性能验证",
       "steps": [
-        "创建 tests/unit/ 目录",
-        "创建 tests/integration/ 目录",
-        "创建 tests/e2e/ 目录",
-        "创建 scripts/run-tests.sh 测试运行脚本",
-        "创建 tests/mocks/llm_mock.go LLM Mock 服务",
-        "创建 tests/fixtures/sample_code/ 测试代码样本",
-        "配置 GitHub Actions CI 流程",
-        "创建 .github/workflows/test.yml"
+        "创建 test/performance/trade-load.yml 配置文件",
+        "使用 Artillery 模拟 1000+ 并发贸易请求",
+        "验证 Redis 缓存击穿保护",
+        "验证数据库事务死锁处理",
+        "生成性能报告"
       ],
-      "test_command": "cd ~/cyber-cosmos && bash scripts/run-tests.sh",
+      "test_command": "npx artillery run test/performance/trade-load.yml",
       "depends_on": [
-        "feat-007",
-        "feat-009"
+        "feat-005"
       ],
       "passes": false,
       "last_attempt": null,
-      "notes": "F05 自动化验证沙箱基础"
+      "notes": "需安装 Artillery: npm install -g artillery"
     }
   ]
 }

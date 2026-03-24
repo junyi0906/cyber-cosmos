@@ -1,0 +1,134 @@
+package database
+
+import (
+	"context"
+	"testing"
+	"time"
+)
+
+func TestDefaultConfig(t *testing.T) {
+	cfg := DefaultConfig()
+
+	if cfg.Host != "localhost" {
+		t.Errorf("expected host localhost, got %s", cfg.Host)
+	}
+	if cfg.Port != 5432 {
+		t.Errorf("expected port 5432, got %d", cfg.Port)
+	}
+	if cfg.Database != "cyber_cosmos" {
+		t.Errorf("expected database cyber_cosmos, got %s", cfg.Database)
+	}
+	if cfg.MaxConns != 25 {
+		t.Errorf("expected MaxConns 25, got %d", cfg.MaxConns)
+	}
+	if cfg.MinConns != 5 {
+		t.Errorf("expected MinConns 5, got %d", cfg.MinConns)
+	}
+}
+
+func TestGetPostgresDB_Singleton(t *testing.T) {
+	Reset()
+
+	cfg := &Config{
+		Host:     "localhost",
+		Port:     5432,
+		User:     "test_user",
+		Password: "test_pass",
+		Database: "test_db",
+		SSLMode:  "disable",
+		MaxConns: 10,
+		MinConns: 2,
+	}
+
+	// First call should create the pool
+	pool1, err := GetPostgresDB(cfg)
+	if err != nil {
+		t.Logf("Note: Database connection failed (expected in test env): %v", err)
+	}
+
+	// Second call should return the same instance
+	pool2, err := GetPostgresDB(cfg)
+	if err != nil {
+		t.Logf("Note: Database connection failed (expected in test env): %v", err)
+	}
+
+	// Both should be the same instance (or both nil if connection failed)
+	if pool1 != pool2 {
+		t.Error("GetPostgresDB should return the same singleton instance")
+	}
+
+	Reset()
+}
+
+func TestGetPostgresDB_DefaultConfig(t *testing.T) {
+	Reset()
+
+	// Call without config should use defaults
+	pool, err := GetPostgresDB()
+	if err != nil {
+		t.Logf("Note: Database connection failed (expected in test env): %v", err)
+	}
+
+	// Pool should be nil since we can't connect to a non-existent database
+	if pool != nil {
+		// If we got a connection, verify it works
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := pool.Ping(ctx); err != nil {
+			t.Errorf("failed to ping database: %v", err)
+		}
+	}
+
+	Reset()
+}
+
+func TestClose(t *testing.T) {
+	Reset()
+
+	// Close on nil pool should not panic
+	Close()
+
+	Reset()
+}
+
+func TestPing_NotInitialized(t *testing.T) {
+	Reset()
+
+	ctx := context.Background()
+	err := Ping(ctx)
+	if err == nil {
+		t.Error("expected error when pinging uninitialized pool")
+	}
+}
+
+func TestStats_NotInitialized(t *testing.T) {
+	Reset()
+
+	_, err := Stats()
+	if err == nil {
+		t.Error("expected error when getting stats from uninitialized pool")
+	}
+}
+
+func TestHealthCheck_NotInitialized(t *testing.T) {
+	Reset()
+
+	ctx := context.Background()
+	_, err := HealthCheck(ctx)
+	if err == nil {
+		t.Error("expected error when health checking uninitialized pool")
+	}
+}
+
+func TestWithTransaction_NotInitialized(t *testing.T) {
+	Reset()
+
+	ctx := context.Background()
+	err := WithTransaction(ctx, func(tx interface{}) error {
+		return nil
+	})
+	if err == nil {
+		t.Error("expected error when using transaction on uninitialized pool")
+	}
+}

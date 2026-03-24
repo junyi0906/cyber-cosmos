@@ -1,0 +1,20 @@
+// Package database provides PostgreSQL database connection pool management
+// for the Cyber-Cosmos project.
+//
+// This package implements a singleton pattern for database connection pooling
+// using pgxpool, which is a concurrent-safe connection pool for PostgreSQL.
+//
+// Basic usage:
+//
+//	import "cyber-cosmos/pkg/database"
+//
+//	func main() {
+//	    // Get the singleton database pool with default config
+//	    pool, err := database.GetPostgresDB()
+//	    if err != nil {
+//	        log.Fatal(err)
+//	    }
+//	    defer database.Close()
+//
+//	    // Use the pool for queries
+//	    rows
