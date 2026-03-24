@@ -1,0 +1,218 @@
+"""
+文明广播系统
+实现全宇宙信息广播与加密通讯
+"""
+import time
+import math
+from enum import Enum
+from typing import Optional, List, Dict, Any, Callable
+from dataclasses import dataclass, field
+from uuid import uuid4
+
+from .encryption import EncryptionEngine, EncryptionLevel, EncryptedPayload
+
+
+class BroadcastType(Enum):
+    """广播类型枚举"""
+    TECH = "tech"           # 科技分享/炫耀
+    THREAT = "threat"       # 威胁警告
+    DISTRESS = "distress"   # 求救信号
+    TRADE = "trade"         # 贸易请求
+    ALLIANCE = "alliance"   # 结盟邀请
+    TERRITORY = "territory" # 领土声明
+    PEACE = "peace"         # 和平声明
+    DECLARATION = "declaration"  # 一般声明
+
+
+class BroadcastPriority(Enum):
+    """广播优先级"""
+    LOW = 1
+    NORMAL = 2
+    HIGH = 3
+    CRITICAL = 4
+    EMERGENCY = 5
+
+
+@dataclass
+class Broadcast:
+    """广播数据结构"""
+    id: str
+    sender_id: str
+    sender_name: str
+    sender_position: Dict[str, float]  # {x, y, z}
+    broadcast_type: BroadcastType
+    content: str  # 原始内容
+    encrypted_payload: Optional[EncryptedPayload]
+    priority: BroadcastPriority
+    timestamp: float
+    range_light_years: float
+    tech_level: int
+    is_encrypted: bool
+    expires_at: Optional[float] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    
+    def is_expired(self) -> bool:
+        """检查广播是否过期"""
+        if self.expires_at is None:
+            return False
+        return time.time() > self.expires_at
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典"""
+        return {
+            'id': self.id,
+            'sender_id': self.sender_id,
+            'sender_name': self.sender_name,
+            'sender_position': self.sender_position,
+            'broadcast_type': self.broadcast_type.value,
+            'content': self.content,
+            'priority': self.priority.value,
+            'timestamp': self.timestamp,
+            'range_light_years': self.range_light_years,
+            'tech_level': self.tech_level,
+            'is_encrypted': self.is_encrypted,
+            'expires_at': self.expires_at,
+            'metadata': self.metadata,
+        }
+
+
+@dataclass
+class ReceivedBroadcast:
+    """接收到的广播"""
+    broadcast: Broadcast
+    decrypted: bool
+    decrypted_content: Optional[str]
+    distance: float
+    signal_strength: float
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典"""
+        return {
+            'broadcast': self.broadcast.to_dict(),
+            'decrypted': self.decrypted,
+            'decrypted_content': self.decrypted_content,
+            'distance': self.distance,
+            'signal_strength': self.signal_strength,
+        }
+
+
+class BroadcastManager:
+    """
+    广播管理器
+    管理全宇宙文明广播的发送、接收、加密与解密
+    """
+    
+    # 广播类型默认配置
+    BROADCAST_CONFIG = {
+        BroadcastType.TECH: {
+            'default_range_multiplier': 1.0,
+            'default_priority': BroadcastPriority.NORMAL,
+            'default_ttl': 86400 * 7,  # 7天
+        },
+        BroadcastType.THREAT: {
+            'default_range_multiplier': 2.0,
+            'default_priority': BroadcastPriority.HIGH,
+            'default_ttl': 86400 * 3,  # 3天
+        },
+        BroadcastType.DISTRESS: {
+            'default_range_multiplier': 3.0,
+            'default_priority': BroadcastPriority.EMERGENCY,
+            'default_ttl': 86400,  # 1天
+        },
+        BroadcastType.TRADE: {
+            'default_range_multiplier': 1.5,
+            'default_priority': BroadcastPriority.NORMAL,
+            'default_ttl': 86400 * 5,
+        },
+        BroadcastType.ALLIANCE: {
+            'default_range_multiplier': 1.0,
+            'default_priority': BroadcastPriority.HIGH,
+            'default_ttl': 86400 * 10,
+        },
+        BroadcastType.TERRITORY: {
+            'default_range_multiplier': 0.5,
+            'default_priority': BroadcastPriority.NORMAL,
+            'default_ttl': 86400 * 30,
+        },
+        BroadcastType.PEACE: {
+            'default_range_multiplier': 1.0,
+            'default_priority': BroadcastPriority.HIGH,
+            'default_ttl': 86400 * 15,
+        },
+        BroadcastType.DECLARATION: {
+            'default_range_multiplier': 1.0,
+            'default_priority': BroadcastPriority.NORMAL,
+            'default_ttl': 86400 * 7,
+        },
+    }
+    
+    def __init__(self):
+        self.encryption_engine = EncryptionEngine()
+        self._broadcasts: Dict[str, Broadcast] = {}
+        self._broadcast_hooks: List[Callable[[Broadcast], None]] = []
+        self._max_broadcasts = 10000
+    
+    def register_hook(self, hook: Callable[[Broadcast], None]) -> None:
+        """注册广播钩子函数"""
+        self._broadcast_hooks.append(hook)
+    
+    def unregister_hook(self, hook: Callable[[Broadcast], None]) -> None:
+        """注销广播钩子函数"""
+        if hook in self._broadcast_hooks:
+            self._broadcast_hooks.remove(hook)
+    
+    def broadcast_range(
+        self, 
+        tech_level: int, 
+        broadcast_type: BroadcastType,
+        power_boost: float = 1.0
+    ) -> float:
+        """
+        计算广播覆盖范围（光年）
+        
+        Args:
+            tech_level: 科技等级 (0-10)
+            broadcast_type: 广播类型
+            power_boost: 功率加成
+            
+        Returns:
+            float: 覆盖范围（光年）
+        """
+        # 基础范围：科技等级越高，范围越大
+        # 公式：base_range = 10 * (1 + tech_level)^1.5
+        base_range = 10 * math.pow(1 + tech_level, 1.5)
+        
+        # 广播类型修正
+        config = self.BROADCAST_CONFIG.get(broadcast_type, {})
+        type_multiplier = config.get('default_range_multiplier', 1.0)
+        
+        # 最终范围
+        final_range = base_range * type_multiplier * power_boost
+        
+        return round(final_range, 2)
+    
+    def encrypt_message(
+        self, 
+        message: str, 
+        civilization_id: str,
+        tech_level: int
+    ) -> EncryptedPayload:
+        """
+        加密消息
+        
+        Args:
+            message: 原始消息
+            civilization_id: 文明 ID
+            tech_level: 科技等级
+            
+        Returns:
+            EncryptedPayload: 加密后的载荷
+        """
+        return self.encryption_engine.encrypt(message, civilization_id, tech_level)
+    
+    def decrypt_message(
+        self,
+        encrypted_payload: EncryptedPayload,
+        sender_civilization_id: str,
+        receiver_tech_level: int
+    ) ->

@@ -1,0 +1,267 @@
+"""
+加密算法实现模块
+支持多级加密，科技等级决定加密/解密能力
+"""
+import hashlib
+import base64
+import secrets
+import time
+from enum import Enum
+from typing import Optional, Dict, Any, Tuple
+from dataclasses import dataclass
+
+
+class EncryptionLevel(Enum):
+    """加密等级枚举"""
+    NONE = 0          # 无加密
+    BASIC = 1         # 基础加密 (科技等级 1-2)
+    ADVANCED = 2      # 高级加密 (科技等级 3-4)
+    QUANTUM = 3       # 量子加密 (科技等级 5-6)
+    TRANSCENDENT = 4  # 超凡加密 (科技等级 7+)
+
+
+@dataclass
+class EncryptedPayload:
+    """加密载荷数据结构"""
+    ciphertext: str
+    level: EncryptionLevel
+    timestamp: float
+    checksum: str
+    salt: str
+
+
+class EncryptionEngine:
+    """
+    加密引擎
+    实现多级加密算法，支持基于科技等级的加密/解密
+    """
+    
+    # 科技等级对应的加密能力
+    TECH_ENCRYPTION_MAP = {
+        0: EncryptionLevel.NONE,
+        1: EncryptionLevel.BASIC,
+        2: EncryptionLevel.BASIC,
+        3: EncryptionLevel.ADVANCED,
+        4: EncryptionLevel.ADVANCED,
+        5: EncryptionLevel.QUANTUM,
+        6: EncryptionLevel.QUANTUM,
+        7: EncryptionLevel.TRANSCENDENT,
+        8: EncryptionLevel.TRANSCENDENT,
+        9: EncryptionLevel.TRANSCENDENT,
+        10: EncryptionLevel.TRANSCENDENT,
+    }
+    
+    def __init__(self):
+        self._key_cache: Dict[str, bytes] = {}
+    
+    def get_encryption_level(self, tech_level: int) -> EncryptionLevel:
+        """根据科技等级获取可用的加密等级"""
+        tech_level = max(0, min(10, tech_level))
+        return self.TECH_ENCRYPTION_MAP.get(tech_level, EncryptionLevel.TRANSCENDENT)
+    
+    def can_decrypt(self, sender_tech_level: int, receiver_tech_level: int) -> bool:
+        """
+        判断接收方是否能解密发送方的消息
+        规则：接收方科技等级 >= 发送方科技等级 - 1 才能解密
+        """
+        sender_level = self.get_encryption_level(sender_tech_level)
+        receiver_level = self.get_encryption_level(receiver_tech_level)
+        
+        # 无加密总是可以解密
+        if sender_level == EncryptionLevel.NONE:
+            return True
+        
+        # 接收方加密等级 >= 发送方等级即可解密
+        return receiver_level.value >= sender_level.value
+    
+    def generate_key(self, civilization_id: str, salt: str, level: EncryptionLevel) -> bytes:
+        """生成加密密钥"""
+        seed = f"{civilization_id}:{salt}:{level.value}"
+        return hashlib.sha256(seed.encode()).digest()
+    
+    def _xor_encrypt(self, data: bytes, key: bytes) -> bytes:
+        """XOR 加密/解密（对称）"""
+        key_len = len(key)
+        return bytes([data[i] ^ key[i % key_len] for i in range(len(data))])
+    
+    def _apply_level_transform(self, data: bytes, level: EncryptionLevel, key: bytes) -> bytes:
+        """根据加密等级应用不同的变换"""
+        if level == EncryptionLevel.NONE:
+            return data
+        
+        result = self._xor_encrypt(data, key)
+        
+        if level.value >= EncryptionLevel.ADVANCED.value:
+            # 高级加密：双重 XOR
+            key2 = hashlib.sha256(key).digest()
+            result = self._xor_encrypt(result, key2)
+        
+        if level.value >= EncryptionLevel.QUANTUM.value:
+            # 量子加密：添加随机噪声（基于密钥确定性）
+            noise_seed = hashlib.sha256(key + b"quantum").digest()
+            result = bytes([
+                (b + noise_seed[i % len(noise_seed)]) % 256 
+                for i, b in enumerate(result)
+            ])
+        
+        if level.value >= EncryptionLevel.TRANSCENDENT.value:
+            # 超凡加密：额外哈希混淆
+            hash_layer = hashlib.sha512(result + key).digest()
+            result = bytes([
+                (result[i] ^ hash_layer[i % len(hash_layer)]) 
+                for i in range(len(result))
+            ])
+        
+        return result
+    
+    def encrypt(
+        self, 
+        message: str, 
+        civilization_id: str,
+        tech_level: int
+    ) -> EncryptedPayload:
+        """
+        加密消息
+        
+        Args:
+            message: 原始消息
+            civilization_id: 文明 ID
+            tech_level: 科技等级
+            
+        Returns:
+            EncryptedPayload: 加密后的载荷
+        """
+        level = self.get_encryption_level(tech_level)
+        timestamp = time.time()
+        salt = secrets.token_hex(16)
+        
+        if level == EncryptionLevel.NONE:
+            return EncryptedPayload(
+                ciphertext=base64.b64encode(message.encode()).decode(),
+                level=level,
+                timestamp=timestamp,
+                checksum=self._compute_checksum(message, salt),
+                salt=salt
+            )
+        
+        key = self.generate_key(civilization_id, salt, level)
+        data = message.encode('utf-8')
+        encrypted = self._apply_level_transform(data, level, key)
+        
+        ciphertext = base64.b64encode(encrypted).decode()
+        checksum = self._compute_checksum(message, salt)
+        
+        return EncryptedPayload(
+            ciphertext=ciphertext,
+            level=level,
+            timestamp=timestamp,
+            checksum=checksum,
+            salt=salt
+        )
+    
+    def decrypt(
+        self, 
+        payload: EncryptedPayload,
+        sender_civilization_id: str,
+        receiver_tech_level: int
+    ) -> Tuple[bool, Optional[str]]:
+        """
+        解密消息
+        
+        Args:
+            payload: 加密载荷
+            sender_civilization_id: 发送方文明 ID
+            receiver_tech_level: 接收方科技等级
+            
+        Returns:
+            Tuple[bool, Optional[str]]: (是否成功, 解密后的消息)
+        """
+        # 无加密直接解码
+        if payload.level == EncryptionLevel.NONE:
+            try:
+                message = base64.b64decode(payload.ciphertext).decode('utf-8')
+                if self._verify_checksum(message, payload.salt, payload.checksum):
+                    return True, message
+                return False, None
+            except Exception:
+                return False, None
+        
+        # 检查解密能力
+        sender_tech = self._level_to_min_tech(payload.level)
+        if not self.can_decrypt(sender_tech, receiver_tech_level):
+            return False, None
+        
+        try:
+            key = self.generate_key(sender_civilization_id, payload.salt, payload.level)
+            encrypted = base64.b64decode(payload.ciphertext)
+            
+            # 反向解密
+            decrypted = self._reverse_transform(encrypted, payload.level, key)
+            message = decrypted.decode('utf-8')
+            
+            # 验证校验和
+            if self._verify_checksum(message, payload.salt, payload.checksum):
+                return True, message
+            
+            return False, None
+        except Exception:
+            return False, None
+    
+    def _reverse_transform(self, data: bytes, level: EncryptionLevel, key: bytes) -> bytes:
+        """反向解密变换"""
+        result = data
+        
+        if level.value >= EncryptionLevel.TRANSCENDENT.value:
+            hash_layer = hashlib.sha512(result + key).digest()
+            result = bytes([
+                (result[i] ^ hash_layer[i % len(hash_layer)]) 
+                for i in range(len(result))
+            ])
+        
+        if level.value >= EncryptionLevel.QUANTUM.value:
+            noise_seed = hashlib.sha256(key + b"quantum").digest()
+            result = bytes([
+                (b - noise_seed[i % len(noise_seed)]) % 256 
+                for i, b in enumerate(result)
+            ])
+        
+        if level.value >= EncryptionLevel.ADVANCED.value:
+            key2 = hashlib.sha256(key).digest()
+            result = self._xor_encrypt(result, key2)
+        
+        if level.value >= EncryptionLevel.BASIC.value:
+            result = self._xor_encrypt(result, key)
+        
+        return result
+    
+    def _compute_checksum(self, message: str, salt: str) -> str:
+        """计算消息校验和"""
+        data = f"{salt}:{message}:{salt}"
+        return hashlib.sha256(data.encode()).hexdigest()[:32]
+    
+    def _verify_checksum(self, message: str, salt: str, checksum: str) -> bool:
+        """验证校验和"""
+        expected = self._compute_checksum(message, salt)
+        return expected == checksum
+    
+    def _level_to_min_tech(self, level: EncryptionLevel) -> int:
+        """加密等级转最小科技等级"""
+        mapping = {
+            EncryptionLevel.NONE: 0,
+            EncryptionLevel.BASIC: 1,
+            EncryptionLevel.ADVANCED: 3,
+            EncryptionLevel.QUANTUM: 5,
+            EncryptionLevel.TRANSCENDENT: 7,
+        }
+        return mapping.get(level, 0)
+    
+    def analyze_encryption(self, payload: EncryptedPayload) -> Dict[str, Any]:
+        """分析加密载荷信息"""
+        return {
+            'level': payload.level.name,
+            'level_value': payload.level.value,
+            'timestamp': payload.timestamp,
+            'age_seconds': time.time() - payload.timestamp,
+            'min_tech_to_decrypt': self._level_to_min_tech(payload.level),
+            'is_encrypted': payload.level != EncryptionLevel.NONE,
+        }
