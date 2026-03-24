@@ -1,0 +1,35 @@
+export type InterventionType = 
+  | 'meteor_impact'
+  | 'resource_discovery'
+  | 'tech_boost'
+  | 'plague_outbreak'
+  | 'diplomatic_pressure'
+  | 'natural_disaster'
+  | 'alien_contact';
+
+export interface InterventionRequest {
+  type: InterventionType;
+  target_civilization_id?: string;
+  target_coordinates?: {
+    x: number;
+    y: number;
+    z: number;
+  };
+  intensity?: number;
+  description?: string;
+}
+
+export interface InterventionResult {
+  id: string;
+  type: InterventionType;
+  status: 'success' | 'failed' | 'pending';
+  message: string;
+  affected_civilizations: string[];
+  impact_summary: Record<string, any>;
+  executed_at: Date;
+}
+
+export interface InterventionResponse {
+  success: boolean;
+  result: InterventionResult;
+}

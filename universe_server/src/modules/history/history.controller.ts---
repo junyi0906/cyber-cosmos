@@ -1,0 +1,73 @@
+import { Request, Response, NextFunction, Router } from 'express';
+import historyService from './history.service';
+import { HistoryQueryParams } from '../../types';
+
+const router = Router();
+
+export const getHistory = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const params: HistoryQueryParams = {
+      limit: req.query.limit ? parseInt(req.query.limit as string) : 50,
+      offset: req.query.offset ? parseInt(req.query.offset as string) : 0,
+      event_type: req.query.event_type as string,
+      start_cycle: req.query.start_cycle ? parseInt(req.query.start_cycle as string) : undefined,
+      end_cycle: req.query.end_cycle ? parseInt(req.query.end_cycle as string) : undefined,
+    };
+
+    // Validate parameters
+    if (params.limit && (params.limit < 1 || params.limit > 500)) {
+      res.status(400).json({
+        error: 'Invalid limit',
+        message: 'Limit must be between 1 and 500'
+      });
+      return;
+    }
+
+    if (params.offset && params.offset < 0) {
+      res.status(400).json({
+        error: 'Invalid offset',
+        message: 'Offset must be non-negative'
+      });
+      return;
+    }
+
+    const result = await historyService.getHistory(params);
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getEventById = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { id } = req.params;
+    
+    if (!id) {
+      res.status(400).json({
+        error: 'Missing parameter',
+        message: 'Event ID is required'
+      });
+      return;
+    }
+
+    const event = await historyService.getEventById(id);
+    
+    if (!event) {
+      res.status(404).json({
+        error: 'Not found',
+        message: `Event with ID ${id} not found`
+      });
+      return;
+    }
+
+    res.status(200).json(event);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Route definitions
+router.get('/history', getHistory);
+router.get('/history/:id', getEventById);
+
+export default router;

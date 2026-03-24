@@ -1,0 +1,39 @@
+export interface Civilization {
+  id: string;
+  name: string;
+  type: string;
+  status: 'active' | 'destroyed' | 'dormant';
+  population: number;
+  technology_level: number;
+  military_power: number;
+  economic_power: number;
+  cultural_influence: number;
+  location_x: number;
+  location_y: number;
+  location_z: number;
+  ideology: string;
+  trust_factor: number;
+  threat_assessment: number;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface CivilizationStats {
+  total_wars: number;
+  total_alliances: number;
+  events_survived: number;
+  age_cycles: number;
+}
+
+export interface CivilizationDetail extends Civilization {
+  stats: CivilizationStats;
+  allies: string[];
+  enemies: string[];
+  trade_partners: string[];
+}
+
+export interface CivilizationNotFoundError {
+  error: string;
+  message: string;
+  id: string;
+}

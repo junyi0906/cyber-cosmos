@@ -1,0 +1,152 @@
+import { query, queryOne } from '../../config/database';
+import { Civilization, CivilizationDetail, CivilizationStats } from '../../types';
+
+export class CivilizationService {
+  async getCivilizationById(id: string): Promise<CivilizationDetail | null> {
+    // Get basic civilization data
+    const civQuery = `
+      SELECT 
+        id,
+        name,
+        type,
+        status,
+        population,
+        technology_level,
+        military_power,
+        economic_power,
+        cultural_influence,
+        location_x,
+        location_y,
+        location_z,
+        ideology,
+        trust_factor,
+        threat_assessment,
+        created_at,
+        updated_at
+      FROM civilizations
+      WHERE id = $1
+    `;
+    
+    const civilization = await queryOne<Civilization>(civQuery, [id]);
+    
+    if (!civilization) {
+      return null;
+    }
+
+    // Get civilization stats
+    const statsQuery = `
+      SELECT 
+        COALESCE(SUM(CASE WHEN relation_type = 'war' THEN 1 ELSE 0 END), 0) as total_wars,
+        COALESCE(SUM(CASE WHEN relation_type = 'alliance' THEN 1 ELSE 0 END), 0) as total_alliances,
+        COALESCE(
+          (SELECT COUNT(*) FROM universe_history 
+           WHERE affected_entities::jsonb @> $1::jsonb 
+           AND event_type IN ('natural_disaster', 'war_event', 'pandemic', 'meteor_impact')),
+          0
+        ) as events_survived,
+        (SELECT universe_cycle FROM universe_state ORDER BY id DESC LIMIT 1) - 
+          EXTRACT(YEAR FROM created_at) as age_cycles
+      FROM diplomatic_relations
+      WHERE civilization_id_a = $2 OR civilization_id_b = $2
+    `;
+    
+    const stats = await queryOne<CivilizationStats>(statsQuery, [
+      JSON.stringify([id]),
+      id
+    ]);
+
+    // Get allies
+    const alliesQuery = `
+      SELECT 
+        CASE 
+          WHEN civilization_id_a = $1 THEN civilization_id_b 
+          ELSE civilization_id_a 
+        END as ally_id
+      FROM diplomatic_relations
+      WHERE (civilization_id_a = $1 OR civilization_id_b = $1)
+        AND relation_type = 'alliance'
+        AND status = 'active'
+    `;
+    const alliesResult = await query<{ ally_id: string }>(alliesQuery, [id]);
+    const allies = alliesResult.map(r => r.ally_id);
+
+    // Get enemies
+    const enemiesQuery = `
+      SELECT 
+        CASE 
+          WHEN civilization_id_a = $1 THEN civilization_id_b 
+          ELSE civilization_id_a 
+        END as enemy_id
+      FROM diplomatic_relations
+      WHERE (civilization_id_a = $1 OR civilization_id_b = $1)
+        AND relation_type = 'war'
+        AND status = 'active'
+    `;
+    const enemiesResult = await query<{ enemy_id: string }>(enemiesQuery, [id]);
+    const enemies = enemiesResult.map(r => r.enemy_id);
+
+    // Get trade partners
+    const tradeQuery = `
+      SELECT 
+        CASE 
+          WHEN civilization_id_a = $1 THEN civilization_id_b 
+          ELSE civilization_id_a 
+        END as partner_id
+      FROM diplomatic_relations
+      WHERE (civilization_id_a = $1 OR civilization_id_b = $1)
+        AND relation_type = 'trade'
+        AND status = 'active'
+    `;
+    const tradeResult = await query<{ partner_id: string }>(tradeQuery, [id]);
+    const trade_partners = tradeResult.map(r => r.partner_id);
+
+    return {
+      ...civilization,
+      stats: stats || {
+        total_wars: 0,
+        total_alliances: 0,
+        events_survived: 0,
+        age_cycles: 0
+      },
+      allies,
+      enemies,
+      trade_partners
+    };
+  }
+
+  async getAllCivilizations(params: { status?: string; limit?: number; offset?: number }): Promise<{
+    civilizations: Civilization[];
+    total: number;
+  }> {
+    const { status, limit = 50, offset = 0 } = params;
+    
+    let whereClause = '';
+    let queryParams: any[] = [];
+    
+    if (status) {
+      whereClause = 'WHERE status = $1';
+      queryParams.push(status);
+    }
+
+    // Get total count
+    const countQuery = `SELECT COUNT(*) as count FROM civilizations ${whereClause}`;
+    const countResult = await queryOne<{ count: string }>(countQuery, queryParams);
+    const total = parseInt(countResult?.count || '0');
+
+    // Get civilizations
+    const dataQuery = `
+      SELECT 
+        id,
+        name,
+        type,
+        status,
+        population,
+        technology_level,
+        military_power,
+        economic_power,
+        cultural_influence,
+        location_x,
+        location_y,
+        location_z,
+        ideology,
+        trust_factor

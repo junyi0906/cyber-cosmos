@@ -1,0 +1,25 @@
+export interface HistoryEvent {
+  id: string;
+  event_type: string;
+  description: string;
+  universe_cycle: number;
+  affected_entities: string[];
+  impact_data: Record<string, any>;
+  created_at: Date;
+}
+
+export interface HistoryQueryParams {
+  limit?: number;
+  offset?: number;
+  event_type?: string;
+  start_cycle?: number;
+  end_cycle?: number;
+}
+
+export interface PaginatedHistoryResponse {
+  events: HistoryEvent[];
+  total: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
+}
