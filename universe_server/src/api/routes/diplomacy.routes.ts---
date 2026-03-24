@@ -1,301 +1,308 @@
 import { Router, Request, Response } from 'express';
 import { 
   DiplomaticRelation, 
-  Treaty, 
-  TreatyRequest,
-  RelationQuery 
-} from '../models/diplomacy.model';
+  TreatyRequest, 
+  RelationType,
+  TreatyType 
+} from '../types/diplomacy.types';
 
 const router = Router();
 
-// In-memory stores
-let relationsStore: DiplomaticRelation[] = [];
-let treatiesStore: Treaty[] = [];
-let treatyCounter = 1;
+// In-memory store for diplomatic relations
+const relationsStore: Map<string, DiplomaticRelation> = new Map();
+const treatiesStore: Map<string, any> = new Map();
+
+// Initialize sample relations
+const initializeSampleRelations = () => {
+  const sampleRelations: DiplomaticRelation[] = [
+    {
+      id: 'rel-001',
+      civilizationA: 'civ-001',
+      civilizationB: 'civ-002',
+      relationType: RelationType.PEACEFUL,
+      trust: 0.75,
+      treaties: ['trty-001'],
+      history: [
+        { action: '首次接触', timestamp: Date.now() - 86400000 * 30 },
+        { action: '签订贸易协定', timestamp: Date.now() - 86400000 * 20 }
+      ]
+    },
+    {
+      id: 'rel-002',
+      civilizationA: 'civ-001',
+      civilizationB: 'civ-003',
+      relationType: RelationType.NEUTRAL,
+      trust: 0.5,
+      treaties: [],
+      history: [
+        { action: '首次接触', timestamp: Date.now() - 86400000 * 15 }
+      ]
+    },
+    {
+      id: 'rel-003',
+      civilizationA: 'civ-002',
+      civilizationB: 'civ-003',
+      relationType: RelationType.HOSTILE,
+      trust: 0.15,
+      treaties: [],
+      history: [
+        { action: '首次接触', timestamp: Date.now() - 86400000 * 25 },
+        { action: '边境冲突', timestamp: Date.now() - 86400000 * 10 }
+      ]
+    }
+  ];
+
+  sampleRelations.forEach(rel => relationsStore.set(rel.id, rel));
+
+  // Sample treaties
+  treatiesStore.set('trty-001', {
+    id: 'trty-001',
+    type: TreatyType.TRADE,
+    parties: ['civ-001', 'civ-002'],
+    signedAt: Date.now() - 86400000 * 20,
+    expiresAt: Date.now() + 86400000 * 345,
+    terms: {
+      resourceExchange: true,
+      technologySharing: false,
+      mutualDefense: false
+    }
+  });
+};
+
+initializeSampleRelations();
 
 /**
- * Initialize diplomacy stores
- */
-export function initializeDiplomacyStores(
-  relations: DiplomaticRelation[], 
-  treaties: Treaty[]
-) {
-  relationsStore = relations;
-  treatiesStore = treaties;
-  treatyCounter = treaties.length > 0 ? Math.max(...treaties.map(t => t.id)) + 1 : 1;
-}
-
-/**
- * GET /api/diplomacy/relations - 获取外交关系
- * Query params: agentId, targetId, status
+ * GET /api/diplomacy/relations
+ * 获取外交关系
+ * Query params: civilization, type, minTrust, maxTrust
  */
 router.get('/relations', async (req: Request, res: Response) => {
   try {
-    const query: RelationQuery = {
-      agentId: req.query.agentId ? parseInt(req.query.agentId as string) : undefined,
-      targetId: req.query.targetId ? parseInt(req.query.targetId as string) : undefined,
-      status: req.query.status as string
-    };
+    const { 
+      civilization, 
+      type, 
+      minTrust, 
+      maxTrust 
+    } = req.query;
 
-    let filteredRelations = relationsStore.filter(relation => {
-      const agentMatch = !query.agentId || 
-        relation.agentId === query.agentId || 
-        relation.targetId === query.agentId;
-      const targetMatch = !query.targetId || 
-        relation.agentId === query.targetId || 
-        relation.targetId === query.targetId;
-      const statusMatch = !query.status || relation.status === query.status;
-      return agentMatch && targetMatch && statusMatch;
-    });
+    let relations = Array.from(relationsStore.values());
+
+    // Filter by civilization
+    if (civilization) {
+      relations = relations.filter(r => 
+        r.civilizationA === civilization || r.civilizationB === civilization
+      );
+    }
+
+    // Filter by relation type
+    if (type) {
+      relations = relations.filter(r => r.relationType === type);
+    }
+
+    // Filter by trust range
+    if (minTrust !== undefined) {
+      const min = parseFloat(minTrust as string);
+      relations = relations.filter(r => r.trust >= min);
+    }
+    if (maxTrust !== undefined) {
+      const max = parseFloat(maxTrust as string);
+      relations = relations.filter(r => r.trust <= max);
+    }
 
     res.json({
       success: true,
       data: {
-        relations: filteredRelations,
-        total: filteredRelations.length
+        relations,
+        total: relations.length
       }
     });
   } catch (error) {
-    console.error('Error fetching diplomatic relations:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to fetch diplomatic relations'
+      error: 'Failed to fetch diplomatic relations',
+      message: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 });
 
 /**
- * GET /api/diplomacy/relations/:agentId/:targetId - 获取两个文明间的具体关系
+ * GET /api/diplomacy/relations/:id
+ * 获取特定外交关系详情
  */
-router.get('/relations/:agentId/:targetId', async (req: Request, res: Response) => {
+router.get('/relations/:id', async (req: Request, res: Response) => {
   try {
-    const agentId = parseInt(req.params.agentId);
-    const targetId = parseInt(req.params.targetId);
-
-    if (isNaN(agentId) || isNaN(targetId)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid agent ID or target ID'
-      });
-    }
-
-    const relation = relationsStore.find(r => 
-      (r.agentId === agentId && r.targetId === targetId) ||
-      (r.agentId === targetId && r.targetId === agentId)
-    );
+    const { id } = req.params;
+    const relation = relationsStore.get(id);
 
     if (!relation) {
       return res.status(404).json({
         success: false,
-        error: 'Diplomatic relation not found'
+        error: 'Relation not found'
       });
     }
 
-    // Get related treaties
-    const relatedTreaties = treatiesStore.filter(t => 
-      (t.partyA === agentId && t.partyB === targetId) ||
-      (t.partyA === targetId && t.partyB === agentId)
-    );
+    // Get treaty details
+    const treatyDetails = relation.treaties.map(tId => treatiesStore.get(tId)).filter(Boolean);
 
     res.json({
       success: true,
       data: {
-        relation,
-        treaties: relatedTreaties
+        ...relation,
+        treatyDetails
       }
     });
   } catch (error) {
-    console.error('Error fetching specific relation:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to fetch diplomatic relation'
+      error: 'Failed to fetch relation details',
+      message: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 });
 
 /**
- * POST /api/diplomacy/treaty - 签订条约
+ * POST /api/diplomacy/treaty
+ * 签订条约
  */
 router.post('/treaty', async (req: Request, res: Response) => {
   try {
     const treatyRequest: TreatyRequest = req.body;
 
     // Validate request
-    if (!treatyRequest.partyA || !treatyRequest.partyB) {
+    if (!treatyRequest.parties || treatyRequest.parties.length !== 2) {
       return res.status(400).json({
         success: false,
-        error: 'Both partyA and partyB are required'
-      });
-    }
-
-    if (treatyRequest.partyA === treatyRequest.partyB) {
-      return res.status(400).json({
-        success: false,
-        error: 'Cannot create treaty with self'
+        error: 'Invalid treaty request',
+        message: 'Treaty must have exactly 2 parties'
       });
     }
 
     if (!treatyRequest.type) {
       return res.status(400).json({
         success: false,
-        error: 'Treaty type is required'
+        error: 'Invalid treaty request',
+        message: 'Treaty type is required'
       });
     }
 
-    // Check for existing active treaty of same type
-    const existingTreaty = treatiesStore.find(t => 
-      t.type === treatyRequest.type &&
-      t.status === 'active' &&
-      ((t.partyA === treatyRequest.partyA && t.partyB === treatyRequest.partyB) ||
-       (t.partyA === treatyRequest.partyB && t.partyB === treatyRequest.partyA))
+    // Check if relation exists between parties
+    const [civA, civB] = treatyRequest.parties;
+    let relation = Array.from(relationsStore.values()).find(
+      r => (r.civilizationA === civA && r.civilizationB === civB) ||
+           (r.civilizationA === civB && r.civilizationB === civA)
     );
 
-    if (existingTreaty) {
-      return res.status(409).json({
-        success: false,
-        error: 'Active treaty of this type already exists between parties',
-        data: existingTreaty
-      });
-    }
-
-    const newTreaty: Treaty = {
-      id: treatyCounter++,
-      partyA: treatyRequest.partyA,
-      partyB: treatyRequest.partyB,
+    // Create new treaty
+    const treatyId = `trty-${Date.now()}`;
+    const newTreaty = {
+      id: treatyId,
       type: treatyRequest.type,
-      status: 'active',
-      terms: treatyRequest.terms || {},
-      signedAt: new Date().toISOString(),
-      expiresAt: treatyRequest.duration 
-        ? new Date(Date.now() + treatyRequest.duration * 1000).toISOString()
-        : undefined
+      parties: treatyRequest.parties,
+      signedAt: Date.now(),
+      expiresAt: treatyRequest.duration ? Date.now() + treatyRequest.duration : null,
+      terms: treatyRequest.terms || {}
     };
 
-    treatiesStore.push(newTreaty);
+    treatiesStore.set(treatyId, newTreaty);
 
-    // Update or create diplomatic relations
-    updateOrCreateRelation(treatyRequest.partyA, treatyRequest.partyB, treatyRequest.type);
+    // Update or create relation
+    if (!relation) {
+      const relationId = `rel-${Date.now()}`;
+      relation = {
+        id: relationId,
+        civilizationA: civA,
+        civilizationB: civB,
+        relationType: RelationType.NEUTRAL,
+        trust: 0.5,
+        treaties: [treatyId],
+        history: [
+          { action: `签订${getTreatyTypeName(treatyRequest.type)}`, timestamp: Date.now() }
+        ]
+      };
+      relationsStore.set(relationId, relation);
+    } else {
+      relation.treaties.push(treatyId);
+      relation.history.push({
+        action: `签订${getTreatyTypeName(treatyRequest.type)}`,
+        timestamp: Date.now()
+      });
+      // Increase trust based on treaty type
+      relation.trust = Math.min(1, relation.trust + getTrustBonus(treatyRequest.type));
+      
+      // Update relation type based on trust
+      if (relation.trust >= 0.7) {
+        relation.relationType = RelationType.PEACEFUL;
+      } else if (relation.trust >= 0.4) {
+        relation.relationType = RelationType.NEUTRAL;
+      }
+    }
 
     res.status(201).json({
       success: true,
-      data: newTreaty,
-      message: `Treaty signed successfully between Agent ${treatyRequest.partyA} and Agent ${treatyRequest.partyB}`
+      data: {
+        treaty: newTreaty,
+        relation
+      }
     });
   } catch (error) {
-    console.error('Error creating treaty:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to create treaty'
+      error: 'Failed to create treaty',
+      message: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 });
 
 /**
- * DELETE /api/diplomacy/treaty/:id - 废除条约
+ * DELETE /api/diplomacy/treaty/:id
+ * 解除条约
  */
 router.delete('/treaty/:id', async (req: Request, res: Response) => {
   try {
-    const treatyId = parseInt(req.params.id);
+    const { id } = req.params;
+    const treaty = treatiesStore.get(id);
 
-    if (isNaN(treatyId)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid treaty ID'
-      });
-    }
-
-    const treatyIndex = treatiesStore.findIndex(t => t.id === treatyId);
-
-    if (treatyIndex === -1) {
+    if (!treaty) {
       return res.status(404).json({
         success: false,
         error: 'Treaty not found'
       });
     }
 
-    const treaty = treatiesStore[treatyIndex];
-    treaty.status = 'terminated';
-    treaty.terminatedAt = new Date().toISOString();
-
-    res.json({
-      success: true,
-      data: treaty,
-      message: 'Treaty terminated successfully'
-    });
-  } catch (error) {
-    console.error('Error terminating treaty:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to terminate treaty'
-    });
-  }
-});
-
-/**
- * GET /api/diplomacy/treaties - 获取所有条约
- */
-router.get('/treaties', async (req: Request, res: Response) => {
-  try {
-    const status = req.query.status as string;
-    const agentId = req.query.agentId ? parseInt(req.query.agentId as string) : undefined;
-
-    let filteredTreaties = treatiesStore.filter(treaty => {
-      const statusMatch = !status || treaty.status === status;
-      const agentMatch = !agentId || 
-        treaty.partyA === agentId || 
-        treaty.partyB === agentId;
-      return statusMatch && agentMatch;
-    });
-
-    res.json({
-      success: true,
-      data: {
-        treaties: filteredTreaties,
-        total: filteredTreaties.length
+    // Remove treaty from relations
+    relationsStore.forEach(relation => {
+      const index = relation.treaties.indexOf(id);
+      if (index > -1) {
+        relation.treaties.splice(index, 1);
+        relation.history.push({
+          action: `解除${getTreatyTypeName(treaty.type)}`,
+          timestamp: Date.now()
+        });
+        // Decrease trust
+        relation.trust = Math.max(0, relation.trust - 0.1);
       }
     });
+
+    treatiesStore.delete(id);
+
+    res.json({
+      success: true,
+      message: 'Treaty dissolved successfully'
+    });
   } catch (error) {
-    console.error('Error fetching treaties:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to fetch treaties'
+      error: 'Failed to dissolve treaty',
+      message: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 });
 
-/**
- * Helper function to update or create diplomatic relation
- */
-function updateOrCreateRelation(partyA: number, partyB: number, treatyType: string) {
-  const existingRelation = relationsStore.find(r =>
-    (r.agentId === partyA && r.targetId === partyB) ||
-    (r.agentId === partyB && r.targetId === partyA)
-  );
-
-  const statusMap: Record<string, string> = {
-    'alliance': 'allied',
-    'non_aggression': 'neutral',
-    'trade': 'friendly',
-    'peace': 'neutral',
-    'mutual_defense': 'allied'
-  };
-
-  if (existingRelation) {
-    existingRelation.status = statusMap[treatyType] || existingRelation.status;
-    existingRelation.trust = Math.min(100, existingRelation.trust + 10);
-    existingRelation.lastInteraction = new Date().toISOString();
-  } else {
-    const newRelation: DiplomaticRelation = {
-      agentId: partyA,
-      targetId: partyB,
-      status: statusMap[treatyType] || 'neutral',
-      trust: 50,
-      threat: 10,
-      history: [],
-      lastInteraction: new Date().toISOString()
-    };
-    relationsStore.push(newRelation);
-  }
-}
-
-export default router;
+// Helper functions
+function getTreatyTypeName(type: TreatyType): string {
+  const names: Record<TreatyType, string> = {
+    [TreatyType.NON_AGGRESSION]: '互不侵犯条约',
+    [TreatyType.TRADE]: '贸易协定',
+    [TreatyType.TECH_SHARING]: '科技共享协议',
+    [TreatyType.MUTUAL_DEFENSE]: '共同防御条约',
+    [Treaty
