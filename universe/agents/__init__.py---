@@ -1,11 +1,13 @@
-# Universe Agents Module
-from .decision_types import DecisionType, DecisionPriority, DecisionFactor
-from .decision_engine import DecisionEngine, DecisionContext
+"""
+Universe Agents Module
+"""
+
+from .decision_logger import DecisionLogger, DecisionOption, ThoughtNode, Decision, Consequence
 
 __all__ = [
-    'DecisionType',
-    'DecisionPriority', 
-    'DecisionFactor',
-    'DecisionEngine',
-    'DecisionContext'
+    "DecisionLogger",
+    "DecisionOption",
+    "ThoughtNode",
+    "Decision",
+    "Consequence"
 ]

@@ -1,0 +1,52 @@
+"""
+决策日志记录器 - 记录 Agent 思考链和决策过程
+Feature: feat-013
+"""
+
+from datetime import datetime
+from typing import Dict, List, Optional, Any, Union
+from dataclasses import dataclass, field, asdict
+import json
+import uuid
+import os
+
+try:
+    from pymongo import MongoClient
+    from pymongo.collection import Collection
+    MONGO_AVAILABLE = True
+except ImportError:
+    MONGO_AVAILABLE = False
+    MongoClient = None
+    Collection = None
+
+
+@dataclass
+class DecisionOption:
+    """决策选项"""
+    name: str
+    description: str
+    weight: float
+    factors: Dict[str, float] = field(default_factory=dict)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "DecisionOption":
+        return cls(
+            name=data["name"],
+            description=data.get("description", ""),
+            weight=data.get("weight", 0.0),
+            factors=data.get("factors", {})
+        )
+
+
+@dataclass
+class ThoughtNode:
+    """思考链节点"""
+    step: int
+    thought: str
+    reasoning: str
+    action: str = ""
+    observation: str = ""
+    timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat())
