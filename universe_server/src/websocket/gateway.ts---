@@ -1,142 +1,111 @@
 import { Server as HttpServer } from 'http';
 import { Server as HttpsServer } from 'https';
 import { Server, Socket } from 'socket.io';
-import Redis from 'ioredis';
-import { TickHandler, TickData } from './handlers/tick.handler';
-import { EventHandler, MajorEvent } from './handlers/event.handler';
-import { AlertHandler, Alert } from './handlers/alert.handler';
+import { createAdapter } from '@socket.io/redis-adapter';
+import { createClient } from 'redis';
+import TickHandler, { TickData } from './handlers/tick.handler';
+import EventHandler, { MajorEvent } from './handlers/event.handler';
+import AlertHandler, { Alert, AlertLevel } from './handlers/alert.handler';
 
 export interface AgentSubscription {
-  agent_id: string;
-  subscribed_at: number;
-  filters?: {
-    include_thoughts?: boolean;
-    include_actions?: boolean;
-    include_diplomacy?: boolean;
-  };
+  socketId: string;
+  agentId: string;
+  details: boolean;
 }
 
 export interface SimulationState {
-  is_paused: boolean;
-  current_tick: number;
+  isPaused: boolean;
+  currentTick: number;
   speed: number;
-  last_updated: number;
 }
 
-export interface GatewayConfig {
-  redisUrl?: string;
-  corsOrigin?: string | string[];
-  path?: string;
-}
-
+/**
+ * WebSocket Gateway - 宇宙状态和事件实时更新网关
+ * 
+ * 功能：
+ * - Tick 事件推送
+ * - 重大事件广播
+ * - 警报系统
+ * - Agent 详情订阅
+ * - 模拟控制（暂停/继续）
+ * - Redis 消息订阅
+ */
 export class WebSocketGateway {
   private io: Server;
-  private redisClient: Redis;
-  private redisSubscriber: Redis;
   private tickHandler: TickHandler;
   private eventHandler: EventHandler;
   private alertHandler: AlertHandler;
-  private simulationState: SimulationState;
-  private agentSubscriptions: Map<string, Set<string>> = new Map();
+  private agentSubscriptions: Map<string, AgentSubscription[]> = new Map();
+  private simulationState: SimulationState = {
+    isPaused: false,
+    currentTick: 0,
+    speed: 1,
+  };
+  private redisClient: ReturnType<typeof createClient> | null = null;
+  private redisSubscriber: ReturnType<typeof createClient> | null = null;
 
-  constructor(httpServer: HttpServer | HttpsServer, config: GatewayConfig = {}) {
-    const redisUrl = config.redisUrl || process.env.REDIS_URL || 'redis://localhost:6379';
-    
-    this.io = new Server(httpServer, {
+  constructor(server: HttpServer | HttpsServer) {
+    this.io = new Server(server, {
       cors: {
-        origin: config.corsOrigin || '*',
-        methods: ['GET', 'POST']
+        origin: process.env.CORS_ORIGIN || '*',
+        methods: ['GET', 'POST'],
       },
-      path: config.path || '/socket.io'
+      transports: ['websocket', 'polling'],
     });
 
-    this.redisClient = new Redis(redisUrl);
-    this.redisSubscriber = new Redis(redisUrl);
-
-    this.tickHandler = new TickHandler(this.io, redisUrl);
-    this.eventHandler = new EventHandler(this.io, redisUrl);
-    this.alertHandler = new AlertHandler(this.io, redisUrl);
-
-    this.simulationState = {
-      is_paused: false,
-      current_tick: 0,
-      speed: 1,
-      last_updated: Date.now()
-    };
-
-    this.setupRedisSubscriptions();
-    this.setupMiddleware();
-    this.setupEventHandlers();
+    this.tickHandler = new TickHandler(this.io);
+    this.eventHandler = new EventHandler(this.io);
+    this.alertHandler = new AlertHandler(this.io);
   }
 
-  private setupMiddleware(): void {
-    this.io.use(async (socket, next) => {
-      try {
-        const token = socket.handshake.auth.token || socket.handshake.headers.authorization;
-        
-        if (token) {
-          socket.data.authenticated = true;
-          socket.data.token = token;
-        }
+  /**
+   * 初始化网关
+   */
+  async initialize(): Promise<void> {
+    // 初始化 Redis 连接（如果配置了）
+    if (process.env.REDIS_URL) {
+      await this.initializeRedis();
+    }
 
-        socket.data.connectedAt = Date.now();
-        console.log(`[Gateway] Client ${socket.id} connecting...`);
-        next();
-      } catch (error) {
-        console.error('[Gateway] Middleware error:', error);
-        next(new Error('Authentication failed'));
-      }
+    // 初始化各处理器
+    this.tickHandler.initialize();
+    this.eventHandler.initialize();
+    this.alertHandler.initialize();
+
+    // 设置连接处理
+    this.io.on('connection', (socket: Socket) => {
+      this.handleConnection(socket);
     });
+
+    console.log('[WebSocketGateway] Initialized');
   }
 
-  private setupRedisSubscriptions(): void {
-    this.redisSubscriber.subscribe(
-      'universe:agent_update',
-      'universe:simulation_state',
-      'universe:agent_thought',
-      'universe:agent_action',
-      (err) => {
-        if (err) {
-          console.error('[Gateway] Failed to subscribe to Redis channels:', err);
-          return;
-        }
-        console.log('[Gateway] Subscribed to Redis channels');
-      }
-    );
-
-    this.redisSubscriber.on('message', (channel, message) => {
-      this.handleRedisMessage(channel, message);
-    });
-  }
-
-  private handleRedisMessage(channel: string, message: string): void {
+  /**
+   * 初始化 Redis 连接
+   */
+  private async initializeRedis(): Promise<void> {
     try {
-      const data = JSON.parse(message);
+      const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+      
+      this.redisClient = createClient({ url: redisUrl });
+      this.redisSubscriber = createClient({ url: redisUrl });
 
-      switch (channel) {
-        case 'universe:agent_update':
-          this.handleAgentUpdate(data);
-          break;
-        case 'universe:simulation_state':
-          this.handleSimulationStateUpdate(data);
-          break;
-        case 'universe:agent_thought':
-          this.handleAgentThought(data);
-          break;
-        case 'universe:agent_action':
-          this.handleAgentAction(data);
-          break;
-      }
+      await this.redisClient.connect();
+      await this.redisSubscriber.connect();
+
+      // 使用 Redis 适配器实现多实例同步
+      const pubClient = this.redisClient;
+      const subClient = this.redisSubscriber;
+      this.io.adapter(createAdapter(pubClient, subClient));
+
+      // 订阅 Redis 频道
+      await this.subscribeRedisChannels();
+
+      console.log('[WebSocketGateway] Redis connected');
     } catch (error) {
-      console.error(`[Gateway] Failed to handle Redis message from ${channel}:`, error);
+      console.error('[WebSocketGateway] Redis connection failed:', error);
     }
   }
 
-  private handleAgentUpdate(data: { agent_id: string; update: unknown }): void {
-    const subscribers = this.agentSubscriptions.get(data.agent_id);
-    if (subscribers && subscribers.size > 0) {
-      this.io.to(`agent:${data.agent_id}`).emit('agent:update', data);
-    }
-  }
-
-  private handle
+  /**
+   *

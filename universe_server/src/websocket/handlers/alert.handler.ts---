@@ -1,146 +1,219 @@
 import { Server, Socket } from 'socket.io';
-import Redis from 'ioredis';
+
+export type AlertLevel = 'info' | 'warning' | 'danger' | 'critical';
 
 export interface Alert {
-  alert_id: string;
-  alert_type: 'warning' | 'danger' | 'info' | 'success';
+  id: string;
+  level: AlertLevel;
   title: string;
   message: string;
   timestamp: number;
   source: string;
-  target?: string;
-  priority: number;
-  expires_at?: number;
-  actions?: AlertAction[];
+  target?: string; // 特定目标 Agent/Civilization
+  actionRequired: boolean;
+  expiresAt?: number;
+  metadata?: Record<string, unknown>;
 }
 
-export interface AlertAction {
-  label: string;
-  action_type: 'acknowledge' | 'investigate' | 'dismiss';
-  data?: Record<string, unknown>;
+export interface AlertSubscription {
+  socketId: string;
+  levels: AlertLevel[];
+  targets: string[]; // 关注的目标 ID
 }
 
+/**
+ * Alert Handler - 处理警报广播
+ * 支持全局广播和定向推送
+ */
 export class AlertHandler {
   private io: Server;
-  private redisSubscriber: Redis;
-  private redisClient: Redis;
+  private subscriptions: Map<string, AlertSubscription> = new Map();
+  private activeAlerts: Map<string, Alert> = new Map();
   private alertCounter: number = 0;
 
-  constructor(io: Server, redisUrl: string = 'redis://localhost:6379') {
+  constructor(io: Server) {
     this.io = io;
-    this.redisSubscriber = new Redis(redisUrl);
-    this.redisClient = new Redis(redisUrl);
-    this.setupRedisSubscription();
   }
 
-  private setupRedisSubscription(): void {
-    this.redisSubscriber.subscribe('universe:alert', 'universe:broadcast', (err) => {
-      if (err) {
-        console.error('[AlertHandler] Failed to subscribe to alert channels:', err);
-        return;
-      }
-      console.log('[AlertHandler] Subscribed to alert channels');
+  /**
+   * 初始化警报处理器
+   */
+  initialize(): void {
+    this.io.on('connection', (socket: Socket) => {
+      socket.on('subscribe:alerts', (params: { levels?: AlertLevel[]; targets?: string[] }) => {
+        this.subscribe(socket, params);
+      });
+
+      socket.on('unsubscribe:alerts', () => {
+        this.unsubscribe(socket);
+      });
+
+      socket.on('acknowledge:alert', (alertId: string) => {
+        this.acknowledgeAlert(socket, alertId);
+      });
+
+      socket.on('get:active_alerts', () => {
+        this.sendActiveAlerts(socket);
+      });
+
+      socket.on('dismiss:alert', (alertId: string) => {
+        this.dismissAlert(socket, alertId);
+      });
+
+      socket.on('disconnect', () => {
+        this.subscriptions.delete(socket.id);
+      });
     });
 
-    this.redisSubscriber.on('message', (channel, message) => {
-      if (channel === 'universe:alert') {
-        try {
-          const alertData: Alert = JSON.parse(message);
-          this.broadcastAlert(alertData);
-        } catch (error) {
-          console.error('[AlertHandler] Failed to parse alert data:', error);
-        }
-      } else if (channel === 'universe:broadcast') {
-        try {
-          const broadcastData = JSON.parse(message);
-          this.handleBroadcast(broadcastData);
-        } catch (error) {
-          console.error('[AlertHandler] Failed to parse broadcast data:', error);
-        }
-      }
+    // 定期清理过期警报
+    setInterval(() => this.cleanupExpiredAlerts(), 60000);
+  }
+
+  /**
+   * 订阅警报
+   */
+  private subscribe(
+    socket: Socket, 
+    params: { levels?: AlertLevel[]; targets?: string[] }
+  ): void {
+    this.subscriptions.set(socket.id, {
+      socketId: socket.id,
+      levels: params.levels || ['info', 'warning', 'danger', 'critical'],
+      targets: params.targets || [],
+    });
+    
+    socket.join('alerts:channel');
+    
+    // 发送当前活跃警报
+    this.sendActiveAlerts(socket);
+    
+    socket.emit('alerts:subscribed', {
+      message: 'Successfully subscribed to alerts',
+      levels: params.levels,
     });
   }
 
-  public broadcastAlert(alert: Alert): void {
-    if (alert.target) {
-      this.io.to(`agent:${alert.target}`).emit('alert', alert);
-      console.log(`[AlertHandler] Sent alert to agent ${alert.target}: ${alert.title}`);
-    } else {
-      this.io.emit('alert', alert);
-      console.log(`[AlertHandler] Broadcasted alert: ${alert.title}`);
+  /**
+   * 取消订阅
+   */
+  private unsubscribe(socket: Socket): void {
+    this.subscriptions.delete(socket.id);
+    socket.leave('alerts:channel');
+  }
+
+  /**
+   * 广播全局警报
+   */
+  broadcastAlert(alert: Omit<Alert, 'id' | 'timestamp'>): Alert {
+    const fullAlert: Alert = {
+      ...alert,
+      id: `alert-${++this.alertCounter}`,
+      timestamp: Date.now(),
+    };
+
+    this.activeAlerts.set(fullAlert.id, fullAlert);
+
+    // 全局广播
+    this.io.emit('alert', fullAlert);
+
+    // 根据级别发送特殊通知
+    if (alert.level === 'critical' || alert.level === 'danger') {
+      this.io.emit('alert:urgent', {
+        id: fullAlert.id,
+        level: fullAlert.level,
+        title: fullAlert.title,
+      });
+    }
+
+    return fullAlert;
+  }
+
+  /**
+   * 发送定向警报
+   */
+  sendTargetedAlert(targetId: string, alert: Omit<Alert, 'id' | 'timestamp' | 'target'>): Alert | null {
+    const fullAlert: Alert = {
+      ...alert,
+      id: `alert-${++this.alertCounter}`,
+      timestamp: Date.now(),
+      target: targetId,
+    };
+
+    this.activeAlerts.set(fullAlert.id, fullAlert);
+
+    // 只发送给订阅了该目标的客户端
+    this.subscriptions.forEach((sub, socketId) => {
+      if (sub.targets.includes(targetId)) {
+        const socket = this.io.sockets.sockets.get(socketId);
+        if (socket) {
+          socket.emit('alert:targeted', fullAlert);
+        }
+      }
+    });
+
+    return fullAlert;
+  }
+
+  /**
+   * 发送活跃警报
+   */
+  private sendActiveAlerts(socket: Socket): void {
+    const alerts = Array.from(this.activeAlerts.values());
+    socket.emit('active_alerts', { alerts, count: alerts.length });
+  }
+
+  /**
+   * 确认警报
+   */
+  private acknowledgeAlert(socket: Socket, alertId: string): void {
+    const alert = this.activeAlerts.get(alertId);
+    if (alert) {
+      socket.emit('alert:acknowledged', { id: alertId, acknowledged: true });
     }
   }
 
-  public handleBroadcast(data: { type: string; payload: unknown }): void {
-    this.io.emit('broadcast', data);
-    console.log(`[AlertHandler] Handled broadcast: ${data.type}`);
+  /**
+   * 关闭警报
+   */
+  private dismissAlert(socket: Socket, alertId: string): void {
+    if (this.activeAlerts.has(alertId)) {
+      this.activeAlerts.delete(alertId);
+      socket.emit('alert:dismissed', { id: alertId });
+    }
   }
 
-  public handleConnection(socket: Socket): void {
-    console.log(`[AlertHandler] Client connected: ${socket.id}`);
-
-    socket.on('alert:subscribe', () => {
-      socket.join('alert:updates');
-      console.log(`[AlertHandler] Client ${socket.id} subscribed to alerts`);
-    });
-
-    socket.on('alert:unsubscribe', () => {
-      socket.leave('alert:updates');
-      console.log(`[AlertHandler] Client ${socket.id} unsubscribed from alerts`);
-    });
-
-    socket.on('alert:acknowledge', async (alertId: string) => {
-      try {
-        await this.redisClient.hset('universe:acknowledged_alerts', alertId, socket.id);
-        socket.emit('alert:acknowledged', { alert_id: alertId, acknowledged_by: socket.id });
-        console.log(`[AlertHandler] Alert ${alertId} acknowledged by ${socket.id}`);
-      } catch (error) {
-        console.error('[AlertHandler] Failed to acknowledge alert:', error);
-      }
-    });
-
-    socket.on('alert:get_active', async () => {
-      try {
-        const alerts = await this.redisClient.hgetall('universe:active_alerts');
-        const activeAlerts = Object.values(alerts).map(a => JSON.parse(a));
-        socket.emit('alert:active_list', activeAlerts);
-      } catch (error) {
-        console.error('[AlertHandler] Failed to get active alerts:', error);
-      }
-    });
-
-    socket.on('alert:dismiss', async (alertId: string) => {
-      try {
-        await this.redisClient.hdel('universe:active_alerts', alertId);
-        socket.emit('alert:dismissed', { alert_id: alertId });
-        console.log(`[AlertHandler] Alert ${alertId} dismissed by ${socket.id}`);
-      } catch (error) {
-        console.error('[AlertHandler] Failed to dismiss alert:', error);
+  /**
+   * 清理过期警报
+   */
+  private cleanupExpiredAlerts(): void {
+    const now = Date.now();
+    this.activeAlerts.forEach((alert, id) => {
+      if (alert.expiresAt && alert.expiresAt < now) {
+        this.activeAlerts.delete(id);
       }
     });
   }
 
-  public async createAlert(alert: Omit<Alert, 'alert_id' | 'timestamp'>): Promise<Alert> {
-    this.alertCounter++;
-    const newAlert: Alert = {
-      ...alert,
-      alert_id: `alert_${Date.now()}_${this.alertCounter}`,
-      timestamp: Date.now()
+  /**
+   * 获取统计信息
+   */
+  getStats(): { activeAlerts: number; subscribers: number; alertsByLevel: Record<AlertLevel, number> } {
+    const alertsByLevel: Record<AlertLevel, number> = {
+      info: 0,
+      warning: 0,
+      danger: 0,
+      critical: 0,
     };
 
-    await this.redisClient.hset('universe:active_alerts', newAlert.alert_id, JSON.stringify(newAlert));
-    await this.redisClient.publish('universe:alert', JSON.stringify(newAlert));
-    
-    return newAlert;
-  }
+    this.activeAlerts.forEach(alert => {
+      alertsByLevel[alert.level]++;
+    });
 
-  public async sendSystemBroadcast(type: string, payload: unknown): Promise<void> {
-    await this.redisClient.publish('universe:broadcast', JSON.stringify({ type, payload }));
-  }
-
-  public cleanup(): void {
-    this.redisSubscriber.disconnect();
-    this.redisClient.disconnect();
+    return {
+      activeAlerts: this.activeAlerts.size,
+      subscribers: this.subscriptions.size,
+      alertsByLevel,
+    };
   }
 }
 
