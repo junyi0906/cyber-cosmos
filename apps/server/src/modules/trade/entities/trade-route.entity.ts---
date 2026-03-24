@@ -1,25 +1,47 @@
-export interface TradeRoute {
-  id: string;
-  sourceCivilizationId: string;
-  targetCivilizationId: string;
-  resourceType: 'ore' | 'energy' | 'technology';
-  basePrice: number;
-  currentPrice: number;
-  efficiency: number;
-  status: 'active' | 'suspended' | 'disrupted';
-  createdAt: Date;
-  updatedAt: Date;
-}
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
 
-export interface TradeAgreement {
+@Entity('trade_routes')
+export class TradeRoute {
+  @PrimaryGeneratedColumn('uuid')
   id: string;
-  parties: [string, string];
-  resourceTypes: string[];
-  terms: {
-    minPrice: number;
-    maxPrice: number;
-    volume: number;
+
+  @Column({ name: 'source_civ_id' })
+  sourceCivId: string;
+
+  @Column({ name: 'target_civ_id' })
+  targetCivId: string;
+
+  @Column({ name: 'source_system_id' })
+  sourceSystemId: string;
+
+  @Column({ name: 'target_system_id' })
+  targetSystemId: string;
+
+  @Column({ type: 'jsonb', default: {} })
+  resources: {
+    ore?: number;
+    energy?: number;
+    technology?: number;
   };
-  validFrom: Date;
-  validUntil: Date;
+
+  @Column({ type: 'decimal', precision: 5, scale: 2, default: 100 })
+  stability: number;
+
+  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
+  distance: number;
+
+  @Column({ default: true })
+  active: boolean;
+
+  @Column({ name: 'diplomatic_bonus', type: 'decimal', precision: 5, scale: 2, default: 0 })
+  diplomaticBonus: number;
+
+  @Column({ name: 'trade_agreement_id', nullable: true })
+  tradeAgreementId: string;
+
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ name: 'updated_at' })
+  updatedAt: Date;
 }

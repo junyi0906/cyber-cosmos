@@ -1,4 +1,4 @@
-export * from './market.service';
 export * from './trade.module';
-export * from './entities/resource.entity';
+export * from './trade.service';
 export * from './entities/trade-route.entity';
+export * from './dto';

@@ -1,79 +1,177 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
 import { TradeRoute } from './entities/trade-route.entity';
-import { MarketService } from './market.service';
-
-interface TradeRouteCreate {
-  name: string;
-  sourceCivilizationId: string;
-  targetCivilizationId: string;
-  resources: { resourceId: string; quantity: number; price: number }[];
-  distance: number;
-}
+import { CreateTradeRouteDto, UpdateTradeRouteDto } from './dto';
 
 @Injectable()
 export class TradeService {
-  private readonly logger = new Logger(TradeService.name);
-
   constructor(
     @InjectRepository(TradeRoute)
     private tradeRouteRepository: Repository<TradeRoute>,
-    private marketService: MarketService,
+    private dataSource: DataSource,
   ) {}
 
-  async createTradeRoute(data: TradeRouteCreate): Promise<TradeRoute> {
-    const route = this.tradeRouteRepository.create({
-      ...data,
-      efficiency: 1.0,
-      status: 'active',
-      totalValue: this.calculateRouteValue(data.resources),
-    });
-    return this.tradeRouteRepository.save(route);
-  }
-
-  async getTradeRoutes(): Promise<TradeRoute[]> {
-    return this.tradeRouteRepository.find({ where: { status: 'active' } });
-  }
-
-  async getTradeRouteById(id: string): Promise<TradeRoute | null> {
-    return this.tradeRouteRepository.findOne({ where: { id } });
-  }
-
-  async updateRouteEfficiency(id: string, efficiency: number, weatherEffect?: string): Promise<TradeRoute | null> {
-    const route = await this.getTradeRouteById(id);
-    if (!route) return null;
-
-    route.efficiency = efficiency;
-    if (weatherEffect) {
-      route.weatherEffect = weatherEffect;
+  async create(createDto: CreateTradeRouteDto, userId?: string): Promise<TradeRoute> {
+    // Validate that source and target are different
+    if (createDto.sourceCivId === createDto.targetCivId) {
+      throw new BadRequestException('Source and target civilization cannot be the same');
     }
 
-    return this.tradeRouteRepository.save(route);
+    // Check for existing active route between same systems
+    const existingRoute = await this.tradeRouteRepository.findOne({
+      where: {
+        sourceSystemId: createDto.sourceSystemId,
+        targetSystemId: createDto.targetSystemId,
+        active: true,
+      },
+    });
+
+    if (existingRoute) {
+      throw new ConflictException('An active trade route already exists between these systems');
+    }
+
+    // Calculate distance (sified calculation based on system IDs)
+    const distance = this.calculateDistance(createDto.sourceSystemId, createDto.targetSystemId);
+
+    // Calculate initial stability based on distance
+    const baseStability = Math.max(20, 100 - distance * 0.1);
+
+    const tradeRoute = this.tradeRouteRepository.create({
+      ...createDto,
+      resources: createDto.resources || { ore: 0, energy: 0, technology: 0 },
+      distance,
+      stability: baseStability,
+      active: true,
+    });
+
+    return await this.tradeRouteRepository.save(tradeRoute);
   }
 
-  async suspendRoute(id: string, reason: string): Promise<TradeRoute | null> {
-    const route = await this.getTradeRouteById(id);
-    if (!route) return null;
+  async findAll(civId?: string): Promise<TradeRoute[]> {
+    const queryBuilder = this.tradeRouteRepository.createQueryBuilder('route');
 
-    route.status = 'suspended';
-    route.weatherEffect = reason;
+    if (civId) {
+      queryBuilder.where(
+        'route.sourceCivId = :civId OR route.targetCivId = :civId',
+        { civId },
+      );
+    }
 
-    return this.tradeRouteRepository.save(route);
+    return await queryBuilder
+      .orderBy('route.createdAt', 'DESC')
+      .getMany();
   }
 
-  async activateRoute(id: string): Promise<TradeRoute | null> {
-    const route = await this.getTradeRouteById(id);
-    if (!route) return null;
+  async findOne(id: string): Promise<TradeRoute> {
+    const route = await this.tradeRouteRepository.findOne({
+      where: { id },
+    });
 
-    route.status = 'active';
-    route.weatherEffect = null;
+    if (!route) {
+      throw new NotFoundException(`Trade route with ID "${id}" not found`);
+    }
 
-    return this.tradeRouteRepository.save(route);
+    return route;
   }
 
-  private calculateRouteValue(resources: { resourceId: string; quantity: number; price: number }[]): number {
-    return resources.reduce((total, r) => total + r.quantity * r.price, 0);
+  async update(id: string, updateDto: UpdateTradeRouteDto): Promise<TradeRoute> {
+    const route = await this.findOne(id);
+
+    if (!route.active) {
+      throw new BadRequestException('Cannot update an inactive trade route');
+    }
+
+    // Merge resources if provided
+    if (updateDto.resources) {
+      route.resources = {
+        ...route.resources,
+        ...updateDto.resources,
+      };
+    }
+
+    if (updateDto.stability !== undefined) {
+      route.stability = updateDto.stability;
+    }
+
+    return await this.tradeRouteRepository.save(route);
   }
 
-  async calculateTradeEfficiency(routeId: string, weatherModifier: number): Promise<number> {
+  async remove(id: string): Promise<{ message: string; id: string }> {
+    const route = await this.findOne(id);
+
+    if (!route.active) {
+      throw new BadRequestException('Trade route is already closed');
+    }
+
+    route.active = false;
+    await this.tradeRouteRepository.save(route);
+
+    return {
+      message: 'Trade route closed successfully',
+      id,
+    };
+  }
+
+  async getRoutesByCivilization(civId: string): Promise<{
+    outgoing: TradeRoute[];
+    incoming: TradeRoute[];
+  }> {
+    const [outgoing, incoming] = await Promise.all([
+      this.tradeRouteRepository.find({
+        where: { sourceCivId: civId, active: true },
+        order: { createdAt: 'DESC' },
+      }),
+      this.tradeRouteRepository.find({
+        where: { targetCivId: civId, active: true },
+        order: { createdAt: 'DESC' },
+      }),
+    ]);
+
+    return { outgoing, incoming };
+  }
+
+  async calculateRouteEfficiency(id: string): Promise<{
+    efficiency: number;
+    factors: {
+      distance: number;
+      stability: number;
+      diplomaticBonus: number;
+    };
+  }> {
+    const route = await this.findOne(id);
+
+    const distanceFactor = Math.max(0.1, 1 - route.distance * 0.001);
+    const stabilityFactor = route.stability / 100;
+    const diplomaticFactor = 1 + route.diplomaticBonus / 100;
+
+    const efficiency = distanceFactor * stabilityFactor * diplomaticFactor;
+
+    return {
+      efficiency: Math.round(efficiency * 100) / 100,
+      factors: {
+        distance: distanceFactor,
+        stability: stabilityFactor,
+        diplomaticBonus: diplomaticFactor,
+      },
+    };
+  }
+
+  private calculateDistance(sourceId: string, targetId: string): number {
+    // Simplified distance calculation based on system ID hash
+    // In a real implementation, this would use actual coordinates
+    const sourceHash = this.hashString(sourceId);
+    const targetHash = this.hashString(targetId);
+    return Math.abs(sourceHash - targetHash) % 1000;
+  }
+
+  private hashString(str: string): number {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash;
+    }
+    return Math.abs(hash);
+  }
+}

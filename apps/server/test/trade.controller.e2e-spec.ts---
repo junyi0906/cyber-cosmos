@@ -1,0 +1,81 @@
+import { Test, TestingModule } from '@nestjs/testing';
+import { INestApplication, ValidationPipe } from '@nestjs/common';
+import * as request from 'supertest';
+import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { TradeModule } from '../src/modules/trade/trade.module';
+import { TradeRoute } from '../src/modules/trade/entities/trade-route.entity';
+
+describe('TradeController (e2e)', () => {
+  let app: INestApplication;
+  let tradeRouteRepository: Repository<TradeRoute>;
+
+  beforeAll(async () => {
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [
+        TypeOrmModule.forRoot({
+          type: 'sqlite',
+          database: ':memory:',
+          entities: [TradeRoute],
+          synchronize: true,
+        }),
+        TradeModule,
+      ],
+    }).compile();
+
+    app = moduleFixture.createNestApplication();
+    app.useGlobalPipes(new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+    }));
+
+    tradeRouteRepository = moduleFixture.get(getRepositoryToken(TradeRoute));
+
+    await app.init();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  beforeEach(async () => {
+    await tradeRouteRepository.clear();
+  });
+
+  describe('POST /api/v2/trade/routes', () => {
+    const createDto = {
+      sourceCivId: 'civ-001',
+      targetCivId: 'civ-002',
+      sourceSystemId: 'sys-001',
+      targetSystemId: 'sys-002',
+      resources: {
+        ore: 100,
+        energy: 50,
+        technology: 25,
+      },
+    };
+
+    it('should create a new trade route', () => {
+      return request(app.getHttpServer())
+        .post('/api/v2/trade/routes')
+        .send(createDto)
+        .expect(201)
+        .expect((res) => {
+          expect(res.body).toHaveProperty('id');
+          expect(res.body.sourceCivId).toBe(createDto.sourceCivId);
+          expect(res.body.targetCivId).toBe(createDto.targetCivId);
+          expect(res.body.resources.ore).toBe(100);
+          expect(res.body.active).toBe(true);
+          expect(res.body).toHaveProperty('stability');
+          expect(res.body).toHaveProperty('distance');
+        });
+    });
+
+    it('should reject trade route with same source and target', () => {
+      return request(app.getHttpServer())
+        .post('/api/v2/trade/routes')
+        .send({
+          ...createDto,
+          targetCivId: 'civ-001',
+        })

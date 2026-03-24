@@ -1,23 +1,49 @@
-import { IsString, IsEnum, IsInt, IsPositive, IsUUID, Min } from 'class-validator';
-import { ResourceType } from '../entities/trade-route.entity';
+import { IsString, IsNotEmpty, IsObject, IsOptional, IsNumber, Min, Max, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+
+class ResourceConfigDto {
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1000)
+  ore?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1000)
+  energy?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1000)
+  technology?: number;
+}
 
 export class CreateTradeRouteDto {
-  @IsUUID()
   @IsString()
-  sourceCivilizationId: string;
+  @IsNotEmpty()
+  sourceCivId: string;
 
-  @IsUUID()
   @IsString()
-  targetCivilizationId: string;
+  @IsNotEmpty()
+  targetCivId: string;
 
-  @IsEnum(ResourceType)
-  resourceType: ResourceType;
+  @IsString()
+  @IsNotEmpty()
+  sourceSystemId: string;
 
-  @IsInt()
-  @IsPositive()
-  quantity: number;
+  @IsString()
+  @IsNotEmpty()
+  targetSystemId: string;
 
-  @IsInt()
-  @Min(1)
-  maxCycles?: number;
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ResourceConfigDto)
+  resources?: ResourceConfigDto;
+
+  @IsOptional()
+  @IsString()
+  tradeAgreementId?: string;
 }

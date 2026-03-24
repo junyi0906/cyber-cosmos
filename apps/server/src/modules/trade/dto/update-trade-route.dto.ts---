@@ -1,0 +1,34 @@
+import { PartialType, OmitType } from '@nestjs/mapped-types';
+import { IsOptional, IsNumber, Min, Max } from 'class-validator';
+import { CreateTradeRouteDto } from './create-trade-route.dto';
+
+class ResourceUpdateDto {
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1000)
+  ore?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1000)
+  energy?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1000)
+  technology?: number;
+}
+
+export class UpdateTradeRouteDto {
+  @IsOptional()
+  resources?: ResourceUpdateDto;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  stability?: number;
+}

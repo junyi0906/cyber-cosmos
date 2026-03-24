@@ -1,33 +1,91 @@
-import { Controller, Get, Post, Body, Param, Query } from '@nestjs/common';
-import { MarketService } from '../services/market.service';
-import { TradeService } from '../services/trade.service';
-import { ResourceType } from '../interfaces/market.interface';
-import { MarketUpdateDto, PriceQueryDto } from '../dto/market-price.dto';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  HttpCode,
+  HttpStatus,
+  ParseUUIDPipe,
+} from '@nestjs/common';
+import { TradeService } from '../trade.service';
+import { CreateTradeRouteDto, UpdateTradeRouteDto } from '../dto';
+import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiParam, ApiBearerAuth } from '@nestjs/swagger';
 
-@Controller('trade')
+@ApiTags('trade')
+@ApiBearerAuth()
+@Controller('api/v2/trade')
 export class TradeController {
-  constructor(
-    private readonly marketService: MarketService,
-    private readonly tradeService: TradeService,
-  ) {}
+  constructor(private readonly tradeService: TradeService) {}
 
-  @Get('market/prices')
-  async getAllPrices() {
-    return this.marketService.getAllPrices();
+  @Post('routes')
+  @ApiOperation({ summary: 'Create a new trade route' })
+  @ApiResponse({ status: 201, description: 'Trade route created successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid input data' })
+  @ApiResponse({ status: 409, description: 'Trade route already exists' })
+  async create(@Body() createDto: CreateTradeRouteDto) {
+    return await this.tradeService.create(createDto);
   }
 
-  @Get('market/price/:type')
-  async getPrice(@Param('type') type: ResourceType) {
-    return this.marketService.getPrice(type);
+  @Get('routes')
+  @ApiOperation({ summary: 'Get all trade routes' })
+  @ApiQuery({ name: 'civId', required: false, description: 'Filter by civilization ID' })
+  @ApiResponse({ status: 200, description: 'List of trade routes' })
+  async findAll(@Query('civId') civId?: string) {
+    return await this.tradeService.findAll(civId);
   }
 
-  @Get('market/overview')
-  async getMarketOverview() {
-    return this.tradeService.getMarketOverview();
+  @Get('routes/:id')
+  @ApiOperation({ summary: 'Get a single trade route by ID' })
+  @ApiParam({ name: 'id', description: 'Trade route ID' })
+  @ApiResponse({ status: 200, description: 'Trade route details' })
+  @ApiResponse({ status: 404, description: 'Trade route not found' })
+  async findOne(@Param('id', ParseUUIDPipe) id: string) {
+    return await this.tradeService.findOne(id);
   }
 
-  @Post('market/update')
-  async updateMarket(@Body() updateDto: MarketUpdateDto) {
-    const supplyDemands = [
-      { resourceType: ResourceType.ORE, supply: updateDto.oreSupply, demand: updateDto.oreDemand },
-      { resourceType: ResourceType.ENER
+  @Patch('routes/:id')
+  @ApiOperation({ summary: 'Update trade route resource configuration' })
+  @ApiParam({ name: 'id', description: 'Trade route ID' })
+  @ApiResponse({ status: 200, description: 'Trade route updated successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid update data or route is inactive' })
+  @ApiResponse({ status: 404, description: 'Trade route not found' })
+  async update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() updateDto: UpdateTradeRouteDto,
+  ) {
+    return await this.tradeService.update(id, updateDto);
+  }
+
+  @Delete('routes/:id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Close a trade route' })
+  @ApiParam({ name: 'id', description: 'Trade route ID' })
+  @ApiResponse({ status: 200, description: 'Trade route closed successfully' })
+  @ApiResponse({ status: 400, description: 'Trade route is already closed' })
+  @ApiResponse({ status: 404, description: 'Trade route not found' })
+  async remove(@Param('id', ParseUUIDPipe) id: string) {
+    return await this.tradeService.remove(id);
+  }
+
+  @Get('routes/:id/efficiency')
+  @ApiOperation({ summary: 'Calculate trade route efficiency' })
+  @ApiParam({ name: 'id', description: 'Trade route ID' })
+  @ApiResponse({ status: 200, description: 'Route efficiency calculation' })
+  @ApiResponse({ status: 404, description: 'Trade route not found' })
+  async getEfficiency(@Param('id', ParseUUIDPipe) id: string) {
+    return await this.tradeService.calculateRouteEfficiency(id);
+  }
+
+  @Get('civilization/:civId/routes')
+  @ApiOperation({ summary: 'Get all routes for a civilization' })
+  @ApiParam({ name: 'civId', description: 'Civilization ID' })
+  @ApiResponse({ status: 200, description: 'Civilization trade routes' })
+  async getCivilizationRoutes(@Param('civId') civId: string) {
+    return await this.tradeService.getRoutesByCivilization(civId);
+  }
+}
